@@ -56,6 +56,8 @@ def add_fields(graph, pressure, velocity, random_walks, rate_noise):
     times.sort()
     nP = pressure[times[0]].shape[0]
     nQ = velocity[times[0]].shape[0]
+    edges0 = graph.edges()[0]
+    edges1 = graph.edges()[1]
     print('  n. times = ' + str(len(times)))
     while len(graphs) < random_walks + 1:
         print('  writing graph n. ' + str(len(graphs) + 1))
@@ -74,11 +76,10 @@ def add_fields(graph, pressure, velocity, random_walks, rate_noise):
             if len(graphs) != 0:
                 noiseq = noise_q + np.random.normal(0, rate_noise, (nQ, 1)) * new_q
             new_graph.ndata['flowrate_' + str(t)] = torch.from_numpy(new_q + noise_q)
-
+            new_graph.edata['flowrate_edge_' + str(t)] = torch.from_numpy((new_q[edges0] + new_q[edges1]) / 2)
         graphs.append(new_graph)
 
     return graphs
-
 
 def main(argv):
     model_name = sys.argv[1]
