@@ -9,18 +9,8 @@ sys.path.append("core/")
 
 import dgl
 import torch
+import numpy as np
 from dgl.data.utils import load_graphs
-
-# def min_max_normalization(graph, field):
-#     m = torch.min(field)
-#     M = torch.max(field)
-#
-#     for g in graphs:
-#
-#
-#
-#
-# def normalize_data(graph, normalize_function):
 
 def get_times(graph):
     times = []
@@ -49,26 +39,80 @@ def create_single_timestep_graphs(graphs):
             t = times[tind]
             tp1 = times[tind+1]
             new_graph.ndata['pressure'] = graph.ndata['pressure_' + str(t)]
-            new_graph.ndata['d_pressure'] = graph.ndata['pressure_' + str(tp1)] - \
-                                            graph.ndata['pressure_' + str(t)]
+            new_graph.ndata['dp'] = graph.ndata['pressure_' + str(tp1)] - \
+                                    graph.ndata['pressure_' + str(t)]
             new_graph.ndata['flowrate'] = graph.ndata['flowrate_' + str(t)]
-            new_graph.ndata['d_flowrate'] = graph.ndata['flowrate_' + str(tp1)] - \
-                                            graph.ndata['flowrate_' + str(t)]
+            new_graph.ndata['dq'] = graph.ndata['flowrate_' + str(tp1)] - \
+                                    graph.ndata['flowrate_' + str(t)]
             new_graph.edata['flowrate_edge_'] = graph.edata['flowrate_edge_' + str(t)]
-            new_graph.edata['flowrate_edge_'] = graph.edata['flowrate_edge_' + str(tp1)] - \
-                                                graph.edata['flowrate_edge_' + str(t)]
+            new_graph.edata['dq_edge'] = graph.edata['flowrate_edge_' + str(tp1)] - \
+                                         graph.edata['flowrate_edge_' + str(t)]
         out_graphs.append(new_graph)
+
+    return out_graphs
+
+def min_max_normalization(graph, field):
+    m = []
+    M = []
+    node_features = graph.ndata
+    for feat in node_features:
+        if field in feat:
+            if len(m) == 0:
+                m = np.min(graph.ndata[feat].numpy(), axis=0)
+                M = np.max(graph.ndata[feat].numpy(), axis=0)
+            else:
+                m = np.minimum(np.min(graph.ndata[feat].numpy(), axis=0), m)
+                M = np.maximum(np.max(graph.ndata[feat].numpy(), axis=0), M)
+
+    edge_features = graph.edata
+    for feat in edge_features:
+        if field in feat:
+            if len(m) == 0:
+                m = np.min(graph.edata[feat].numpy(), axis=0)
+                M = np.max(graph.edata[feat].numpy(), axis=0)
+            else:
+                m = np.minimum(np.min(graph.edata[feat].numpy(), axis=0), m)
+                M = np.maximum(np.max(graph.edata[feat].numpy(), axis=0), M)
+
+    for feat in node_features:
+        if field in feat:
+            graph.ndata[feat] = (graph.ndata[feat] - m) / (M - m)
+
+    for feat in edge_features:
+        if field in feat:
+            graph.edata[feat] = (graph.edata[feat] - m) / (M - m)
+
+    if m.size == 1:
+        m = float(m)
+    if M.size == 1:
+        M = float(M)
+
+    return graph, m, M
+
+def normalize(graphs):
+    norm_graphs = []
+    fields = {'pressure', 'flowrate', 'area', 'position', 'dp', 'dq'}
+    coefs_dict = {}
+    for graph in graphs:
+        cgraph = graph
+        for field in fields:
+            out = min_max_normalization(cgraph, field)
+            cgraph = out[0]
+            coefs = out[1:]
+            if field in coefs_dict:
+                coefs_dict[field] = (np.minimum(coefs[0], coefs_dict[field][0]),
+                                     np.maximum(coefs[1], coefs_dict[field][1]))
+            else:
+                coefs_dict[field] = coefs
+        norm_graphs.append(cgraph)
+
+    return norm_graphs, coefs_dict
 
 def main(argv):
     model_name = sys.argv[1]
     graphs = load_graphs('../dataset/data/' + model_name + '.grph')[0]
     graphs = create_single_timestep_graphs(graphs)
-
-    # fields = {'pressure', 'flowrate', 'area', 'position'}
-    #
-    # for graph in graphs:
-    #     for field in fields:
-    #         normalize_data(graph, field, min_max_normalization)
+    graphs, coefs_dict = normalize(graphs)
 
 if __name__ == "__main__":
    main(sys.argv)
