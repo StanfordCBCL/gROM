@@ -11,6 +11,31 @@ import dgl
 import torch
 import numpy as np
 from dgl.data.utils import load_graphs
+from dgl.data import DGLDataset
+
+class DGL_Dataset(DGLDataset):
+    def __init__(self, graphs):
+        self.graphs = graphs
+        super().__init__(name='aorta')
+
+    def process(self):
+        for graph in self.graphs:
+            graph.ndata['n_features'] = torch.cat((graph.ndata['pressure'], \
+                                                   graph.ndata['flowrate'], \
+                                                   graph.ndata['area'], \
+                                                   graph.ndata['node_type']), 1)
+            graph.edata['e_features'] = torch.cat((graph.edata['position'], \
+                                                   graph.edata['flowrate_edge_']), 1)
+            graph.ndata['n_labels'] = torch.cat((graph.ndata['dp'], \
+                                                 graph.ndata['dq']), 1)
+            graph.edata['e_labels'] = graph.edata['dq_edge']
+
+
+    def __getitem__(self, i):
+        return self.graphs[i]
+
+    def __len__(self):
+        return len(self.graphs)
 
 def get_times(graph):
     times = []
@@ -47,7 +72,7 @@ def create_single_timestep_graphs(graphs):
             new_graph.edata['flowrate_edge_'] = graph.edata['flowrate_edge_' + str(t)]
             new_graph.edata['dq_edge'] = graph.edata['flowrate_edge_' + str(tp1)] - \
                                          graph.edata['flowrate_edge_' + str(t)]
-        out_graphs.append(new_graph)
+            out_graphs.append(new_graph)
 
     return out_graphs
 
@@ -108,11 +133,11 @@ def normalize(graphs):
 
     return norm_graphs, coefs_dict
 
-def main(argv):
-    model_name = sys.argv[1]
+def generate_dataset(model_name):
     graphs = load_graphs('../dataset/data/' + model_name + '.grph')[0]
     graphs = create_single_timestep_graphs(graphs)
     graphs, coefs_dict = normalize(graphs)
+    return DGL_Dataset(graphs)
 
 if __name__ == "__main__":
-   main(sys.argv)
+    generate_dataset(sys.argv[1])

@@ -120,4 +120,4 @@ def main(argv):
     dgl.save_graphs('data/' + sys.argv[2], graphs)
 
 if __name__ == "__main__":
-   main(sys.argv)
+    main(sys.argv)
