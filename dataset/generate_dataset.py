@@ -18,6 +18,8 @@ from dgl.data import DGLDataset
 from dgl.dataloading import GraphDataLoader
 from torch.utils.data.sampler import SubsetRandomSampler
 
+DTYPE = np.float32
+
 def create_geometry(model_name, sampling):
     print('Create geometry: ' + model_name)
     soln = io.read_geo('vtps/' + model_name + '.vtp').GetOutput()
@@ -40,8 +42,32 @@ def create_fixed_graph(geometry, area):
         diff = np.hstack((diff, np.linalg.norm(diff)))
         pos_feat.append(diff)
 
-    graph.ndata['area'] = torch.from_numpy(area)
-    graph.edata['position'] = torch.from_numpy(np.array(pos_feat))
+    # find node type
+    nnodes = nodes.shape[0]
+    node_degree = np.zeros((nnodes))
+    for j in range(0, nnodes):
+        node_degree[j] = (np.count_nonzero(edg0 == j) + \
+                          np.count_nonzero(edg1 == j))
+
+    node_degree = np.array(node_degree)
+    degrees = set()
+    for j in range(0, nnodes):
+        degrees.add(node_degree[j])
+
+    # + 1 for boundary conditions (2 degrees nodes must be differentiated)
+    node_type = np.zeros((nnodes,len(degrees) + 1))
+    for j in range(0, nnodes):
+        if node_degree[j] != 2:
+            node_type[j,int(node_degree[j] / 2) - 2] = 1
+            print(node_type[j,:])
+
+    node_type[inlet_node, -2] = 1
+    node_type[outlet_nodes, -1] = 1
+
+    graph.ndata['area'] = torch.from_numpy(area.astype(DTYPE))
+    graph.edata['position'] = torch.from_numpy(np.array(pos_feat).astype(DTYPE))
+    graph.ndata['node_type'] = torch.from_numpy(node_type.astype(DTYPE))
+    print(node_type)
 
     print('Graph generated:')
     print(' n. nodes = ' + str(nodes.shape[0]))
@@ -63,6 +89,7 @@ def add_fields(graph, pressure, velocity, random_walks, rate_noise):
         print('  writing graph n. ' + str(len(graphs) + 1))
         new_graph = dgl.graph((graph.edges()[0], graph.edges()[1]))
         new_graph.ndata['area'] = graph.ndata['area']
+        new_graph.ndata['node_type'] = graph.ndata['node_type']
         new_graph.edata['position'] = graph.edata['position']
         noise_p = np.zeros((nP, 1))
         noise_q = np.zeros((nQ, 1))
@@ -70,13 +97,13 @@ def add_fields(graph, pressure, velocity, random_walks, rate_noise):
             new_p = pressure[t]
             if len(graphs) != 0:
                 noisep = noise_p + np.random.normal(0, rate_noise, (nP, 1)) * new_p
-            new_graph.ndata['pressure_' + str(t)] = torch.from_numpy(new_p + noise_p)
+            new_graph.ndata['pressure_' + str(t)] = torch.from_numpy((new_p + noise_p).astype(DTYPE))
 
             new_q = velocity[t]
             if len(graphs) != 0:
                 noiseq = noise_q + np.random.normal(0, rate_noise, (nQ, 1)) * new_q
-            new_graph.ndata['flowrate_' + str(t)] = torch.from_numpy(new_q + noise_q)
-            new_graph.edata['flowrate_edge_' + str(t)] = torch.from_numpy((new_q[edges0] + new_q[edges1]) / 2)
+            new_graph.ndata['flowrate_' + str(t)] = torch.from_numpy((new_q + noise_q).astype(DTYPE))
+            new_graph.edata['flowrate_edge_' + str(t)] = torch.from_numpy((new_q[edges0] + new_q[edges1]).astype(DTYPE) / 2)
         graphs.append(new_graph)
 
     return graphs
