@@ -65,7 +65,15 @@ def create_fixed_graph(geometry, area):
 
     graph.ndata['area'] = torch.from_numpy(area.astype(DTYPE))
     graph.edata['position'] = torch.from_numpy(np.array(pos_feat).astype(DTYPE))
-    graph.ndata['node_type'] = torch.from_numpy(node_type.astype(DTYPE))
+    graph.ndata['node_type'] = torch.from_numpy(node_type.astype(np.int))
+
+    inlet_mask = np.zeros(nnodes)
+    inlet_mask[inlet_node] = 1
+    graph.ndata['inlet_mask'] = torch.from_numpy(inlet_mask.astype(np.int))
+
+    outlet_mask = np.zeros(nnodes)
+    outlet_mask[outlet_nodes] = 1
+    graph.ndata['outlet_mask'] = torch.from_numpy(outlet_mask.astype(np.int))
 
     print('Graph generated:')
     print(' n. nodes = ' + str(nodes.shape[0]))
@@ -89,6 +97,8 @@ def add_fields(graph, pressure, velocity, random_walks, rate_noise):
         new_graph.ndata['area'] = graph.ndata['area']
         new_graph.ndata['node_type'] = graph.ndata['node_type']
         new_graph.edata['position'] = graph.edata['position']
+        new_graph.ndata['inlet_mask'] = graph.ndata['inlet_mask']
+        new_graph.ndata['outlet_mask'] = graph.ndata['outlet_mask']
         noise_p = np.zeros((nP, 1))
         noise_q = np.zeros((nQ, 1))
         for t in times:

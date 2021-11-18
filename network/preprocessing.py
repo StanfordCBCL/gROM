@@ -58,6 +58,11 @@ def create_single_timestep_graphs(graphs):
         new_graph.ndata['area'] = graph.ndata['area']
         new_graph.ndata['node_type'] = graph.ndata['node_type']
         new_graph.edata['position'] = graph.edata['position']
+        new_graph.ndata['inlet_mask'] = graph.ndata['inlet_mask']
+        new_graph.ndata['outlet_mask'] = graph.ndata['outlet_mask']
+
+        inlet_mask = new_graph.ndata['inlet_mask']
+        outlet_mask = new_graph.ndata['outlet_mask']
 
         ntimes = len(times)
         for tind in range(0, ntimes-1):
@@ -72,6 +77,12 @@ def create_single_timestep_graphs(graphs):
             new_graph.edata['flowrate_edge_'] = graph.edata['flowrate_edge_' + str(t)]
             new_graph.edata['dq_edge'] = graph.edata['flowrate_edge_' + str(tp1)] - \
                                          graph.edata['flowrate_edge_' + str(t)]
+
+
+            # overwrite boundary conditions
+            new_graph.ndata['pressure'][outlet_mask] = graph.ndata['pressure_' + str(tp1)]
+            new_graph.ndata['flowrate'][inlet_mask] = graph.ndata['flowrate_' + str(tp1)]
+
             out_graphs.append(new_graph)
 
     return out_graphs

@@ -43,11 +43,9 @@ def main(model):
         for batched_graph in train_dataloader:
             pred = model(batched_graph, batched_graph.ndata['n_features'].float()).squeeze()
             weight = torch.ones(pred.shape)
-            # weight[inlet_node,0] = 10
-            # weight[outlet_nodes,1] = 10
-            # weight[inlet_node,1] = 0
-            # weight[outlet_nodes,0] = 0
-            # weight[:,1] = 0
+            # mask out values corresponding to boundary conditions
+            weight[batched_graph.ndata['inlet_mask'],1] = 0
+            weight[batched_graph.ndata['outlet_mask'],0] = 0
             loss = weighted_mse_loss(pred, torch.reshape(batched_graph.ndata['n_labels'].float(),
                                      pred.shape), weight)
             global_loss = global_loss + loss.detach().numpy()
