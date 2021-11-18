@@ -59,7 +59,6 @@ def create_fixed_graph(geometry, area):
     for j in range(0, nnodes):
         if node_degree[j] != 2:
             node_type[j,int(node_degree[j] / 2) - 2] = 1
-            print(node_type[j,:])
 
     node_type[inlet_node, -2] = 1
     node_type[outlet_nodes, -1] = 1
@@ -67,7 +66,6 @@ def create_fixed_graph(geometry, area):
     graph.ndata['area'] = torch.from_numpy(area.astype(DTYPE))
     graph.edata['position'] = torch.from_numpy(np.array(pos_feat).astype(DTYPE))
     graph.ndata['node_type'] = torch.from_numpy(node_type.astype(DTYPE))
-    print(node_type)
 
     print('Graph generated:')
     print(' n. nodes = ' + str(nodes.shape[0]))
