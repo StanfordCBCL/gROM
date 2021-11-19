@@ -94,22 +94,22 @@ def add_fields(graph, pressure, velocity, random_walks, rate_noise):
     while len(graphs) < random_walks + 1:
         print('  writing graph n. ' + str(len(graphs) + 1))
         new_graph = dgl.graph((graph.edges()[0], graph.edges()[1]))
-        new_graph.ndata['area'] = graph.ndata['area']
-        new_graph.ndata['node_type'] = graph.ndata['node_type']
-        new_graph.edata['position'] = graph.edata['position']
-        new_graph.ndata['inlet_mask'] = graph.ndata['inlet_mask']
-        new_graph.ndata['outlet_mask'] = graph.ndata['outlet_mask']
+        new_graph.ndata['area'] = torch.clone(graph.ndata['area'])
+        new_graph.ndata['node_type'] = torch.clone(graph.ndata['node_type'])
+        new_graph.edata['position'] = torch.clone(graph.edata['position'])
+        new_graph.ndata['inlet_mask'] = torch.clone(graph.ndata['inlet_mask'])
+        new_graph.ndata['outlet_mask'] = torch.clone(graph.ndata['outlet_mask'])
         noise_p = np.zeros((nP, 1))
         noise_q = np.zeros((nQ, 1))
         for t in times:
             new_p = pressure[t]
             if len(graphs) != 0:
-                noisep = noise_p + np.random.normal(0, rate_noise, (nP, 1)) * new_p
+                noise_p = noise_p + np.random.normal(0, rate_noise, (nP, 1)) * new_p
             new_graph.ndata['pressure_' + str(t)] = torch.from_numpy((new_p + noise_p).astype(DTYPE))
 
             new_q = velocity[t]
             if len(graphs) != 0:
-                noiseq = noise_q + np.random.normal(0, rate_noise, (nQ, 1)) * new_q
+                noise_q = noise_q + np.random.normal(0, rate_noise, (nQ, 1)) * new_q
             new_graph.ndata['flowrate_' + str(t)] = torch.from_numpy((new_q + noise_q).astype(DTYPE))
             new_graph.edata['flowrate_edge_' + str(t)] = torch.from_numpy((new_q[edges0] + new_q[edges1]).astype(DTYPE) / 2)
         graphs.append(new_graph)

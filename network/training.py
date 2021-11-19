@@ -7,19 +7,21 @@ os.environ['KMP_DUPLICATE_LIB_OK']='True'
 # add path to core
 sys.path.append("core/")
 
+import dgl
 import torch
 import preprocessing as pp
 from graphnet import GraphNet
 from dgl.dataloading import GraphDataLoader
 from torch.utils.data.sampler import SubsetRandomSampler
+from dgl.data.utils import load_graphs
+import matplotlib.pyplot as plt
 
 def weighted_mse_loss(input, target, weight):
     return (weight * (input - target) ** 2).mean()
 
-def main(model):
-    dataset = pp.generate_dataset(model)
+def main(model_name):
+    dataset, coefs_dict = pp.generate_dataset(model_name)
     num_examples = len(dataset)
-    print(num_examples)
     num_train = int(num_examples)
     train_sampler = SubsetRandomSampler(torch.arange(num_train))
     train_dataloader = GraphDataLoader(
@@ -35,7 +37,7 @@ def main(model):
                      out_size, process_loop, hl_mlp)
 
     optimizer = torch.optim.Adam(model.parameters(), lr = 0.001) # lr=0.01, weight_decay=0.0001)
-    nepochs = 5000
+    nepochs = 30
     for epoch in range(nepochs):
         print('ep = ' + str(epoch))
         global_loss = 0
@@ -58,12 +60,54 @@ def main(model):
 
     it = iter(train_dataloader)
     batch = next(it)
-    batched_graph, labels = batch
+    batched_graph = batch
     graph = dgl.unbatch(batched_graph)[0]
-    timeg = float(graph.ndata['time'][0])
-    nodes_degree = np.expand_dims(graph.ndata['features'][:,-1],1)
 
+    true_graph = load_graphs('../dataset/data/' + model_name + '.grph')[0][0]
+    times = pp.get_times(true_graph)
+    times = times[50:]
+    initial_pressure = pp.min_max(true_graph.ndata['pressure_' + str(times[0])], coefs_dict['pressure'])
+    initial_flowrate = pp.min_max(true_graph.ndata['flowrate_' + str(times[0])], coefs_dict['flowrate'])
+    graph = pp.set_state(graph, initial_pressure, initial_flowrate)
 
+    for tind in range(len(times)-1):
+        t = times[tind]
+        tp1 = times[tind+1]
+
+        next_pressure = true_graph.ndata['pressure_' + str(tp1)]
+        next_flowrate = true_graph.ndata['flowrate_' + str(tp1)]
+        np_normalized = pp.min_max(next_pressure, coefs_dict['pressure'])
+        nf_normalized = pp.min_max(next_flowrate, coefs_dict['flowrate'])
+        graph = pp.set_bcs(graph, np_normalized, nf_normalized)
+        pred = model(graph, graph.ndata['n_features'].float()).squeeze()
+
+        dp = pp.invert_min_max(pred[:,0].detach().numpy(), coefs_dict['dp'])
+        prev_p = pp.invert_min_max(graph.ndata['pressure'].detach().numpy().squeeze(), coefs_dict['pressure'])
+        
+        p = prev_p + dp
+
+        fig1 = plt.figure()
+        ax1 = plt.axes()
+        ax1.plot(p,'r')
+        ax1.plot(next_pressure,'--b')
+        
+        dq = pp.invert_min_max(pred[:,1].detach().numpy(), coefs_dict['dq'])
+        prev_q = pp.invert_min_max(graph.ndata['flowrate'].detach().numpy().squeeze(), coefs_dict['flowrate'])
+        
+        q = prev_q + dq
+        
+        fig2 = plt.figure()
+        ax2 = plt.axes()
+        ax2.plot(q,'r')
+        ax2.plot(next_flowrate,'--b')
+        
+        new_pressure = pp.min_max(p, coefs_dict['pressure'])
+        new_flowrate = pp.min_max(q, coefs_dict['flowrate'])
+        graph = pp.set_state(graph, torch.unsqueeze(torch.from_numpy(new_pressure),1), 
+                                    torch.unsqueeze(torch.from_numpy(new_flowrate),1))
+        # graph = pp.set_state(graph, np_normalized, nf_normalized)
+        
+        plt.show()
 
 if __name__ == "__main__":
     main(sys.argv[1])
