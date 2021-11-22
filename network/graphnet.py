@@ -1,28 +1,24 @@
 import torch
 from torch.nn.modules.module import Module
-from dgl.nn import ChebConv
-from dgl.nn import GraphConv
-from dgl.nn import GATConv
-from dgl.nn import RelGraphConv
 from torch.nn import LayerNorm
 from torch.nn import Linear
 import torch.nn.functional as F
 import dgl.function as fn
 
 class MLP(Module):
-    def __init__(self, in_feats, latent, n_h_layers, normalize = True):
+    def __init__(self, in_feats, out_feats, n_h_layers, normalize = True):
         super().__init__()
-        self.encoder_in = Linear(in_feats, latent).float()
-        self.encoder_out = Linear(latent, latent).float()
+        self.encoder_in = Linear(in_feats, out_feats).float()
+        self.encoder_out = Linear(out_feats, out_feats).float()
 
         self.n_h_layers = n_h_layers
         self.hidden_layers = []
         for i in range(n_h_layers):
-            self.hidden_layers.append(Linear(latent, latent).float())
+            self.hidden_layers.append(Linear(out_feats, out_feats).float())
 
         self.normalize = normalize
         if self.normalize:
-            self.norm = LayerNorm(latent).float()
+            self.norm = LayerNorm(out_feats).float()
 
     def forward(self, inp):
         enc_features = self.encoder_in(inp)
@@ -40,23 +36,37 @@ class MLP(Module):
         return enc_features
 
 class GraphNet(Module):
-    def __init__(self, in_feats_nodes, in_feats_edges, latent, h_feats, L, hidden_layers):
+    def __init__(self, params):
         super(GraphNet, self).__init__()
 
         normalize_inner = True
 
-        self.encoder_nodes = MLP(in_feats_nodes, latent, hidden_layers, normalize_inner)
-        self.encoder_edges = MLP(in_feats_edges, latent, hidden_layers, normalize_inner)
+        self.encoder_nodes = MLP(params['infeat_nodes'],
+                                 params['latent_size'],
+                                 params['hl_mlp'],
+                                 params['normalize'])
+        self.encoder_edges = MLP(params['infeat_edges'],
+                                 params['latent_size'],
+                                 params['hl_mlp'],
+                                 params['normalize'])
 
         self.processor_edges = []
         self.processor_nodes = []
-        for i in range(L):
-            self.processor_edges.append(MLP(latent * 3, latent, hidden_layers, normalize_inner))
-            self.processor_nodes.append(MLP(latent * 2, latent, hidden_layers, normalize_inner))
+        self.process_iters = params['process_iterations']
+        for i in range(self.process_iters):
+            self.processor_edges.append(MLP(params['latent_size'] * 3,
+                                        params['latent_size'],
+                                        params['hl_mlp'],
+                                        params['normalize']))
+            self.processor_nodes.append(MLP(params['latent_size'] * 2,
+                                        params['latent_size'],
+                                        params['hl_mlp'],
+                                        params['normalize']))
 
-        self.L = L
-
-        self.output = MLP(latent, h_feats, hidden_layers, False)
+        self.output = MLP(params['latent_size'],
+                          params['out_size'],
+                          params['hl_mlp'],
+                          False)
 
     def encode_nodes(self, nodes):
         f = nodes.data['features_c']
@@ -94,7 +104,7 @@ class GraphNet(Module):
         g.ndata['features_c'] = in_feat
         g.apply_nodes(self.encode_nodes)
         g.apply_edges(self.encode_edges)
-        for i in range(self.L):
+        for i in range(self.process_iters):
             def pe(edges):
                 return self.process_edges(edges, i)
             def pn(nodes):
