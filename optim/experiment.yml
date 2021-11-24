@@ -1,0 +1,42 @@
+name: MeshGraphNet Optimization
+metrics:
+- name: accuracy
+  strategy: optimize
+  objective: maximize
+parameters:
+- name: latent_size
+  bounds:
+    min: 2
+    max: 64
+  type: int
+- name: learning_rate
+  bounds:
+    min: 0.0001
+    max: 0.1
+  type: double
+- name: weight_decay
+  bounds:
+    min: 0.000001
+    max: 0.001
+  type: double
+- name: process_iterations
+  bounds:
+    min: 1
+    max: 10
+  type: int
+- name: hl_mlp
+  bounds:
+    min: 0
+    max: 2
+  type: int
+- name: normalize
+  bounds:
+    min: 0
+    max: 1
+  type: int
+- name: nepochs
+  bounds:
+    min: 10
+    max: 200
+  type: int
+budget: 50

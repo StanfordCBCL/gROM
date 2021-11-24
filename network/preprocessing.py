@@ -4,9 +4,6 @@ import os
 # this fixes a problem with openmp https://github.com/dmlc/xgboost/issues/1715
 os.environ['KMP_DUPLICATE_LIB_OK']='True'
 
-# add path to core
-sys.path.append("core/")
-
 import dgl
 import torch
 import numpy as np
