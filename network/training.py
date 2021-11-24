@@ -15,6 +15,8 @@ from dgl.dataloading import GraphDataLoader
 from torch.utils.data.sampler import SubsetRandomSampler
 from dgl.data.utils import load_graphs
 import matplotlib.pyplot as plt
+from datetime import datetime
+import json
 
 def weighted_mse_loss(input, target, weight):
     return (weight * (input - target) ** 2).mean()
@@ -36,6 +38,7 @@ def train_gnn_model(gnn_model, model_name, train_params):
     nepochs = train_params['nepochs']
     for epoch in range(nepochs):
         print('ep = ' + str(epoch))
+        print('nepochs ' + str(nepochs))
         global_loss = 0
         count = 0
         for batched_graph in train_dataloader:
@@ -55,9 +58,9 @@ def train_gnn_model(gnn_model, model_name, train_params):
             count = count + 1
         print('\tloss = ' + str(global_loss / count))
 
-    return model, train_dataloader
+    return gnn_model, train_dataloader, global_loss / count
 
-def plot_prediction(model, model_name, train_dataoader):
+def plot_prediction(model, model_name, train_dataloader):
     it = iter(train_dataloader)
     batch = next(it)
     batched_graph = batch
@@ -112,7 +115,36 @@ def plot_prediction(model, model_name, train_dataoader):
 
         plt.show()
 
-def main(model_name):
+def create_directory(path):
+    try:
+        os.mkdir(path)
+    except OSError as exc:
+        pass
+
+def launch_training(model_name, params_dict,
+                    train_params, plot_validation = True):
+    create_directory('models')
+    gnn_model = generate_gnn_model(params_dict)
+    gnn_model, train_loader, loss = train_gnn_model(gnn_model,
+                                                    model_name,
+                                                    train_params)
+    if (plot_validation):
+        plot_prediction(gnn_model, model_name, train_loader)
+
+    now = datetime.now()
+    dt_string = now.strftime("%d.%m.%Y_%H.%M.%S")
+    folder = 'models/' + dt_string
+    create_directory(folder)
+    torch.save(gnn_model.state_dict(), folder + '/gnn.pms')
+    json_params = json.dumps(params_dict, indent = 4)
+    json_train = json.dumps(train_params, indent = 4)
+    with open(folder + '/hparams.json', 'w') as outfile:
+        json.dump(json_params, outfile)
+    with open(folder + '/train.json', 'w') as outfile:
+        json.dump(json_train, outfile)
+    return gnn_model, loss
+
+if __name__ == "__main__":
     params_dict = {'infeat_nodes': 8,
                    'infeat_edges': 5,
                    'latent_size': 16,
@@ -120,15 +152,7 @@ def main(model_name):
                    'process_iterations': 1,
                    'hl_mlp': 2,
                    'normalize': True}
-    gnn_model = generate_gnn_model(params_dict)
-
     train_params = {'learning_rate': 0.001,
                     'weight_decay': 0.0,
                     'nepochs': 30}
-    gnn_model, train_loader = train_gnn_model(gnn_model,
-                                              model_name,
-                                              train_params)
-    plot_prediction(gnn_model, model_name, train_dataoader)
-
-if __name__ == "__main__":
-    main(sys.argv[1])
+    main(sys.argv[1], params_dict, train_params)
