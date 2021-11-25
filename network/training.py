@@ -21,21 +21,30 @@ def weighted_mse_loss(input, target, weight):
 def generate_gnn_model(params_dict):
     return GraphNet(params_dict)
 
-def train_gnn_model(gnn_model, model_name, train_params):
+def train_gnn_model(gnn_model, model_name, optimizer_name, train_params):
     dataset, coefs_dict = pp.generate_dataset(model_name)
     num_examples = len(dataset)
     num_train = int(num_examples)
     train_sampler = SubsetRandomSampler(torch.arange(num_train))
-    train_dataloader = GraphDataLoader(
-    dataset, sampler=train_sampler, batch_size=10, drop_last=False)
+    train_dataloader = GraphDataLoader(dataset, sampler=train_sampler,
+                                       batch_size=train_params['batch_size'],
+                                       drop_last=False)
 
-    optimizer = torch.optim.Adam(gnn_model.parameters(),
-                                 train_params['learning_rate'],
-                                 weight_decay=train_params['weight_decay'])
+    if optimizer_name == 'adam':
+        optimizer = torch.optim.Adam(gnn_model.parameters(),
+                                     train_params['learning_rate'])
+    elif optimizer_name == 'sgd':
+        optimizer = torch.optim.SGD(gnn_model.parameters(),
+                                    train_params['learning_rate'],
+                                    momentum=train_params['momentum'])
+    else:
+        raise ValueError('Optimizer ' + optimizerizer_name + ' not implemented')
+
+    scheduler = torch.optim.lr_scheduler.ExponentialLR(optimizer,
+                                                       gamma=train_params['weight_decay'])
     nepochs = train_params['nepochs']
     for epoch in range(nepochs):
         print('ep = ' + str(epoch))
-        print('nepochs ' + str(nepochs))
         global_loss = 0
         count = 0
         for batched_graph in train_dataloader:
@@ -53,6 +62,7 @@ def train_gnn_model(gnn_model, model_name, train_params):
             loss.backward()
             optimizer.step()
             count = count + 1
+        scheduler.step()
         print('\tloss = ' + str(global_loss / count))
 
     return gnn_model, train_dataloader, global_loss / count
@@ -118,12 +128,13 @@ def create_directory(path):
     except OSError as exc:
         pass
 
-def launch_training(model_name, params_dict,
+def launch_training(model_name, optimizer_name, params_dict,
                     train_params, plot_validation = True):
     create_directory('models')
     gnn_model = generate_gnn_model(params_dict)
     gnn_model, train_loader, loss = train_gnn_model(gnn_model,
                                                     model_name,
+                                                    optimizer_name,
                                                     train_params)
     if (plot_validation):
         plot_prediction(gnn_model, model_name, train_loader)
@@ -151,5 +162,7 @@ if __name__ == "__main__":
                    'normalize': True}
     train_params = {'learning_rate': 0.001,
                     'weight_decay': 0.0,
+                    'momentum': 0.0,
+                    'batch_size': 100,
                     'nepochs': 30}
-    main(sys.argv[1], params_dict, train_params)
+    launch_training(sys.argv[1], 'adam', params_dict, train_params)
