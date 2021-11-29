@@ -12,6 +12,8 @@ from dgl.dataloading import GraphDataLoader
 from torch.utils.data.sampler import SubsetRandomSampler
 from dgl.data.utils import load_graphs
 import matplotlib.pyplot as plt
+from matplotlib import animation
+import numpy as np
 from datetime import datetime
 import json
 
@@ -65,9 +67,9 @@ def train_gnn_model(gnn_model, model_name, optimizer_name, train_params):
         scheduler.step()
         print('\tloss = ' + str(global_loss / count))
 
-    return gnn_model, train_dataloader, global_loss / count
+    return gnn_model, train_dataloader, global_loss / count, coefs_dict
 
-def plot_prediction(model, model_name, train_dataloader):
+def evaluate_error(model, model_name, train_dataloader, coefs_dict, do_plot):
     it = iter(train_dataloader)
     batch = next(it)
     batched_graph = batch
@@ -82,6 +84,14 @@ def plot_prediction(model, model_name, train_dataloader):
                                   coefs_dict['flowrate'])
     graph = pp.set_state(graph, initial_pressure, initial_flowrate)
 
+    err_p = 0
+    err_q = 0
+    norm_p = 0
+    norm_q = 0
+    pressures_pred = []
+    pressures_real = []
+    flowrates_pred = []
+    flowrates_real = []
     for tind in range(len(times)-1):
         t = times[tind]
         tp1 = times[tind+1]
@@ -97,11 +107,9 @@ def plot_prediction(model, model_name, train_dataloader):
         prev_p = pp.invert_min_max(graph.ndata['pressure'].detach().numpy().squeeze(), coefs_dict['pressure'])
 
         p = prev_p + dp
-
-        fig1 = plt.figure()
-        ax1 = plt.axes()
-        ax1.plot(p,'r')
-        ax1.plot(next_pressure,'--b')
+        # print(np.linalg.norm(p))
+        pressures_pred.append(p)
+        pressures_real.append(next_pressure.detach().numpy())
 
         dq = pp.invert_min_max(pred[:,1].detach().numpy(), coefs_dict['dq'])
         prev_q = pp.invert_min_max(graph.ndata['flowrate'].detach().numpy().squeeze(),
@@ -109,10 +117,13 @@ def plot_prediction(model, model_name, train_dataloader):
 
         q = prev_q + dq
 
-        fig2 = plt.figure()
-        ax2 = plt.axes()
-        ax2.plot(q,'r')
-        ax2.plot(next_flowrate,'--b')
+        flowrates_pred.append(q)
+        flowrates_real.append(next_flowrate.detach().numpy())
+
+        err_p = err_p + np.linalg.norm(p - next_pressure.detach().numpy())**2
+        norm_p = norm_p + np.linalg.norm(next_pressure.detach().numpy())**2
+        err_q = err_q + np.linalg.norm(q - next_flowrate.detach().numpy())**2
+        norm_q = norm_q + np.linalg.norm(next_flowrate.detach().numpy())**2
 
         new_pressure = pp.min_max(p, coefs_dict['pressure'])
         new_flowrate = pp.min_max(q, coefs_dict['flowrate'])
@@ -120,7 +131,28 @@ def plot_prediction(model, model_name, train_dataloader):
                                     torch.unsqueeze(torch.from_numpy(new_flowrate),1))
         # graph = pp.set_state(graph, np_normalized, nf_normalized)
 
+    err_p = np.sqrt(err_p / norm_p)
+    err_q = np.sqrt(err_q / norm_q)
+
+    if do_plot:
+        fig, ax = plt.subplots()
+        line_pred, = ax.plot([],[],'r')
+        line_real, = ax.plot([],[],'--b')
+
+        def animation_frame(i):
+            line_pred.set_xdata(range(0,len(pressures_pred[i])))
+            line_pred.set_ydata(pressures_pred[i])
+            line_real.set_xdata(range(0,len(pressures_pred[i])))
+            line_real.set_ydata(pressures_real[i])
+            ax.set_xlim(0,len(pressures_pred[i]))
+            ax.set_ylim(np.min(pressures_real[i]),np.max(pressures_real[i]))
+            return line_pred, line_real,
+
+        anim = animation.FuncAnimation(fig, animation_frame,
+                                       frames=len(pressures_pred),
+                                       interval=20)
         plt.show()
+    return np.sqrt(err_p), np.sqrt(err_q), np.sqrt(err_p + err_q)
 
 def create_directory(path):
     try:
@@ -132,12 +164,10 @@ def launch_training(model_name, optimizer_name, params_dict,
                     train_params, plot_validation = True):
     create_directory('models')
     gnn_model = generate_gnn_model(params_dict)
-    gnn_model, train_loader, loss = train_gnn_model(gnn_model,
-                                                    model_name,
-                                                    optimizer_name,
-                                                    train_params)
-    if (plot_validation):
-        plot_prediction(gnn_model, model_name, train_loader)
+    gnn_model, train_loader, loss, coefs_dict = train_gnn_model(gnn_model,
+                                                                model_name,
+                                                                optimizer_name,
+                                                                train_params)
 
     now = datetime.now()
     dt_string = now.strftime("%d.%m.%Y_%H.%M.%S")
@@ -150,7 +180,7 @@ def launch_training(model_name, optimizer_name, params_dict,
         json.dump(json_params, outfile)
     with open(folder + '/train.json', 'w') as outfile:
         json.dump(json_train, outfile)
-    return gnn_model, loss
+    return gnn_model, loss, train_loader, coefs_dict
 
 if __name__ == "__main__":
     params_dict = {'infeat_nodes': 8,
@@ -163,6 +193,17 @@ if __name__ == "__main__":
     train_params = {'learning_rate': 0.001,
                     'weight_decay': 0.0,
                     'momentum': 0.0,
-                    'batch_size': 100,
-                    'nepochs': 30}
-    launch_training(sys.argv[1], 'adam', params_dict, train_params)
+                    'batch_size': 10,
+                    'nepochs': 1}
+    gnn_model, _, train_dataloader, coefs_dict = launch_training(sys.argv[1],
+                                                                 'adam',
+                                                                 params_dict,
+                                                                 train_params)
+    err_p, err_q, global_err = evaluate_error(gnn_model, sys.argv[1],
+                                              train_dataloader,
+                                              coefs_dict,
+                                              do_plot = True)
+
+    print('Error pressure ' + str(err_p))
+    print('Error flowrate ' + str(err_q))
+    print('Globaly error ' + str(global_err))

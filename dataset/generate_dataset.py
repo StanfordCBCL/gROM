@@ -20,11 +20,11 @@ from torch.utils.data.sampler import SubsetRandomSampler
 
 DTYPE = np.float32
 
-def create_geometry(model_name, sampling):
+def create_geometry(model_name, sampling, remove_caps):
     print('Create geometry: ' + model_name)
     soln = io.read_geo('vtps/' + model_name + '.vtp').GetOutput()
     fields, _, p_array = io.get_all_arrays(soln)
-    return ResampledGeometry(Geometry(p_array), sampling), fields
+    return ResampledGeometry(Geometry(p_array), sampling, remove_caps), fields
 
 def create_fixed_graph(geometry, area):
     nodes, edges, lengths, inlet_node, outlet_nodes = geometry.generate_nodes()
@@ -118,11 +118,12 @@ def add_fields(graph, pressure, velocity, random_walks, rate_noise):
 
 def main(argv):
     model_name = sys.argv[1]
-    geo, fields = create_geometry(model_name, 10)
+    geo, fields = create_geometry(model_name, 40, remove_caps = False)
     pressure, velocity = io.gather_pressures_velocities(fields)
     pressure, velocity, area = geo.generate_fields(pressure,
                                                    velocity,
                                                    fields['area'])
+
     fixed_graph = create_fixed_graph(geo, area)
     graphs = add_fields(fixed_graph, pressure, velocity,
                         random_walks=9,

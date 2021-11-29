@@ -4,9 +4,11 @@ from scipy import interpolate
 import matplotlib.pyplot as plt
 
 class ResampledGeometry:
-    def __init__(self, geometry, coeff):
+    def __init__(self, geometry, coeff, remove_caps = True):
         self.geometry = geometry
         self.resample(coeff)
+        if remove_caps:
+            self.remove_caps()
         self.construct_interpolation_matrices()
 
     def assign_area(self, area):
@@ -200,7 +202,6 @@ class ResampledGeometry:
         nodes = np.zeros((0,3))
         edges = np.zeros((0,2))
 
-
         inlets = []
         outlets = []
         # we look for inlets and outlets
@@ -294,3 +295,19 @@ class ResampledGeometry:
             g_velocities[t] = compute_g_field(velocities[t])
 
         return g_pressures, g_velocities, compute_g_field(areas)
+
+    def remove_caps(self):
+        connectivity = self.geometry.connectivity
+
+        outlets = []
+        for jpor in range(connectivity.shape[0]):
+            if np.sum(connectivity[:,jpor]) == -1:
+                inlet = jpor
+            if np.sum(connectivity[:,jpor]) == 1:
+                outlets.append(jpor)
+
+        for ipor in range(len(self.p_portions)):
+            if ipor == inlet:
+                self.p_portions[ipor] = self.p_portions[ipor][1:,:]
+            if jpor in outlets:
+                self.p_portions[ipor] = self.p_portions[ipor][:-1,:]

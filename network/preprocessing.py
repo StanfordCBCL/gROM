@@ -38,7 +38,7 @@ def set_bcs(graph, next_pressure, next_flowrate):
 class DGL_Dataset(DGLDataset):
     def __init__(self, graphs):
         self.graphs = graphs
-        super().__init__(name='aorta')
+        super().__init__(name='dgl_dataset')
 
     def process(self):
         for graph in self.graphs:
@@ -92,7 +92,6 @@ def create_single_timestep_graphs(graphs):
             new_graph.edata['flowrate_edge_'] = graph.edata['flowrate_edge_' + str(t)]
             new_graph.edata['dq_edge'] = graph.edata['flowrate_edge_' + str(tp1)] - \
                                          graph.edata['flowrate_edge_' + str(t)]
-
 
             # overwrite boundary conditions
             new_graph.ndata['pressure'][outlet_mask] = graph.ndata['pressure_' + str(tp1)]
