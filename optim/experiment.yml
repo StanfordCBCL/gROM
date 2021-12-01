@@ -46,12 +46,13 @@ parameters:
   type: int
 - name: nepochs
   bounds:
-    min: 1
-    max: 2
+    min: 30
+    max: 2000
   type: int
 - name: batch_size
   bounds:
     min: 10
     max: 500
   type: int
-budget: 50
+budget: 200
+parallel_bandwidth: 10
