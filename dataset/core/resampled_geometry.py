@@ -268,6 +268,8 @@ class ResampledGeometry:
             if isinlet:
                 inlet_node = self.offsets[i]
 
+        edges = edges.astype(np.int)
+
         return nodes.astype(np.float64), edges, lengths, inlet_node, outlet_nodes
 
     def generate_fields(self, pressures, velocities, areas):
