@@ -12,3 +12,6 @@ pip install vtk
 pip install scipy
 pip install dgl
 pip install torch
+pip install sigopt
+
+sigopt config
