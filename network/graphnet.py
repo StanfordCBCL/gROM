@@ -4,17 +4,23 @@ from torch.nn import LayerNorm
 from torch.nn import Linear
 import torch.nn.functional as F
 import dgl.function as fn
+from torch.nn import Dropout
+import numpy as np
 
 class MLP(Module):
-    def __init__(self, in_feats, out_feats, n_h_layers, normalize = True):
+    def __init__(self, in_feats, latent_space, out_feats, n_h_layers, normalize = True):
+        bound_init = 1
         super().__init__()
-        self.encoder_in = Linear(in_feats, out_feats).float()
-        self.encoder_out = Linear(out_feats, out_feats).float()
+        self.encoder_in = Linear(in_feats, latent_space, bias = True).float()
+        # torch.nn.init.uniform_(self.encoder_in.weight, -bound_init, bound_init)
+        self.encoder_out = Linear(latent_space, out_feats, bias = True).float()
+        # torch.nn.init.uniform_(self.encoder_out.weight, -bound_init, bound_init)
 
         self.n_h_layers = n_h_layers
         self.hidden_layers = []
         for i in range(n_h_layers):
-            self.hidden_layers.append(Linear(out_feats, out_feats).float())
+            self.hidden_layers.append(Linear(latent_space, latent_space, bias = True).float())
+            # torch.nn.init.uniform_(self.hidden_layers[i].weight, -bound_init, bound_init)
 
         self.normalize = normalize
         if self.normalize:
@@ -39,14 +45,14 @@ class GraphNet(Module):
     def __init__(self, params):
         super(GraphNet, self).__init__()
 
-        normalize_inner = True
-
         self.encoder_nodes = MLP(params['infeat_nodes'],
-                                 params['latent_size'],
+                                 params['latent_size_mlp'],
+                                 params['latent_size_gnn'],
                                  params['hl_mlp'],
                                  params['normalize'])
         self.encoder_edges = MLP(params['infeat_edges'],
-                                 params['latent_size'],
+                                 params['latent_size_mlp'],
+                                 params['latent_size_gnn'],
                                  params['hl_mlp'],
                                  params['normalize'])
 
@@ -54,19 +60,24 @@ class GraphNet(Module):
         self.processor_nodes = []
         self.process_iters = params['process_iterations']
         for i in range(self.process_iters):
-            self.processor_edges.append(MLP(params['latent_size'] * 3,
-                                        params['latent_size'],
+            self.processor_edges.append(MLP(params['latent_size_gnn'] * 3,
+                                        params['latent_size_mlp'],
+                                        params['latent_size_gnn'],
                                         params['hl_mlp'],
                                         params['normalize']))
-            self.processor_nodes.append(MLP(params['latent_size'] * 2,
-                                        params['latent_size'],
+            self.processor_nodes.append(MLP(params['latent_size_gnn'] * 2,
+                                        params['latent_size_mlp'],
+                                        params['latent_size_gnn'],
                                         params['hl_mlp'],
                                         params['normalize']))
 
-        self.output = MLP(params['latent_size'],
+        self.output = MLP(params['latent_size_gnn'],
+                          params['latent_size_mlp'],
                           params['out_size'],
                           params['hl_mlp'],
                           False)
+
+        # self.dropout = Dropout(0.5)
 
     def encode_nodes(self, nodes):
         f = nodes.data['features_c']
@@ -97,6 +108,7 @@ class GraphNet(Module):
 
     def decode(self, nodes):
         f = nodes.data['proc_node']
+        # f = self.dropout(f)
         h = self.output(f)
         return {'h' : h}
 

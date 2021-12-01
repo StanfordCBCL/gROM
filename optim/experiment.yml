@@ -4,10 +4,15 @@ metrics:
   strategy: optimize
   objective: minimize
 parameters:
-- name: latent_size
+- name: latent_size_gnn
   bounds:
     min: 2
-    max: 40
+    max: 64
+  type: int
+- name: latent_size_mlp
+  bounds:
+    min: 2
+    max: 64
   type: int
 - name: learning_rate
   bounds:
@@ -16,13 +21,13 @@ parameters:
   type: double
 - name: weight_decay
   bounds:
-    min: 0.000001
-    max: 0.001
+    min: 0.95
+    max: 1
   type: double
 - name: momentum
   bounds:
     min: 0.000
-    max: 0.01
+    max: 0.1
   type: double
 - name: process_iterations
   bounds:

@@ -283,11 +283,14 @@ class ResampledGeometry:
             for ipor in range(0, len(self.p_portions)):
                 f = self.compute_proj_field(ipor, field)
 
+                from scipy.signal import savgol_filter
+                # f = savgol_filter(f, int(np.min((11, 2*np.floor(f.size/2)-1))), 3)
+
                 if self.isoutlets[ipor]:
                     newfield = np.vstack((newfield, np.expand_dims(f[1:], axis = 1)))
                 else:
                     newfield = np.vstack((newfield, np.expand_dims(f, axis = 1)))
-
+                newfield
             return newfield.astype(np.float64)
 
         for t in pressures:
@@ -299,6 +302,7 @@ class ResampledGeometry:
     def remove_caps(self):
         connectivity = self.geometry.connectivity
 
+        inlet = 0
         outlets = []
         for jpor in range(connectivity.shape[0]):
             if np.sum(connectivity[:,jpor]) == -1:
@@ -306,8 +310,11 @@ class ResampledGeometry:
             if np.sum(connectivity[:,jpor]) == 1:
                 outlets.append(jpor)
 
+        if len(outlets) == 0:
+            outlets.append(0)
+
         for ipor in range(len(self.p_portions)):
             if ipor == inlet:
-                self.p_portions[ipor] = self.p_portions[ipor][1:,:]
-            if jpor in outlets:
-                self.p_portions[ipor] = self.p_portions[ipor][:-1,:]
+                self.p_portions[ipor] = self.p_portions[ipor][3:,:]
+            if ipor in outlets:
+                self.p_portions[ipor] = self.p_portions[ipor][:-3,:]

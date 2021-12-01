@@ -29,15 +29,18 @@ def set_state(graph, pressure, flowrate):
     return graph
 
 def set_bcs(graph, next_pressure, next_flowrate):
-    im = graph.ndata['inlet_mask']
-    om = graph.ndata['outlet_mask']
+    im = np.where(graph.ndata['inlet_mask'].detach().numpy() == 1)[0]
+    om = np.where(graph.ndata['outlet_mask'].detach().numpy() == 1)[0]
     graph.ndata['pressure'][om] = next_pressure[om]
     graph.ndata['flowrate'][im] = next_flowrate[im]
     return graph
 
 class DGL_Dataset(DGLDataset):
-    def __init__(self, graphs):
-        self.graphs = graphs
+    def __init__(self, graphs, resample_freq_timesteps):
+        if resample_freq_timesteps != -1:
+            self.graphs = graphs[:resample_freq_timesteps]
+        else:
+            self.graphs = graphs
         super().__init__(name='dgl_dataset')
 
     def process(self):
@@ -86,9 +89,11 @@ def create_single_timestep_graphs(graphs):
             new_graph.ndata['pressure'] = graph.ndata['pressure_' + str(t)]
             new_graph.ndata['dp'] = graph.ndata['pressure_' + str(tp1)] - \
                                     graph.ndata['pressure_' + str(t)]
+
             new_graph.ndata['flowrate'] = graph.ndata['flowrate_' + str(t)]
             new_graph.ndata['dq'] = graph.ndata['flowrate_' + str(tp1)] - \
                                     graph.ndata['flowrate_' + str(t)]
+
             new_graph.edata['flowrate_edge_'] = graph.edata['flowrate_edge_' + str(t)]
             new_graph.edata['dq_edge'] = graph.edata['flowrate_edge_' + str(tp1)] - \
                                          graph.edata['flowrate_edge_' + str(t)]
@@ -183,11 +188,11 @@ def normalize(graphs):
 
     return norm_graphs, coefs_dict
 
-def generate_dataset(model_name):
+def generate_dataset(model_name, resample_freq_timesteps):
     graphs = load_graphs('../dataset/data/' + model_name + '.grph')[0]
     graphs = create_single_timestep_graphs(graphs)
     graphs, coefs_dict = normalize(graphs)
-    return DGL_Dataset(graphs), coefs_dict
+    return DGL_Dataset(graphs, resample_freq_timesteps), coefs_dict
 
 if __name__ == "__main__":
     generate_dataset(sys.argv[1])

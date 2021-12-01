@@ -24,7 +24,8 @@ def generate_gnn_model(params_dict):
     return GraphNet(params_dict)
 
 def train_gnn_model(gnn_model, model_name, optimizer_name, train_params):
-    dataset, coefs_dict = pp.generate_dataset(model_name)
+    dataset, coefs_dict = pp.generate_dataset(model_name,
+                                              train_params['resample_freq_timesteps'])
     num_examples = len(dataset)
     num_train = int(num_examples)
     train_sampler = SubsetRandomSampler(torch.arange(num_train))
@@ -54,8 +55,10 @@ def train_gnn_model(gnn_model, model_name, optimizer_name, train_params):
                              batched_graph.ndata['n_features'].float()).squeeze()
             weight = torch.ones(pred.shape)
             # mask out values corresponding to boundary conditions
-            weight[batched_graph.ndata['inlet_mask'],1] = 0
-            weight[batched_graph.ndata['outlet_mask'],0] = 0
+            inlets = np.where(batched_graph.ndata['inlet_mask'].detach().numpy() == 1)[0]
+            outlets = np.where(batched_graph.ndata['outlet_mask'].detach().numpy() == 1)[0]
+            weight[inlets,1] = 0
+            weight[outlets,0] = 0
             loss = weighted_mse_loss(pred,
                                      torch.reshape(batched_graph.ndata['n_labels'].float(),
                                      pred.shape), weight)
@@ -69,7 +72,7 @@ def train_gnn_model(gnn_model, model_name, optimizer_name, train_params):
 
     return gnn_model, train_dataloader, global_loss / count, coefs_dict
 
-def evaluate_error(model, model_name, train_dataloader, coefs_dict, do_plot):
+def evaluate_error(model, model_name, train_dataloader, coefs_dict, do_plot, out_folder):
     it = iter(train_dataloader)
     batch = next(it)
     batched_graph = batch
@@ -77,7 +80,7 @@ def evaluate_error(model, model_name, train_dataloader, coefs_dict, do_plot):
 
     true_graph = load_graphs('../dataset/data/' + model_name + '.grph')[0][0]
     times = pp.get_times(true_graph)
-    times = times[50:]
+    # times = times[0:]
     initial_pressure = pp.min_max(true_graph.ndata['pressure_' + str(times[0])],
                                   coefs_dict['pressure'])
     initial_flowrate = pp.min_max(true_graph.ndata['flowrate_' + str(times[0])],
@@ -106,7 +109,7 @@ def evaluate_error(model, model_name, train_dataloader, coefs_dict, do_plot):
         dp = pp.invert_min_max(pred[:,0].detach().numpy(), coefs_dict['dp'])
         prev_p = pp.invert_min_max(graph.ndata['pressure'].detach().numpy().squeeze(), coefs_dict['pressure'])
 
-        p = prev_p + dp
+        p = dp + prev_p
         # print(np.linalg.norm(p))
         pressures_pred.append(p)
         pressures_real.append(next_pressure.detach().numpy())
@@ -115,7 +118,7 @@ def evaluate_error(model, model_name, train_dataloader, coefs_dict, do_plot):
         prev_q = pp.invert_min_max(graph.ndata['flowrate'].detach().numpy().squeeze(),
                                    coefs_dict['flowrate'])
 
-        q = prev_q + dq
+        q = dq + prev_q
 
         flowrates_pred.append(q)
         flowrates_real.append(next_flowrate.detach().numpy())
@@ -129,29 +132,38 @@ def evaluate_error(model, model_name, train_dataloader, coefs_dict, do_plot):
         new_flowrate = pp.min_max(q, coefs_dict['flowrate'])
         graph = pp.set_state(graph, torch.unsqueeze(torch.from_numpy(new_pressure),1),
                                     torch.unsqueeze(torch.from_numpy(new_flowrate),1))
-        # graph = pp.set_state(graph, np_normalized, nf_normalized)
 
     err_p = np.sqrt(err_p / norm_p)
     err_q = np.sqrt(err_q / norm_q)
 
     if do_plot:
-        fig, ax = plt.subplots()
-        line_pred, = ax.plot([],[],'r')
-        line_real, = ax.plot([],[],'--b')
+        fig, ax = plt.subplots(2)
+        line_pred_p, = ax[0].plot([],[],'r')
+        line_real_p, = ax[0].plot([],[],'--b')
+        line_pred_q, = ax[1].plot([],[],'r')
+        line_real_q, = ax[1].plot([],[],'--b')
 
         def animation_frame(i):
-            line_pred.set_xdata(range(0,len(pressures_pred[i])))
-            line_pred.set_ydata(pressures_pred[i])
-            line_real.set_xdata(range(0,len(pressures_pred[i])))
-            line_real.set_ydata(pressures_real[i])
-            ax.set_xlim(0,len(pressures_pred[i]))
-            ax.set_ylim(np.min(pressures_real[i]),np.max(pressures_real[i]))
-            return line_pred, line_real,
+            line_pred_p.set_xdata(range(0,len(pressures_pred[i])))
+            line_pred_p.set_ydata(pressures_pred[i])
+            line_real_p.set_xdata(range(0,len(pressures_pred[i])))
+            line_real_p.set_ydata(pressures_real[i])
+            line_pred_q.set_xdata(range(0,len(flowrates_pred[i])))
+            line_pred_q.set_ydata(flowrates_pred[i])
+            line_real_q.set_xdata(range(0,len(flowrates_pred[i])))
+            line_real_q.set_ydata(flowrates_real[i])
+            ax[0].set_xlim(0,len(pressures_pred[i]))
+            ax[0].set_ylim(coefs_dict['pressure'][0],coefs_dict['pressure'][1])
+            ax[1].set_xlim(0,len(flowrates_pred[i]))
+            ax[1].set_ylim(coefs_dict['flowrate'][0],coefs_dict['flowrate'][1])
+            return line_pred_p, line_real_p, line_pred_q, line_real_q
 
         anim = animation.FuncAnimation(fig, animation_frame,
                                        frames=len(pressures_pred),
                                        interval=20)
-        plt.show()
+        writervideo = animation.FFMpegWriter(fps=60)
+        anim.save(out_folder + '/plot.mp4', writer = writervideo)
+
     return np.sqrt(err_p), np.sqrt(err_q), np.sqrt(err_p + err_q)
 
 def create_directory(path):
@@ -180,30 +192,34 @@ def launch_training(model_name, optimizer_name, params_dict,
         json.dump(json_params, outfile)
     with open(folder + '/train.json', 'w') as outfile:
         json.dump(json_train, outfile)
-    return gnn_model, loss, train_loader, coefs_dict
+    return gnn_model, loss, train_loader, coefs_dict, folder
 
 if __name__ == "__main__":
-    params_dict = {'infeat_nodes': 8,
+    params_dict = {'infeat_nodes': 6,
                    'infeat_edges': 5,
-                   'latent_size': 16,
+                   'latent_size_gnn': 32,
+                   'latent_size_mlp': 64,
                    'out_size': 2,
-                   'process_iterations': 1,
+                   'process_iterations': 10,
                    'hl_mlp': 2,
                    'normalize': True}
-    train_params = {'learning_rate': 0.001,
-                    'weight_decay': 0.0,
+    train_params = {'learning_rate': 0.05,
+                    'weight_decay': 0.999,
                     'momentum': 0.0,
+                    'resample_freq_timesteps': -1,
                     'batch_size': 10,
-                    'nepochs': 1}
-    gnn_model, _, train_dataloader, coefs_dict = launch_training(sys.argv[1],
-                                                                 'adam',
-                                                                 params_dict,
-                                                                 train_params)
+                    'nepochs': 10}
+
+    gnn_model, _, train_dataloader, coefs_dict, out_fdr = launch_training(sys.argv[1],
+                                                                          'sgd',
+                                                                           params_dict,
+                                                                           train_params)
     err_p, err_q, global_err = evaluate_error(gnn_model, sys.argv[1],
                                               train_dataloader,
                                               coefs_dict,
-                                              do_plot = True)
+                                              do_plot = True,
+                                              out_folder = out_fdr)
 
     print('Error pressure ' + str(err_p))
     print('Error flowrate ' + str(err_q))
-    print('Globaly error ' + str(global_err))
+    print('Global error ' + str(global_err))
