@@ -7,8 +7,9 @@ import training as tr
 import numpy as np
 import time
 
-def log_checkpoint(metric):
-    sigopt.log_checkpoint({'loss': metric})
+def log_checkpoint(loss):
+    sigopt.log_checkpoint({'loss': loss})
+    sigopt.log_metric(name="loss", value=loss)
 
 if __name__ == "__main__":
     sigopt.params.setdefaults(
