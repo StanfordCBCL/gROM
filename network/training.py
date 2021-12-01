@@ -15,6 +15,7 @@ import matplotlib.pyplot as plt
 from matplotlib import animation
 import numpy as np
 from datetime import datetime
+import time
 import json
 
 def weighted_mse_loss(input, target, weight):
@@ -23,7 +24,7 @@ def weighted_mse_loss(input, target, weight):
 def generate_gnn_model(params_dict):
     return GraphNet(params_dict)
 
-def train_gnn_model(gnn_model, model_name, optimizer_name, train_params):
+def train_gnn_model(gnn_model, model_name, optimizer_name, train_params, checkpoint_fct = None):
     dataset, coefs_dict = pp.generate_dataset(model_name,
                                               train_params['resample_freq_timesteps'])
     num_examples = len(dataset)
@@ -46,6 +47,11 @@ def train_gnn_model(gnn_model, model_name, optimizer_name, train_params):
     scheduler = torch.optim.lr_scheduler.ExponentialLR(optimizer,
                                                        gamma=train_params['weight_decay'])
     nepochs = train_params['nepochs']
+
+    if checkpoint_fct != None:
+        # 200 is the maximum number of sigopt checkpoint
+        chckp_epochs = list(np.floor(np.linspace(0, nepochs, 200)))
+
     for epoch in range(nepochs):
         print('ep = ' + str(epoch))
         global_loss = 0
@@ -69,6 +75,10 @@ def train_gnn_model(gnn_model, model_name, optimizer_name, train_params):
             count = count + 1
         scheduler.step()
         print('\tloss = ' + str(global_loss / count))
+
+        if checkpoint_fct != None:
+            if epoch in chckp_epochs:
+                checkpoint_fct(global_loss/count)
 
     return gnn_model, train_dataloader, global_loss / count, coefs_dict
 
@@ -173,13 +183,14 @@ def create_directory(path):
         pass
 
 def launch_training(model_name, optimizer_name, params_dict,
-                    train_params, plot_validation = True):
+                    train_params, plot_validation = True, checkpoint_fct = None):
     create_directory('models')
     gnn_model = generate_gnn_model(params_dict)
     gnn_model, train_loader, loss, coefs_dict = train_gnn_model(gnn_model,
                                                                 model_name,
                                                                 optimizer_name,
-                                                                train_params)
+                                                                train_params,
+                                                                checkpoint_fct)
 
     now = datetime.now()
     dt_string = now.strftime("%d.%m.%Y_%H.%M.%S")
@@ -210,16 +221,21 @@ if __name__ == "__main__":
                     'batch_size': 10,
                     'nepochs': 10}
 
+    start = time.time()
     gnn_model, _, train_dataloader, coefs_dict, out_fdr = launch_training(sys.argv[1],
                                                                           'sgd',
                                                                            params_dict,
                                                                            train_params)
+    end = time.time()
+    elapsed_time = end - start
+    print('Training time = ' + str(elapsed_time))
+
     err_p, err_q, global_err = evaluate_error(gnn_model, sys.argv[1],
                                               train_dataloader,
                                               coefs_dict,
                                               do_plot = True,
                                               out_folder = out_fdr)
 
-    print('Error pressure ' + str(err_p))
-    print('Error flowrate ' + str(err_q))
-    print('Global error ' + str(global_err))
+    print('Error pressure = ' + str(err_p))
+    print('Error flowrate = ' + str(err_q))
+    print('Global error = ' + str(global_err))

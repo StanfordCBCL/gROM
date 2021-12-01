@@ -5,7 +5,10 @@ sys.path.append("../network")
 
 import training as tr
 import numpy as np
+import time
 
+def log_checkpoint(metric):
+    sigopt.log_checkpoint({'loss': metric})
 
 if __name__ == "__main__":
     sigopt.params.setdefaults(
@@ -35,8 +38,14 @@ if __name__ == "__main__":
                     'nepochs': sigopt.params.nepochs,
                     'batch_size': sigopt.params.batch_size}
 
+    start = time.time()
     gnn_model, loss, train_dataloader, coefs_dict, out_fdr = tr.launch_training(sys.argv[1], 'adam',
-                                                             params_dict, train_params, True)
+                                                             params_dict, train_params, True,
+                                                             log_checkpoint)
+    end = time.time()
+    elapsed_time = end - start
+    print('Training time = ' + str(elapsed_time))
+
     err_p, err_q, global_err = tr.evaluate_error(gnn_model, sys.argv[1],
                                                  train_dataloader,
                                                  coefs_dict,
@@ -50,3 +59,4 @@ if __name__ == "__main__":
     sigopt.log_metric(name="error pressure", value=err_p)
     sigopt.log_metric(name="error flowrate", value=err_q)
     sigopt.log_metric(name="global error", value=global_err)
+    sigopt.log_metric(name="training time", value=elapsed_time)
