@@ -24,9 +24,10 @@ def weighted_mse_loss(input, target, weight):
 def generate_gnn_model(params_dict):
     return GraphNet(params_dict)
 
-def train_gnn_model(gnn_model, model_name, optimizer_name, train_params, checkpoint_fct = None):
+def train_gnn_model(gnn_model, model_name, optimizer_name, train_params, checkpoint_fct = None, dataset_params = None):
     dataset, coefs_dict = pp.generate_dataset(model_name,
-                                              train_params['resample_freq_timesteps'])
+                                              train_params['resample_freq_timesteps'],
+                                              dataset_params)
     num_examples = len(dataset)
     num_train = int(num_examples)
     train_sampler = SubsetRandomSampler(torch.arange(num_train))
@@ -183,14 +184,16 @@ def create_directory(path):
         pass
 
 def launch_training(model_name, optimizer_name, params_dict,
-                    train_params, plot_validation = True, checkpoint_fct = None):
+                    train_params, plot_validation = True, checkpoint_fct = None,
+                    dataset_params = None):
     create_directory('models')
     gnn_model = generate_gnn_model(params_dict)
     gnn_model, train_loader, loss, coefs_dict = train_gnn_model(gnn_model,
                                                                 model_name,
                                                                 optimizer_name,
                                                                 train_params,
-                                                                checkpoint_fct)
+                                                                checkpoint_fct,
+                                                                dataset_params)
 
     now = datetime.now()
     dt_string = now.strftime("%d.%m.%Y_%H.%M.%S")

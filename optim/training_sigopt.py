@@ -22,27 +22,32 @@ if __name__ == "__main__":
         hl_mlp=2,
         normalize=True,
         nepochs=30,
-        batch_size=100
+        batch_size=100,
+        rate_noise=1e-4,
+        random_walks=0
     )
-    params_dict = {'infeat_nodes': 6,
-                   'infeat_edges': 5,
-                   'latent_size_gnn': sigopt.params.latent_size_gnn,
-                   'latent_size_mlp': sigopt.params.latent_size_mlp,
-                   'out_size': 2,
-                   'process_iterations': sigopt.params.process_iterations,
-                   'hl_mlp': sigopt.params.hl_mlp,
-                   'normalize': sigopt.params.normalize}
+    network_params = {'infeat_nodes': 6,
+                    'infeat_edges': 5,
+                     'latent_size_gnn': sigopt.params.latent_size_gnn,
+                    'latent_size_mlp': sigopt.params.latent_size_mlp,
+                    'out_size': 2,
+                    'process_iterations': sigopt.params.process_iterations,
+                    'hl_mlp': sigopt.params.hl_mlp,
+                    'normalize': sigopt.params.normalize}
     train_params = {'learning_rate': sigopt.params.learning_rate,
                     'weight_decay': sigopt.params.weight_decay,
                     'momentum': sigopt.params.momentum,
                     'resample_freq_timesteps': -1,
                     'nepochs': sigopt.params.nepochs,
                     'batch_size': sigopt.params.batch_size}
+    dataset_params = {'rate_noise': sigopt.params.rate_noise,
+                      'random_walks': sigopt.params.random_walks}
 
     start = time.time()
     gnn_model, loss, train_dataloader, coefs_dict, out_fdr = tr.launch_training(sys.argv[1], 'adam',
-                                                             params_dict, train_params, True,
-                                                             log_checkpoint)
+                                                             network_params, train_params, True,
+                                                             log_checkpoint,
+                                                             dataset_params)
     end = time.time()
     elapsed_time = end - start
     print('Training time = ' + str(elapsed_time))
@@ -52,6 +57,15 @@ if __name__ == "__main__":
                                                  coefs_dict,
                                                  do_plot = True,
                                                  out_folder = out_fdr)
+
+    if err_p != err_p or err_p > 1e10:
+        err_p = 1e10
+
+    if err_q != err_q or err_q > 1e10:
+        err_q = 1e10
+
+    if global_err != global_err or global_err > 1e10:
+        global_err = 1e10
 
     print('Error pressure ' + str(err_p))
     print('Error flowrate ' + str(err_q))

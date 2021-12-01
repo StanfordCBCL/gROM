@@ -20,9 +20,9 @@ from torch.utils.data.sampler import SubsetRandomSampler
 
 DTYPE = np.float32
 
-def create_geometry(model_name, sampling, remove_caps, points_to_keep = None):
+def create_geometry(model_name, input_dir, sampling, remove_caps, points_to_keep = None):
     print('Create geometry: ' + model_name)
-    soln = io.read_geo('vtps/' + model_name + '.vtp').GetOutput()
+    soln = io.read_geo(input_dir + '/' + model_name + '.vtp').GetOutput()
     fields, _, p_array = io.get_all_arrays(soln, points_to_keep)
     return ResampledGeometry(Geometry(p_array), sampling, remove_caps), fields
 
@@ -116,9 +116,11 @@ def add_fields(graph, pressure, velocity, random_walks, rate_noise):
 
     return graphs
 
-def main(argv):
+def generate_graphs(argv, dataset_params, input_dir, save = True):
+    print('Generating_graphs with params ' + str(dataset_params))
     model_name = sys.argv[1]
-    geo, fields = create_geometry(model_name, 5, remove_caps = True, points_to_keep = 170)
+    geo, fields = create_geometry(model_name, input_dir, 5, remove_caps = True,
+                                  points_to_keep = 170)
     pressure, velocity = io.gather_pressures_velocities(fields)
     pressure, velocity, area = geo.generate_fields(pressure,
                                                    velocity,
@@ -126,9 +128,14 @@ def main(argv):
 
     fixed_graph = create_fixed_graph(geo, area)
     graphs = add_fields(fixed_graph, pressure, velocity,
-                        random_walks=0,
-                        rate_noise=1e-4)
-    dgl.save_graphs('data/' + sys.argv[2], graphs)
+                        random_walks=dataset_params['random_walks'],
+                        rate_noise=dataset_params['rate_noise'])
+    if save:
+        dgl.save_graphs('data/' + sys.argv[2], graphs)
+    return graphs
 
 if __name__ == "__main__":
-    main(sys.argv)
+    input_dir = 'vtps'
+    dataset_params = {'random_walks': 0,
+                      'rate_noise': 1e-4}
+    generate_graphs(sys.argv, dataset_params, input_dir, True)

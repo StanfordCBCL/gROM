@@ -52,7 +52,17 @@ parameters:
 - name: batch_size
   bounds:
     min: 10
-    max: 500
+    max: 1000
   type: int
+- name: random_walks
+  bounds:
+    min: 0
+    max: 10
+  type: int
+- name: rate_noise
+  bounds:
+    min: 0.000001
+    max: 0.1
+  type: double
 budget: 200
-parallel_bandwidth: 10
+parallel_bandwidth: 20

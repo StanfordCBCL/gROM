@@ -4,11 +4,15 @@ import os
 # this fixes a problem with openmp https://github.com/dmlc/xgboost/issues/1715
 os.environ['KMP_DUPLICATE_LIB_OK']='True'
 
+sys.path.append("../graphs")
+sys.path.append("../graphs/core")
+
 import dgl
 import torch
 import numpy as np
 from dgl.data.utils import load_graphs
 from dgl.data import DGLDataset
+import generate_graphs as gg
 
 def set_state(graph, pressure, flowrate):
     edges0 = graph.edges()[0]
@@ -188,8 +192,15 @@ def normalize(graphs):
 
     return norm_graphs, coefs_dict
 
-def generate_dataset(model_name, resample_freq_timesteps):
-    graphs = load_graphs('../dataset/data/' + model_name + '.grph')[0]
+def generate_dataset(model_name, resample_freq_timesteps, dataset_params = None):
+    if dataset_params == None:
+        graphs = load_graphs('../graphs/data/' + model_name + '.grph')[0]
+    else:
+        graphs = gg.generate_graphs(model_name,
+                                    dataset_params,
+                                    '../graphs/vtps',
+                                    False)
+
     graphs = create_single_timestep_graphs(graphs)
     graphs, coefs_dict = normalize(graphs)
     return DGL_Dataset(graphs, resample_freq_timesteps), coefs_dict
