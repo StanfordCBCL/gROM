@@ -30,8 +30,8 @@ if __name__ == "__main__":
         optimizer='adam'
     )
     network_params = {'infeat_nodes': 8,
-                    'infeat_edges': 5,
-                     'latent_size_gnn': sigopt.params.latent_size_gnn,
+                    'infeat_edges': 4,
+                    'latent_size_gnn': sigopt.params.latent_size_gnn,
                     'latent_size_mlp': sigopt.params.latent_size_mlp,
                     'out_size': 2,
                     'process_iterations': sigopt.params.process_iterations,
@@ -64,13 +64,13 @@ if __name__ == "__main__":
                                                  out_folder = out_fdr)
 
     if err_p != err_p or err_p > 1e10:
-        err_p = 1e10
+        sys.exit()
 
     if err_q != err_q or err_q > 1e10:
-        err_q = 1e10
+        sys.exit()
 
     if global_err != global_err or global_err > 1e10:
-        global_err = 1e10
+        sys.exit() 
 
     print('Error pressure ' + str(err_p))
     print('Error flowrate ' + str(err_q))

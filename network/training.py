@@ -176,7 +176,7 @@ def evaluate_error(model, model_name, train_dataloader, coefs_dict, do_plot, out
         writervideo = animation.FFMpegWriter(fps=60)
         anim.save(out_folder + '/plot.mp4', writer = writervideo)
 
-    return np.sqrt(err_p), np.sqrt(err_q), np.sqrt(err_p + err_q)
+    return err_p, err_q, np.sqrt(err_p**2 + err_q**2)
 
 def create_directory(path):
     try:
