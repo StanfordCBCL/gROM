@@ -211,7 +211,7 @@ def launch_training(model_name, optimizer_name, params_dict,
 
 if __name__ == "__main__":
     params_dict = {'infeat_nodes': 6,
-                   'infeat_edges': 5,
+                   'infeat_edges': 4,
                    'latent_size_gnn': 32,
                    'latent_size_mlp': 64,
                    'out_size': 2,

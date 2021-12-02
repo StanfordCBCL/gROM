@@ -105,13 +105,13 @@ def add_fields(graph, pressure, velocity, random_walks, rate_noise):
             new_p = pressure[t]
             if len(graphs) != 0:
                 noise_p = noise_p + np.random.normal(0, rate_noise, (nP, 1)) * new_p
-            new_graph.ndata['pressure_' + str(t)] = torch.from_numpy((new_p + noise_p).astype(DTYPE))
-
+            new_graph.ndata['pressure_' + str(t)] = torch.from_numpy((new_p).astype(DTYPE))
+            new_graph.ndata['noise_p_' + str(t)] = torch.from_numpy((noise_p).astype(DTYPE))
             new_q = velocity[t]
             if len(graphs) != 0:
                 noise_q = noise_q + np.random.normal(0, rate_noise, (nQ, 1)) * new_q
-            new_graph.ndata['flowrate_' + str(t)] = torch.from_numpy((new_q + noise_q).astype(DTYPE))
-            new_graph.edata['flowrate_edge_' + str(t)] = torch.from_numpy((new_q[edges0] + new_q[edges1]).astype(DTYPE) / 2)
+            new_graph.ndata['flowrate_' + str(t)] = torch.from_numpy((new_q).astype(DTYPE))
+            new_graph.ndata['noise_q_' + str(t)] = torch.from_numpy((noise_q).astype(DTYPE))
         graphs.append(new_graph)
 
     return graphs
@@ -119,8 +119,8 @@ def add_fields(graph, pressure, velocity, random_walks, rate_noise):
 def generate_graphs(argv, dataset_params, input_dir, save = True):
     print('Generating_graphs with params ' + str(dataset_params))
     model_name = sys.argv[1]
-    geo, fields = create_geometry(model_name, input_dir, 8, remove_caps = True,
-                                  points_to_keep = None)
+    geo, fields = create_geometry(model_name, input_dir, 5, remove_caps = True,
+                                  points_to_keep = 170)
     pressure, velocity = io.gather_pressures_velocities(fields)
     pressure, velocity, area = geo.generate_fields(pressure,
                                                    velocity,
@@ -136,6 +136,6 @@ def generate_graphs(argv, dataset_params, input_dir, save = True):
 
 if __name__ == "__main__":
     input_dir = 'vtps'
-    dataset_params = {'random_walks': 0,
-                      'rate_noise': 1e-4}
+    dataset_params = {'random_walks': 4,
+                      'rate_noise': 1e-3}
     generate_graphs(sys.argv, dataset_params, input_dir, True)
