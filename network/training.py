@@ -24,7 +24,8 @@ def weighted_mse_loss(input, target, weight):
 def generate_gnn_model(params_dict):
     return GraphNet(params_dict)
 
-def train_gnn_model(gnn_model, model_name, optimizer_name, train_params, checkpoint_fct = None, dataset_params = None):
+def train_gnn_model(gnn_model, model_name, optimizer_name, train_params,
+                    checkpoint_fct = None, dataset_params = None):
     dataset, coefs_dict = pp.generate_dataset(model_name,
                                               train_params['resample_freq_timesteps'],
                                               dataset_params)
@@ -89,13 +90,13 @@ def evaluate_error(model, model_name, train_dataloader, coefs_dict, do_plot, out
     batched_graph = batch
     graph = dgl.unbatch(batched_graph)[0]
 
-    true_graph = load_graphs('../dataset/data/' + model_name + '.grph')[0][0]
+    true_graph = load_graphs('../graphs/data/' + model_name + '.grph')[0][0]
     times = pp.get_times(true_graph)
     # times = times[0:]
-    initial_pressure = pp.min_max(true_graph.ndata['pressure_' + str(times[0])],
-                                  coefs_dict['pressure'])
-    initial_flowrate = pp.min_max(true_graph.ndata['flowrate_' + str(times[0])],
-                                  coefs_dict['flowrate'])
+    initial_pressure = pp.normalize_function(true_graph.ndata['pressure_' + str(times[0])],
+                                             'pressure', coefs_dict)
+    initial_flowrate = pp.normalize_function(true_graph.ndata['flowrate_' + str(times[0])],
+                                             'flowrate', coefs_dict)
     graph = pp.set_state(graph, initial_pressure, initial_flowrate)
 
     err_p = 0
@@ -112,22 +113,23 @@ def evaluate_error(model, model_name, train_dataloader, coefs_dict, do_plot, out
 
         next_pressure = true_graph.ndata['pressure_' + str(tp1)]
         next_flowrate = true_graph.ndata['flowrate_' + str(tp1)]
-        np_normalized = pp.min_max(next_pressure, coefs_dict['pressure'])
-        nf_normalized = pp.min_max(next_flowrate, coefs_dict['flowrate'])
+        np_normalized = pp.normalize_function(next_pressure, 'pressure', coefs_dict)
+        nf_normalized = pp.normalize_function(next_flowrate, 'flowrate', coefs_dict)
         graph = pp.set_bcs(graph, np_normalized, nf_normalized)
         pred = model(graph, graph.ndata['n_features'].float()).squeeze()
 
-        dp = pp.invert_min_max(pred[:,0].detach().numpy(), coefs_dict['dp'])
-        prev_p = pp.invert_min_max(graph.ndata['pressure'].detach().numpy().squeeze(), coefs_dict['pressure'])
+        dp = pp.invert_normalize_function(pred[:,0].detach().numpy(), 'dp', coefs_dict)
+        prev_p = pp.invert_normalize_function(graph.ndata['pressure'].detach().numpy().squeeze(), 
+                                              'pressure', coefs_dict)
 
         p = dp + prev_p
         # print(np.linalg.norm(p))
         pressures_pred.append(p)
         pressures_real.append(next_pressure.detach().numpy())
 
-        dq = pp.invert_min_max(pred[:,1].detach().numpy(), coefs_dict['dq'])
-        prev_q = pp.invert_min_max(graph.ndata['flowrate'].detach().numpy().squeeze(),
-                                   coefs_dict['flowrate'])
+        dq = pp.invert_normalize_function(pred[:,1].detach().numpy(), 'dq', coefs_dict)
+        prev_q = pp.invert_normalize_function(graph.ndata['flowrate'].detach().numpy().squeeze(),
+                                              'flowrate', coefs_dict)
 
         q = dq + prev_q
 
@@ -139,8 +141,8 @@ def evaluate_error(model, model_name, train_dataloader, coefs_dict, do_plot, out
         err_q = err_q + np.linalg.norm(q - next_flowrate.detach().numpy())**2
         norm_q = norm_q + np.linalg.norm(next_flowrate.detach().numpy())**2
 
-        new_pressure = pp.min_max(p, coefs_dict['pressure'])
-        new_flowrate = pp.min_max(q, coefs_dict['flowrate'])
+        new_pressure = pp.normalize_function(p, 'pressure', coefs_dict)
+        new_flowrate = pp.normalize_function(q, 'flowrate', coefs_dict)
         graph = pp.set_state(graph, torch.unsqueeze(torch.from_numpy(new_pressure),1),
                                     torch.unsqueeze(torch.from_numpy(new_flowrate),1))
 
@@ -222,7 +224,7 @@ if __name__ == "__main__":
                     'momentum': 0.0,
                     'resample_freq_timesteps': -1,
                     'batch_size': 10,
-                    'nepochs': 10}
+                    'nepochs': 2}
 
     start = time.time()
     gnn_model, _, train_dataloader, coefs_dict, out_fdr = launch_training(sys.argv[1],

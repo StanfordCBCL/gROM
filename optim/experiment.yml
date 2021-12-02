@@ -1,6 +1,6 @@
 name: MeshGraphNet Optimization
 metrics:
-- name: loss
+- name: global_error
   strategy: optimize
   objective: minimize
 parameters:
@@ -64,5 +64,10 @@ parameters:
     min: 0.000001
     max: 0.1
   type: double
+- name: normalization
+  categorical_values:
+    - "min_max"
+    - "standard"
+  type: categorical
 budget: 200
 parallel_bandwidth: 20

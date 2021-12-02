@@ -24,7 +24,8 @@ if __name__ == "__main__":
         nepochs=30,
         batch_size=100,
         rate_noise=1e-4,
-        random_walks=0
+        random_walks=0,
+        normalization='standard'
     )
     network_params = {'infeat_nodes': 6,
                     'infeat_edges': 5,
@@ -41,7 +42,8 @@ if __name__ == "__main__":
                     'nepochs': sigopt.params.nepochs,
                     'batch_size': sigopt.params.batch_size}
     dataset_params = {'rate_noise': sigopt.params.rate_noise,
-                      'random_walks': sigopt.params.random_walks}
+                      'random_walks': sigopt.params.random_walks,
+                      'normalization': sigopt.params.normalization}
 
     start = time.time()
     gnn_model, loss, train_dataloader, coefs_dict, out_fdr = tr.launch_training(sys.argv[1], 'adam',
@@ -71,7 +73,7 @@ if __name__ == "__main__":
     print('Error flowrate ' + str(err_q))
     print('Global error ' + str(global_err))
     sigopt.log_metric(name="loss", value=loss)
-    sigopt.log_metric(name="error pressure", value=err_p)
-    sigopt.log_metric(name="error flowrate", value=err_q)
-    sigopt.log_metric(name="global error", value=global_err)
-    sigopt.log_metric(name="training time", value=elapsed_time)
+    sigopt.log_metric(name="error_pressure", value=err_p)
+    sigopt.log_metric(name="error_flowrate", value=err_q)
+    sigopt.log_metric(name="global_error", value=global_err)
+    sigopt.log_metric(name="training_time", value=elapsed_time)

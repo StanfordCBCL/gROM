@@ -121,36 +121,6 @@ def min_max(field, bounds):
 def invert_min_max(field, bounds):
     return bounds[0] + field * (bounds[1] - bounds[0])
 
-def compute_min_max(graph, field):
-    m = []
-    M = []
-    node_features = graph.ndata
-    for feat in node_features:
-        if field in feat:
-            if len(m) == 0:
-                m = np.min(graph.ndata[feat].numpy(), axis=0)
-                M = np.max(graph.ndata[feat].numpy(), axis=0)
-            else:
-                m = np.minimum(np.min(graph.ndata[feat].numpy(), axis=0), m)
-                M = np.maximum(np.max(graph.ndata[feat].numpy(), axis=0), M)
-
-    edge_features = graph.edata
-    for feat in edge_features:
-        if field in feat:
-            if len(m) == 0:
-                m = np.min(graph.edata[feat].numpy(), axis=0)
-                M = np.max(graph.edata[feat].numpy(), axis=0)
-            else:
-                m = np.minimum(np.min(graph.edata[feat].numpy(), axis=0), m)
-                M = np.maximum(np.max(graph.edata[feat].numpy(), axis=0), M)
-
-    if m.size == 1:
-        m = float(m)
-    if M.size == 1:
-        M = float(M)
-
-    return m, M
-
 def min_max_normalization(graph, fields, bounds_dict):
     node_features = graph.ndata
     for feat in node_features:
@@ -170,29 +140,97 @@ def min_max_normalization(graph, fields, bounds_dict):
 
     return graph
 
-def normalize(graphs):
-    norm_graphs = []
-    fields = {'pressure', 'flowrate', 'area', 'position', 'dp', 'dq'}
-    coefs_dict = {}
-    for graph in graphs:
-        cgraph = graph
+def standardize(field, coeffs):
+    ncomponents = coeffs[0].size
+    if ncomponents == 1:
+        return (field - coeffs[0]) / coeffs[1]
+    for i in range(ncomponents):
+        field[:,i] = (field[:,i] - coeffs[0][i]) / coeffs[1][i]
+    return field
+
+def invert_standardize(field, coeffs):
+    return coeffs[0] + field * coeffs[1]
+
+def standard_normalization(graph, fields, coeffs_dict):
+    node_features = graph.ndata
+    for feat in node_features:
         for field in fields:
-            coefs = compute_min_max(cgraph, field)
-            if field in coefs_dict:
-                coefs_dict[field] = (np.minimum(coefs[0], coefs_dict[field][0]),
-                                     np.maximum(coefs[1], coefs_dict[field][1]))
+            if field in feat:
+                graph.ndata[feat] = standardize(graph.ndata[feat], coeffs_dict[field])
+
+    edge_features = graph.edata
+    for feat in edge_features:
+        for field in fields:
+            if field in feat:
+                graph.edata[feat] = standardize(graph.edata[feat], coeffs_dict[field])
+
+    return graph
+
+def normalize_function(field, field_name, coefs_dict):
+    if coefs_dict['type'] == 'min_max':
+        return min_max(field, coefs_dict[field_name])
+    elif coefs_dict['type'] == 'standard':
+        return standardize(field, coefs_dict[field_name])
+    return []
+
+def invert_normalize_function(field, field_name, coefs_dict):
+    if coefs_dict['type'] == 'min_max':
+        return invert_min_max(field, coefs_dict[field_name])
+    if coefs_dict['type'] == 'standard':
+        return invert_standardize(field, coefs_dict[field_name])
+    return []
+
+def add_to_list(graph, field, partial_list):
+
+    node_features = graph.ndata
+    for feat in node_features:
+        if field in feat:
+            if partial_list.size == 0:
+                partial_list = graph.ndata[feat].detach().numpy()
             else:
-                coefs_dict[field] = coefs
+                partial_list = np.concatenate((partial_list, graph.ndata[feat].detach().numpy()), axis = 0)
+
+    edge_features = graph.edata
+    for feat in edge_features:
+        if field in feat:
+            if partial_list.size == 0:
+                partial_list = graph.edata[feat].detach().numpy()
+            else:
+                partial_list = np.concatenate((partial_list, graph.edata[feat].detach().numpy()), axis = 0)
+
+    return partial_list
+
+def normalize(graphs, type):
+    norm_graphs = []
+    coefs_dict = {}
+    list_fields = {}
+    coefs_dict['type'] = type
+    fields = {'pressure', 'flowrate', 'area', 'position', 'dp', 'dq'}
+    for field in fields:
+        cur_list = np.zeros((0,0))
+        for graph in graphs:
+            cur_list = add_to_list(graph, field, cur_list)
+
+        if type == 'min_max':
+            coefs_dict[field] = (np.min(cur_list, axis=0),
+                                 np.max(cur_list, axis=0))
+        if type == 'standard':
+            coefs_dict[field] = (np.mean(cur_list, axis=0),
+                                 np.std(cur_list, axis=0))
 
     for graph in graphs:
         cgraph = graph
-        cgraph = min_max_normalization(cgraph, fields, coefs_dict)
+        if type == 'min_max':
+            cgraph = min_max_normalization(cgraph, fields, coefs_dict)
+        if type == 'standard':
+            cgraph = standard_normalization(cgraph, fields, coefs_dict)
 
         norm_graphs.append(cgraph)
 
     return norm_graphs, coefs_dict
 
-def generate_dataset(model_name, resample_freq_timesteps, dataset_params = None):
+def generate_dataset(model_name, resample_freq_timesteps,
+                     normalization_type, dataset_params = None):
     if dataset_params == None:
         graphs = load_graphs('../graphs/data/' + model_name + '.grph')[0]
     else:
@@ -201,9 +239,10 @@ def generate_dataset(model_name, resample_freq_timesteps, dataset_params = None)
                                     '../graphs/vtps',
                                     False)
 
-    graphs = create_single_timestep_graphs(graphs)
-    graphs, coefs_dict = normalize(graphs)
-    return DGL_Dataset(graphs, resample_freq_timesteps), coefs_dict
+    normalization_type = 'standard'
+    if dataset_params != None:
+        normalization_type = dataset_params['normalization']
 
-if __name__ == "__main__":
-    generate_dataset(sys.argv[1])
+    graphs = create_single_timestep_graphs(graphs)
+    graphs, coefs_dict = normalize(graphs, normalization_type)
+    return DGL_Dataset(graphs, resample_freq_timesteps), coefs_dict
