@@ -69,6 +69,11 @@ parameters:
     - "min_max"
     - "standard"
   type: categorical
+- name: optimizer
+  categorical_values:
+    - "adam"
+    - "sgd"
+  type: categorical
 - name: resample_freq_timesteps
   bounds:
     min: 1

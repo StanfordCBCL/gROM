@@ -26,7 +26,8 @@ if __name__ == "__main__":
         rate_noise=1e-4,
         random_walks=0,
         resample_freq_timesteps=1,
-        normalization='standard'
+        normalization='standard',
+        optimizer='adam'
     )
     network_params = {'infeat_nodes': 8,
                     'infeat_edges': 5,
@@ -47,7 +48,8 @@ if __name__ == "__main__":
                       'resample_freq_timesteps': sigopt.params.resample_freq_timesteps}
 
     start = time.time()
-    gnn_model, loss, train_dataloader, coefs_dict, out_fdr = tr.launch_training(sys.argv[1], 'adam',
+    gnn_model, loss, train_dataloader, coefs_dict, out_fdr = tr.launch_training(sys.argv[1],
+                                                             sigopt.params.optimizer,
                                                              network_params, train_params, True,
                                                              log_checkpoint,
                                                              dataset_params)
