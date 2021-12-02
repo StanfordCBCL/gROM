@@ -1,4 +1,4 @@
-name: MeshGraphNet Optimization
+name: gROM Optimization
 metrics:
 - name: global_error
   strategy: optimize
