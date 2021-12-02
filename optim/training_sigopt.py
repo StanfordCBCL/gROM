@@ -25,6 +25,7 @@ if __name__ == "__main__":
         batch_size=100,
         rate_noise=1e-4,
         random_walks=0,
+        resample_freq_timesteps=1,
         normalization='standard'
     )
     network_params = {'infeat_nodes': 6,
@@ -38,12 +39,14 @@ if __name__ == "__main__":
     train_params = {'learning_rate': sigopt.params.learning_rate,
                     'weight_decay': sigopt.params.weight_decay,
                     'momentum': sigopt.params.momentum,
-                    'resample_freq_timesteps': -1,
+                    'resample_freq_timesteps': sigopt.params.resample_freq_timesteps,
                     'nepochs': sigopt.params.nepochs,
                     'batch_size': sigopt.params.batch_size}
     dataset_params = {'rate_noise': sigopt.params.rate_noise,
                       'random_walks': sigopt.params.random_walks,
                       'normalization': sigopt.params.normalization}
+
+    dir(sigopt)
 
     start = time.time()
     gnn_model, loss, train_dataloader, coefs_dict, out_fdr = tr.launch_training(sys.argv[1], 'adam',

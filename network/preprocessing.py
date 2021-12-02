@@ -42,7 +42,7 @@ def set_bcs(graph, next_pressure, next_flowrate):
 class DGL_Dataset(DGLDataset):
     def __init__(self, graphs, resample_freq_timesteps):
         if resample_freq_timesteps != -1:
-            self.graphs = graphs[:resample_freq_timesteps]
+            self.graphs = graphs[::resample_freq_timesteps]
         else:
             self.graphs = graphs
         super().__init__(name='dgl_dataset')
@@ -111,15 +111,15 @@ def create_single_timestep_graphs(graphs):
     return out_graphs
 
 def min_max(field, bounds):
-    ncomponents = bounds[0].size
+    ncomponents = bounds['min'].size
     if ncomponents == 1:
-        return (field - bounds[0]) / (bounds[1] - bounds[0])
+        return (field - bounds['min']) / (bounds['max'] - bounds['min'])
     for i in range(ncomponents):
-        field[:,i] = (field[:,i] - bounds[0][i]) / (bounds[1][i] - bounds[0][i])
+        field[:,i] = (field[:,i] - bounds['min'][i]) / (bounds['max'][i] - bounds['min'][i])
     return field
 
 def invert_min_max(field, bounds):
-    return bounds[0] + field * (bounds[1] - bounds[0])
+    return bounds['min'] + field * (bounds['max'] - bounds['min'])
 
 def min_max_normalization(graph, fields, bounds_dict):
     node_features = graph.ndata
@@ -141,15 +141,15 @@ def min_max_normalization(graph, fields, bounds_dict):
     return graph
 
 def standardize(field, coeffs):
-    ncomponents = coeffs[0].size
+    ncomponents = coeffs['mean'].size
     if ncomponents == 1:
-        return (field - coeffs[0]) / coeffs[1]
+        return (field - coeffs['mean']) / coeffs['std']
     for i in range(ncomponents):
-        field[:,i] = (field[:,i] - coeffs[0][i]) / coeffs[1][i]
+        field[:,i] = (field[:,i] - coeffs['mean'][i]) / coeffs['std'][i]
     return field
 
 def invert_standardize(field, coeffs):
-    return coeffs[0] + field * coeffs[1]
+    return coeffs['mean'] + field * coeffs['std']
 
 def standard_normalization(graph, fields, coeffs_dict):
     node_features = graph.ndata
@@ -211,12 +211,10 @@ def normalize(graphs, type):
         for graph in graphs:
             cur_list = add_to_list(graph, field, cur_list)
 
-        if type == 'min_max':
-            coefs_dict[field] = (np.min(cur_list, axis=0),
-                                 np.max(cur_list, axis=0))
-        if type == 'standard':
-            coefs_dict[field] = (np.mean(cur_list, axis=0),
-                                 np.std(cur_list, axis=0))
+            coefs_dict[field] = {'min': np.min(cur_list, axis=0),
+                                 'max': np.max(cur_list, axis=0),
+                                 'mean': np.mean(cur_list, axis=0),
+                                 'std': np.std(cur_list, axis=0)}
 
     for graph in graphs:
         cgraph = graph

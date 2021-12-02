@@ -119,7 +119,7 @@ def evaluate_error(model, model_name, train_dataloader, coefs_dict, do_plot, out
         pred = model(graph, graph.ndata['n_features'].float()).squeeze()
 
         dp = pp.invert_normalize_function(pred[:,0].detach().numpy(), 'dp', coefs_dict)
-        prev_p = pp.invert_normalize_function(graph.ndata['pressure'].detach().numpy().squeeze(), 
+        prev_p = pp.invert_normalize_function(graph.ndata['pressure'].detach().numpy().squeeze(),
                                               'pressure', coefs_dict)
 
         p = dp + prev_p
@@ -166,9 +166,9 @@ def evaluate_error(model, model_name, train_dataloader, coefs_dict, do_plot, out
             line_real_q.set_xdata(range(0,len(flowrates_pred[i])))
             line_real_q.set_ydata(flowrates_real[i])
             ax[0].set_xlim(0,len(pressures_pred[i]))
-            ax[0].set_ylim(coefs_dict['pressure'][0],coefs_dict['pressure'][1])
+            ax[0].set_ylim(coefs_dict['pressure']['min'],coefs_dict['pressure']['max'])
             ax[1].set_xlim(0,len(flowrates_pred[i]))
-            ax[1].set_ylim(coefs_dict['flowrate'][0],coefs_dict['flowrate'][1])
+            ax[1].set_ylim(coefs_dict['flowrate']['min'],coefs_dict['flowrate']['max'])
             return line_pred_p, line_real_p, line_pred_q, line_real_q
 
         anim = animation.FuncAnimation(fig, animation_frame,
