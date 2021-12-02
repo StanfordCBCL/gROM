@@ -27,7 +27,6 @@ def generate_gnn_model(params_dict):
 def train_gnn_model(gnn_model, model_name, optimizer_name, train_params,
                     checkpoint_fct = None, dataset_params = None):
     dataset, coefs_dict = pp.generate_dataset(model_name,
-                                              train_params['resample_freq_timesteps'],
                                               dataset_params)
     num_examples = len(dataset)
     num_train = int(num_examples)

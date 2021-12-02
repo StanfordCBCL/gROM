@@ -227,8 +227,7 @@ def normalize(graphs, type):
 
     return norm_graphs, coefs_dict
 
-def generate_dataset(model_name, resample_freq_timesteps,
-                     normalization_type, dataset_params = None):
+def generate_dataset(model_name, dataset_params = None):
     if dataset_params == None:
         graphs = load_graphs('../graphs/data/' + model_name + '.grph')[0]
     else:
@@ -243,4 +242,9 @@ def generate_dataset(model_name, resample_freq_timesteps,
 
     graphs = create_single_timestep_graphs(graphs)
     graphs, coefs_dict = normalize(graphs, normalization_type)
-    return DGL_Dataset(graphs, resample_freq_timesteps), coefs_dict
+
+    if dataset_params != None:
+        return DGL_Dataset(graphs, dataset_params['resample_freq_timesteps']), \
+                           coefs_dict
+    else:
+        return DGL_Dataset(graphs), coefs_dict

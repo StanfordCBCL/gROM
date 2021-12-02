@@ -119,8 +119,8 @@ def add_fields(graph, pressure, velocity, random_walks, rate_noise):
 def generate_graphs(argv, dataset_params, input_dir, save = True):
     print('Generating_graphs with params ' + str(dataset_params))
     model_name = sys.argv[1]
-    geo, fields = create_geometry(model_name, input_dir, 5, remove_caps = True,
-                                  points_to_keep = 170)
+    geo, fields = create_geometry(model_name, input_dir, 8, remove_caps = True,
+                                  points_to_keep = None)
     pressure, velocity = io.gather_pressures_velocities(fields)
     pressure, velocity, area = geo.generate_fields(pressure,
                                                    velocity,
