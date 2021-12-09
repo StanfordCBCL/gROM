@@ -24,7 +24,7 @@ parameters:
   type: double
 - name: weight_decay
   bounds:
-    min: 0.95
+    min: 0.01
     max: 1
   type: double
 - name: momentum

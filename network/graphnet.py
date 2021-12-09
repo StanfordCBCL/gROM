@@ -2,6 +2,7 @@ import torch
 from torch.nn.modules.module import Module
 from torch.nn import LayerNorm
 from torch.nn import Linear
+from torch.nn import LeakyReLU
 import torch.nn.functional as F
 import dgl.function as fn
 from torch.nn import Dropout
@@ -28,11 +29,11 @@ class MLP(Module):
 
     def forward(self, inp):
         enc_features = self.encoder_in(inp)
-        enc_features = F.relu(enc_features) # try leaky relu (0.1) or elu
+        enc_features = F.leaky_relu(enc_features) # try leaky relu (0.1) or elu
 
         for i in range(self.n_h_layers):
             enc_features = self.hidden_layers[i](enc_features)
-            enc_features = F.relu(enc_features)
+            enc_features = F.leaky_relu(enc_features)
 
         enc_features = self.encoder_out(enc_features)
 

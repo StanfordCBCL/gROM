@@ -45,10 +45,16 @@ def train_gnn_model(gnn_model, model_name, optimizer_name, train_params,
     else:
         raise ValueError('Optimizer ' + optimizerizer_name + ' not implemented')
 
-    # try cosine_LR scheduler
-    scheduler = torch.optim.lr_scheduler.ExponentialLR(optimizer,
-                                                       gamma=train_params['weight_decay'])
     nepochs = train_params['nepochs']
+    scheduler_name = 'cosine'
+    if scheduler_name == 'exponential':
+        scheduler = torch.optim.lr_scheduler.ExponentialLR(optimizer,
+                                                           gamma=train_params['weight_decay'])
+    elif scheduler_name == 'cosine':
+        eta_min = train_params['learning_rate'] * train_params['weight_decay']
+        scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(optimizer,
+                                                               T_max=nepochs,
+                                                               eta_min=eta_min)
 
     if checkpoint_fct != None:
         # 200 is the maximum number of sigopt checkpoint
