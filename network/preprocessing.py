@@ -53,7 +53,6 @@ class DGL_Dataset(DGLDataset):
             graph = set_state(graph, graph.ndata['pressure'],
                                      graph.ndata['flowrate'])
 
-
     def __getitem__(self, i):
         return self.graphs[i]
 
@@ -88,10 +87,6 @@ def create_single_timestep_graphs(graphs):
             new_graph.ndata['inlet_mask'] = torch.clone(graph.ndata['inlet_mask'])
             new_graph.ndata['outlet_mask'] = torch.clone(graph.ndata['outlet_mask'])
 
-            inlet_mask = new_graph.ndata['inlet_mask']
-            outlet_mask = new_graph.ndata['outlet_mask']
-            im = np.where(inlet_mask == 1)[0]
-            om = np.where(outlet_mask == 1)[0]
 
             new_graph.ndata['pressure'] = graph.ndata['pressure_' + str(t)] + \
                                           graph.ndata['noise_p_' + str(t)]
@@ -106,7 +101,7 @@ def create_single_timestep_graphs(graphs):
                                     graph.ndata['noise_q_' + str(t)]
 
             # overwrite boundary conditions. This needs to be changed if bcs are
-            # not perfect (e.g., resistance) to account for noice
+            # not perfect (e.g., resistance) to account for noise
             new_graph = set_bcs(new_graph, \
                                 graph.ndata['pressure_' + str(tp1)], \
                                 graph.ndata['flowrate_' + str(tp1)])
@@ -215,10 +210,10 @@ def normalize(graphs, type):
         for graph in graphs:
             cur_list = add_to_list(graph, field, cur_list)
 
-            coefs_dict[field] = {'min': np.min(cur_list, axis=0),
-                                 'max': np.max(cur_list, axis=0),
-                                 'mean': np.mean(cur_list, axis=0),
-                                 'std': np.std(cur_list, axis=0)}
+        coefs_dict[field] = {'min': np.min(cur_list, axis=0),
+                             'max': np.max(cur_list, axis=0),
+                             'mean': np.mean(cur_list, axis=0),
+                             'std': np.std(cur_list, axis=0)}
 
     for graph in graphs:
         cgraph = graph

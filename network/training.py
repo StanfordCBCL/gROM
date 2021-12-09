@@ -45,6 +45,7 @@ def train_gnn_model(gnn_model, model_name, optimizer_name, train_params,
     else:
         raise ValueError('Optimizer ' + optimizerizer_name + ' not implemented')
 
+    # try cosine_LR scheduler
     scheduler = torch.optim.lr_scheduler.ExponentialLR(optimizer,
                                                        gamma=train_params['weight_decay'])
     nepochs = train_params['nepochs']
@@ -218,18 +219,24 @@ if __name__ == "__main__":
                    'process_iterations': 10,
                    'hl_mlp': 2,
                    'normalize': True}
-    train_params = {'learning_rate': 0.05,
+    train_params = {'learning_rate': 0.005,
                     'weight_decay': 0.999,
                     'momentum': 0.0,
                     'resample_freq_timesteps': -1,
                     'batch_size': 10,
-                    'nepochs': 2}
+                    'nepochs': 30}
+    dataset_params = {'rate_noise': 1e-4,
+                      'random_walks': 2,
+                      'normalization': 'standard',
+                      'resample_freq_timesteps': 1}
 
     start = time.time()
     gnn_model, _, train_dataloader, coefs_dict, out_fdr = launch_training(sys.argv[1],
-                                                                          'sgd',
+                                                                          'adam',
                                                                            params_dict,
-                                                                           train_params)
+                                                                           train_params,
+                                                                           checkpoint_fct = None,
+                                                                           dataset_params = dataset_params)
     end = time.time()
     elapsed_time = end - start
     print('Training time = ' + str(elapsed_time))

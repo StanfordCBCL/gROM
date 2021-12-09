@@ -23,12 +23,12 @@ class MLP(Module):
             # torch.nn.init.uniform_(self.hidden_layers[i].weight, -bound_init, bound_init)
 
         self.normalize = normalize
-        if self.normalize:
+        if self.normalize: # Try GroupNorm
             self.norm = LayerNorm(out_feats).float()
 
     def forward(self, inp):
         enc_features = self.encoder_in(inp)
-        enc_features = F.relu(enc_features)
+        enc_features = F.relu(enc_features) # try leaky relu (0.1) or elu
 
         for i in range(self.n_h_layers):
             enc_features = self.hidden_layers[i](enc_features)
@@ -56,8 +56,8 @@ class GraphNet(Module):
                                  params['hl_mlp'],
                                  params['normalize'])
 
-        self.processor_edges = []
-        self.processor_nodes = []
+        self.processor_edges = torch.nn.ModuleList()
+        self.processor_nodes = torch.nn.ModuleList()
         self.process_iters = params['process_iterations']
         for i in range(self.process_iters):
             self.processor_edges.append(MLP(params['latent_size_gnn'] * 3,
