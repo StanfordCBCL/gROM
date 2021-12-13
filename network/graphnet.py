@@ -18,7 +18,7 @@ class MLP(Module):
         # torch.nn.init.uniform_(self.encoder_out.weight, -bound_init, bound_init)
 
         self.n_h_layers = n_h_layers
-        self.hidden_layers = []
+        self.hidden_layers = torch.nn.ModuleList()
         for i in range(n_h_layers):
             self.hidden_layers.append(Linear(latent_space, latent_space, bias = True).float())
             # torch.nn.init.uniform_(self.hidden_layers[i].weight, -bound_init, bound_init)
