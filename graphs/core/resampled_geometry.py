@@ -4,12 +4,17 @@ from scipy import interpolate
 import matplotlib.pyplot as plt
 
 class ResampledGeometry:
-    def __init__(self, geometry, coeff, remove_caps = True):
+    def __init__(self, geometry, coeff, remove_caps = True, doresample = True):
         self.geometry = geometry
-        self.resample(coeff)
+        self.resample(coeff, doresample)
+        self.doresample = doresample
         if remove_caps:
+            self.removed_nodes = 3
             self.remove_caps()
-        self.construct_interpolation_matrices()
+
+        if remove_caps:
+            self.construct_interpolation_matrices()
+        
 
     def assign_area(self, area):
         self.areas = []
@@ -17,27 +22,31 @@ class ResampledGeometry:
         for ipor in range(0, nportions):
             self.areas.append(self.compute_proj_field(ipor, area))
 
-    def resample(self, coeff):
+    def resample(self, coeff, doresample):
         portions = self.geometry.portions
         self.p_portions = []
         for portion in portions:
             p_portion = self.geometry.points[portion[0]:portion[1]+1,:]
+            
+            if not doresample:
+                self.p_portions.append(p_portion)
+            else:
 
-            # compute h of the portion
-            alength = 0
-            for i in range(0, p_portion.shape[0] - 1):
-                alength += np.linalg.norm(p_portion[i+1,:] - p_portion[i,:])
-
-            N = int(np.floor(alength / (coeff * self.geometry.h)))
-
-
-            tck, u = scipy.interpolate.splprep([p_portion[:,0],
-                                                p_portion[:,1],
-                                                p_portion[:,2]], s=0, k = 3)
-            u_fine = np.linspace(0, 1, N)
-            x, y, z = interpolate.splev(u_fine, tck)
-            p_portion = np.vstack((x,y,z)).transpose()
-            self.p_portions.append(p_portion)
+                # compute h of the portion
+                alength = 0
+                for i in range(0, p_portion.shape[0] - 1):
+                    alength += np.linalg.norm(p_portion[i+1,:] - p_portion[i,:])
+    
+                N = int(np.floor(alength / (coeff * self.geometry.h)))
+    
+    
+                tck, u = scipy.interpolate.splprep([p_portion[:,0],
+                                                    p_portion[:,1],
+                                                    p_portion[:,2]], s=0, k = 3)
+                u_fine = np.linspace(0, 1, N)
+                x, y, z = interpolate.splev(u_fine, tck)
+                p_portion = np.vstack((x,y,z)).transpose()
+                self.p_portions.append(p_portion)
 
     def construct_interpolation_matrices(self):
         p_matrices = []
@@ -146,8 +155,16 @@ class ResampledGeometry:
     def compute_proj_field(self, index_portion, field):
         values = field[self.geometry.portions[index_portion][0]:
                        self.geometry.portions[index_portion][1]+1]
-        weights = np.linalg.solve(self.interpolation_matrices[index_portion], values)
-        proj_values = np.matmul(self.projection_matrices[index_portion], weights)
+        if self.doresample:
+            weights = np.linalg.solve(self.interpolation_matrices[index_portion], values)
+            proj_values = np.matmul(self.projection_matrices[index_portion], weights)
+        else:
+            proj_values = values
+            if index_portion == self.inlet:
+                proj_values = proj_values[self.removed_nodes:]
+            if index_portion in self.outlets:
+                proj_values = proj_values[:-self.removed_nodes]
+            
         return proj_values
 
     def compare_field_along_centerlines(self, field):
@@ -314,9 +331,12 @@ class ResampledGeometry:
 
         if len(outlets) == 0:
             outlets.append(0)
+            
+        self.inlet = inlet
+        self.outlets = outlets
 
         for ipor in range(len(self.p_portions)):
             if ipor == inlet:
-                self.p_portions[ipor] = self.p_portions[ipor][3:,:]
+                self.p_portions[ipor] = self.p_portions[ipor][self.removed_nodes:,:]
             if ipor in outlets:
-                self.p_portions[ipor] = self.p_portions[ipor][:-3,:]
+                self.p_portions[ipor] = self.p_portions[ipor][:-self.removed_nodes,:]

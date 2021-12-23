@@ -2,7 +2,7 @@
 
 # create venv:
 VENVNAME=gromenv
-virtualenv --python=python3 $VENVNAME
+virtualenv --python=python3.7 $VENVNAME
 
 source $VENVNAME/bin/activate
 

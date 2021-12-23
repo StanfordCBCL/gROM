@@ -73,6 +73,8 @@ def train_gnn_model(gnn_model, model_name, optimizer_name, train_params,
             outlets = np.where(batched_graph.ndata['outlet_mask'].detach().numpy() == 1)[0]
             weight[inlets,1] = 0
             weight[outlets,0] = 0
+            # weight[:,1] = 0
+            # weight[:,0] = 0
             loss = weighted_mse_loss(pred,
                                      torch.reshape(batched_graph.ndata['n_labels'].float(),
                                      pred.shape), weight)
@@ -142,10 +144,10 @@ def evaluate_error(model, model_name, train_dataloader, coefs_dict, do_plot, out
         flowrates_pred.append(q)
         flowrates_real.append(next_flowrate.detach().numpy())
 
-        err_p = err_p + np.linalg.norm(p - next_pressure.detach().numpy())**2
-        norm_p = norm_p + np.linalg.norm(next_pressure.detach().numpy())**2
-        err_q = err_q + np.linalg.norm(q - next_flowrate.detach().numpy())**2
-        norm_q = norm_q + np.linalg.norm(next_flowrate.detach().numpy())**2
+        err_p = err_p + np.linalg.norm(p - next_pressure.detach().numpy().squeeze())**2
+        norm_p = norm_p + np.linalg.norm(next_pressure.detach().numpy().squeeze())**2
+        err_q = err_q + np.linalg.norm(q - next_flowrate.detach().numpy().squeeze())**2
+        norm_q = norm_q + np.linalg.norm(next_flowrate.detach().numpy().squeeze())**2
 
         new_pressure = pp.normalize_function(p, 'pressure', coefs_dict)
         new_flowrate = pp.normalize_function(q, 'flowrate', coefs_dict)
@@ -219,10 +221,10 @@ def launch_training(model_name, optimizer_name, params_dict,
 if __name__ == "__main__":
     params_dict = {'infeat_nodes': 6,
                    'infeat_edges': 4,
-                   'latent_size_gnn': 32,
+                   'latent_size_gnn': 128,
                    'latent_size_mlp': 64,
                    'out_size': 2,
-                   'process_iterations': 10,
+                   'process_iterations': 1,
                    'hl_mlp': 2,
                    'normalize': True}
     train_params = {'learning_rate': 0.005,
@@ -232,7 +234,7 @@ if __name__ == "__main__":
                     'batch_size': 10,
                     'nepochs': 30}
     dataset_params = {'rate_noise': 1e-4,
-                      'random_walks': 2,
+                      'random_walks': 0,
                       'normalization': 'standard',
                       'resample_freq_timesteps': 1}
 

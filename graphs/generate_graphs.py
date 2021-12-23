@@ -20,11 +20,11 @@ from torch.utils.data.sampler import SubsetRandomSampler
 
 DTYPE = np.float32
 
-def create_geometry(model_name, input_dir, sampling, remove_caps, points_to_keep = None):
+def create_geometry(model_name, input_dir, sampling, remove_caps, points_to_keep = None, doresample = True):
     print('Create geometry: ' + model_name)
     soln = io.read_geo(input_dir + '/' + model_name + '.vtp').GetOutput()
     fields, _, p_array = io.get_all_arrays(soln, points_to_keep)
-    return ResampledGeometry(Geometry(p_array), sampling, remove_caps), fields
+    return ResampledGeometry(Geometry(p_array), sampling, remove_caps, doresample), fields
 
 def create_fixed_graph(geometry, area):
     nodes, edges, lengths, inlet_node, outlet_nodes = geometry.generate_nodes()
@@ -116,15 +116,36 @@ def add_fields(graph, pressure, velocity, random_walks, rate_noise):
 
     return graphs
 
+def generate_analytic(pressure, velocity, area):
+    times = [t for t in pressure]
+    times.sort()
+
+    N = np.size(pressure[times[0]])
+
+    xs = np.linspace(0, 2 * np.pi, N)
+
+    for i in range(0, N):
+        pressure[times[0]][i] = np.sin(xs[i])
+        velocity[times[0]][i] = xs[i] * xs[i]
+
+    for tin in range(1,len(times)):
+        pressure[times[tin]] = pressure[times[tin-1]] + 0.001 * area * np.sin(velocity[times[tin-1]])
+        velocity[times[tin]] = velocity[times[tin-1]] + 0.001 * np.sqrt(area) * np.cos(pressure[times[tin-1]])
+
+    return pressure, velocity
+
+
 def generate_graphs(argv, dataset_params, input_dir, save = True):
     print('Generating_graphs with params ' + str(dataset_params))
     model_name = sys.argv[1]
-    geo, fields = create_geometry(model_name, input_dir, 15, remove_caps = True,
-                                  points_to_keep = None)
+    geo, fields = create_geometry(model_name, input_dir, 1, remove_caps = True,
+                                  points_to_keep = 170, doresample = False)
     pressure, velocity = io.gather_pressures_velocities(fields)
     pressure, velocity, area = geo.generate_fields(pressure,
                                                    velocity,
                                                    fields['area'])
+
+    # pressure, velocity = generate_analytic(pressure, velocity, area)
 
     fixed_graph = create_fixed_graph(geo, area)
     graphs = add_fields(fixed_graph, pressure, velocity,
@@ -136,6 +157,6 @@ def generate_graphs(argv, dataset_params, input_dir, save = True):
 
 if __name__ == "__main__":
     input_dir = 'vtps'
-    dataset_params = {'random_walks': 4,
+    dataset_params = {'random_walks': 0,
                       'rate_noise': 1e-3}
     generate_graphs(sys.argv, dataset_params, input_dir, True)
