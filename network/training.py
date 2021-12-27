@@ -101,11 +101,10 @@ def evaluate_error(model, model_name, train_dataloader, coefs_dict, do_plot, out
     true_graph = load_graphs('../graphs/data/' + model_name + '.grph')[0][0]
     times = pp.get_times(true_graph)
     # times = times[0:]
-    initial_pressure = pp.normalize_function(true_graph.ndata['pressure_' + str(times[0])],
+    new_pressure = pp.normalize_function(true_graph.ndata['pressure_' + str(times[0])],
                                              'pressure', coefs_dict)
-    initial_flowrate = pp.normalize_function(true_graph.ndata['flowrate_' + str(times[0])],
+    new_flowrate = pp.normalize_function(true_graph.ndata['flowrate_' + str(times[0])],
                                              'flowrate', coefs_dict)
-    graph = pp.set_state(graph, initial_pressure, initial_flowrate)
 
     err_p = 0
     err_q = 0
@@ -124,6 +123,7 @@ def evaluate_error(model, model_name, train_dataloader, coefs_dict, do_plot, out
         np_normalized = pp.normalize_function(next_pressure, 'pressure', coefs_dict)
         nf_normalized = pp.normalize_function(next_flowrate, 'flowrate', coefs_dict)
         graph = pp.set_bcs(graph, np_normalized, nf_normalized)
+        graph = pp.set_state(graph, new_pressure, new_flowrate)
         pred = model(graph, graph.ndata['n_features'].float()).squeeze()
 
         dp = pp.invert_normalize_function(pred[:,0].detach().numpy(), 'dp', coefs_dict)
@@ -149,10 +149,8 @@ def evaluate_error(model, model_name, train_dataloader, coefs_dict, do_plot, out
         err_q = err_q + np.linalg.norm(q - next_flowrate.detach().numpy().squeeze())**2
         norm_q = norm_q + np.linalg.norm(next_flowrate.detach().numpy().squeeze())**2
 
-        new_pressure = pp.normalize_function(p, 'pressure', coefs_dict)
-        new_flowrate = pp.normalize_function(q, 'flowrate', coefs_dict)
-        graph = pp.set_state(graph, torch.unsqueeze(torch.from_numpy(new_pressure),1),
-                                    torch.unsqueeze(torch.from_numpy(new_flowrate),1))
+        new_pressure = torch.unsqueeze(torch.from_numpy(pp.normalize_function(p, 'pressure', coefs_dict)),1)
+        new_flowrate = torch.unsqueeze(torch.from_numpy(pp.normalize_function(q, 'flowrate', coefs_dict)),1)
 
     err_p = np.sqrt(err_p / norm_p)
     err_q = np.sqrt(err_q / norm_q)
@@ -219,7 +217,7 @@ def launch_training(model_name, optimizer_name, params_dict,
     return gnn_model, loss, train_loader, coefs_dict, folder
 
 if __name__ == "__main__":
-    params_dict = {'infeat_nodes': 6,
+    params_dict = {'infeat_nodes': 8,
                    'infeat_edges': 4,
                    'latent_size_gnn': 128,
                    'latent_size_mlp': 64,

@@ -145,7 +145,7 @@ def generate_graphs(argv, dataset_params, input_dir, save = True):
                                                    velocity,
                                                    fields['area'])
 
-    # pressure, velocity = generate_analytic(pressure, velocity, area)
+    pressure, velocity = generate_analytic(pressure, velocity, area)
 
     fixed_graph = create_fixed_graph(geo, area)
     graphs = add_fields(fixed_graph, pressure, velocity,

@@ -24,6 +24,8 @@ def set_state(graph, pressure, flowrate):
     graph.ndata['n_features'] = torch.cat((pressure, \
                                            flowrate, \
                                            graph.ndata['area'], \
+                                           graph.ndata['pressure_bc'],
+                                           graph.ndata['flowrate_bc'],
                                            graph.ndata['node_type']), 1)
     # graph.edata['e_features'] = torch.cat((graph.edata['position'], \
     #                                        flowrate_edge), 1)
@@ -36,8 +38,10 @@ def set_state(graph, pressure, flowrate):
 def set_bcs(graph, next_pressure, next_flowrate):
     im = np.where(graph.ndata['inlet_mask'].detach().numpy() == 1)[0]
     om = np.where(graph.ndata['outlet_mask'].detach().numpy() == 1)[0]
-    graph.ndata['pressure'][om] = next_pressure[om]
-    graph.ndata['flowrate'][im] = next_flowrate[im]
+    graph.ndata['pressure_bc'] = next_pressure * 0
+    graph.ndata['flowrate_bc'] = next_flowrate * 0
+    graph.ndata['pressure_bc'][om] = next_pressure[om]
+    graph.ndata['flowrate_bc'][im] = next_flowrate[im]
     return graph
 
 class DGL_Dataset(DGLDataset):
@@ -100,11 +104,10 @@ def create_single_timestep_graphs(graphs):
                                     graph.ndata['flowrate_' + str(t)] - \
                                     graph.ndata['noise_q_' + str(t)]
 
-            # overwrite boundary conditions. This needs to be changed if bcs are
-            # not perfect (e.g., resistance) to account for noise
-            new_graph = set_bcs(new_graph, \
-                                graph.ndata['pressure_' + str(tp1)], \
+            new_graph = set_bcs(new_graph, 
+                                graph.ndata['pressure_' + str(tp1)], 
                                 graph.ndata['flowrate_' + str(tp1)])
+            
 
             out_graphs.append(new_graph)
 
