@@ -18,14 +18,22 @@ def set_state(graph, pressure, flowrate):
     # edges0 = graph.edges()[0]
     # edges1 = graph.edges()[1]
     # flowrate_edge = (flowrate[edges0] + flowrate[edges1]) / 2
+
+    im = np.where(graph.ndata['inlet_mask'].detach().numpy() == 1)[0]
+    om = np.where(graph.ndata['outlet_mask'].detach().numpy() == 1)[0]
+    graph.ndata['pressure_bc'] = graph.ndata['pressure'] * 0
+    graph.ndata['flowrate_bc'] = graph.ndata['flowrate'] * 0
+    graph.ndata['pressure_bc'][om] = graph.ndata['pressure_next'][om]
+    graph.ndata['flowrate_bc'][im] = graph.ndata['flowrate_next'][im]
+
     graph.ndata['pressure'] = pressure
     graph.ndata['flowrate'] = flowrate
+    graph.ndata['pressure'][om] = graph.ndata['pressure_next'][om]
+    graph.ndata['flowrate'][im] = graph.ndata['flowrate_next'][im]
     # graph.edata['flowrate_edge'] = flowrate_edge
     graph.ndata['n_features'] = torch.cat((pressure, \
                                            flowrate, \
                                            graph.ndata['area'], \
-                                           graph.ndata['pressure_bc'],
-                                           graph.ndata['flowrate_bc'],
                                            graph.ndata['node_type']), 1)
     # graph.edata['e_features'] = torch.cat((graph.edata['position'], \
     #                                        flowrate_edge), 1)
@@ -36,12 +44,8 @@ def set_state(graph, pressure, flowrate):
     return graph
 
 def set_bcs(graph, next_pressure, next_flowrate):
-    im = np.where(graph.ndata['inlet_mask'].detach().numpy() == 1)[0]
-    om = np.where(graph.ndata['outlet_mask'].detach().numpy() == 1)[0]
-    graph.ndata['pressure_bc'] = next_pressure * 0
-    graph.ndata['flowrate_bc'] = next_flowrate * 0
-    graph.ndata['pressure_bc'][om] = next_pressure[om]
-    graph.ndata['flowrate_bc'][im] = next_flowrate[im]
+    graph.ndata['pressure_next'] = next_pressure
+    graph.ndata['flowrate_next'] = next_flowrate
     return graph
 
 class DGL_Dataset(DGLDataset):
@@ -91,7 +95,6 @@ def create_single_timestep_graphs(graphs):
             new_graph.ndata['inlet_mask'] = torch.clone(graph.ndata['inlet_mask'])
             new_graph.ndata['outlet_mask'] = torch.clone(graph.ndata['outlet_mask'])
 
-
             new_graph.ndata['pressure'] = graph.ndata['pressure_' + str(t)] + \
                                           graph.ndata['noise_p_' + str(t)]
             new_graph.ndata['dp'] = graph.ndata['pressure_' + str(tp1)] - \
@@ -104,10 +107,8 @@ def create_single_timestep_graphs(graphs):
                                     graph.ndata['flowrate_' + str(t)] - \
                                     graph.ndata['noise_q_' + str(t)]
 
-            new_graph = set_bcs(new_graph, 
-                                graph.ndata['pressure_' + str(tp1)], 
-                                graph.ndata['flowrate_' + str(tp1)])
-            
+            new_graph.ndata['pressure_next'] = graph.ndata['pressure_' + str(tp1)]
+            new_graph.ndata['flowrate_next'] = graph.ndata['flowrate_' + str(tp1)]
 
             out_graphs.append(new_graph)
 
