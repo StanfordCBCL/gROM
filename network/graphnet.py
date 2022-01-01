@@ -113,18 +113,29 @@ class GraphNet(Module):
         h = self.output(f)
         return {'h' : h}
 
+    # def forward(self, g, in_feat):
+    #     g.ndata['features_c'] = in_feat
+    #     g.apply_nodes(self.encode_nodes)
+    #     g.apply_edges(self.encode_edges)
+    #     for i in range(self.process_iters):
+    #         def pe(edges):
+    #             return self.process_edges(edges, i)
+    #         def pn(nodes):
+    #             return self.process_nodes(nodes, i)
+    #         g.apply_edges(pe)
+    #         # aggregate new edge features in nodes
+    #         g.update_all(fn.copy_e('proc_edge', 'm'), fn.sum('m', 'pe_sum'))
+    #         g.apply_nodes(pn)
+    #     g.apply_nodes(self.decode)
+    #     return g.ndata['h']
+    
     def forward(self, g, in_feat):
         g.ndata['features_c'] = in_feat
         g.apply_nodes(self.encode_nodes)
-        g.apply_edges(self.encode_edges)
         for i in range(self.process_iters):
-            def pe(edges):
-                return self.process_edges(edges, i)
             def pn(nodes):
                 return self.process_nodes(nodes, i)
-            g.apply_edges(pe)
-            # aggregate new edge features in nodes
-            g.update_all(fn.copy_e('proc_edge', 'm'), fn.sum('m', 'pe_sum'))
+            g.update_all(fn.u_add_v('proc_node', 'proc_node', 'm'), fn.sum('m', 'pe_sum'))
             g.apply_nodes(pn)
         g.apply_nodes(self.decode)
         return g.ndata['h']

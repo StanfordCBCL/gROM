@@ -24,6 +24,14 @@ def create_geometry(model_name, input_dir, sampling, remove_caps, points_to_keep
     print('Create geometry: ' + model_name)
     soln = io.read_geo(input_dir + '/' + model_name + '.vtp').GetOutput()
     fields, _, p_array = io.get_all_arrays(soln, points_to_keep)
+    
+    
+    p_array = np.zeros((20,3))
+    p_array[:,0] = np.linspace(0,1,20)
+    
+    for field in fields:
+        fields[field] = np.ones((20))
+    
     return ResampledGeometry(Geometry(p_array), sampling, remove_caps, doresample), fields
 
 def create_fixed_graph(geometry, area):
@@ -119,27 +127,37 @@ def add_fields(graph, pressure, velocity, random_walks, rate_noise):
 def generate_analytic(pressure, velocity, area):
     times = [t for t in pressure]
     times.sort()
-
+    
     N = np.size(pressure[times[0]])
 
     xs = np.linspace(0, 2 * np.pi, N)
 
-    for i in range(0, N):
-        pressure[times[0]][i] = np.sin(xs[i])
-        velocity[times[0]][i] = xs[i] * xs[i]
+    # for i in range(0, N):
+    #     pressure[times[0]][i] = np.sin(xs[i])
+    #     velocity[times[0]][i] = xs[i] * xs[i]
 
-    for tin in range(1,len(times)):
-        pressure[times[tin]] = pressure[times[tin-1]] + 0.001 * area * np.sin(velocity[times[tin-1]])
-        velocity[times[tin]] = velocity[times[tin-1]] + 0.001 * np.sqrt(area) * np.cos(pressure[times[tin-1]])
-
+    # for tin in range(1,len(times)):
+    #     for n in range(1, N-1):
+    #         pressure[times[tin]][n] = pressure[times[tin-1]][n] + 0.001 * area[n] * np.sin(velocity[times[tin-1]][n-1]) * np.cos(velocity[times[tin-1]][n+1])
+    #         velocity[times[tin]][n] = velocity[times[tin-1]][n] + 0.001 * np.sqrt(area[n]) * np.cos((pressure[times[tin-1]][n-1] + pressure[times[tin-1]][n+1])/2)
+    #         # pressure[times[tin]][n] = pressure[times[tin-1]][n] + 0.001 * area[n] * np.sin(velocity[times[tin-1]][n])
+    #         # velocity[times[tin]][n] = velocity[times[tin-1]][n] + 0.001 * np.sqrt(area[n]) * np.cos(pressure[times[tin-1]][n])
+    #     # pressure[times[tin]] = pressure[times[tin-1]] + 0.001 * area * np.sin(velocity[times[tin-1]])
+    #     # velocity[times[tin]] = velocity[times[tin-1]] + 0.001 * np.sqrt(area) * np.cos(pressure[times[tin-1]])
+    
+    for tin in range(0, len(times)):
+        for i in range(0, N):
+            pressure[times[tin]][i] = np.sin(0.01 * tin) * np.cos(0.01 * tin)
+            velocity[times[tin]][i] = np.cos(0.01 * tin) * 0.01 * tin
+        
     return pressure, velocity
 
 
 def generate_graphs(argv, dataset_params, input_dir, save = True):
     print('Generating_graphs with params ' + str(dataset_params))
     model_name = sys.argv[1]
-    geo, fields = create_geometry(model_name, input_dir, 1, remove_caps = True,
-                                  points_to_keep = 170, doresample = False)
+    geo, fields = create_geometry(model_name, input_dir, 5, remove_caps = True,
+                                  points_to_keep = 100, doresample = None)
     pressure, velocity = io.gather_pressures_velocities(fields)
     pressure, velocity, area = geo.generate_fields(pressure,
                                                    velocity,

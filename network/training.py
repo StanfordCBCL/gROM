@@ -71,8 +71,10 @@ def train_gnn_model(gnn_model, model_name, optimizer_name, train_params,
             # mask out values corresponding to boundary conditions
             inlets = np.where(batched_graph.ndata['inlet_mask'].detach().numpy() == 1)[0]
             outlets = np.where(batched_graph.ndata['outlet_mask'].detach().numpy() == 1)[0]
-            weight[inlets,1] = 0
-            weight[outlets,0] = 0
+            weight[inlets,:] = 100
+            weight[outlets,:] = 100
+            # weight[inlets,1] = 0
+            # weight[outlets,0] = 0
             # weight[:,1] = 0
             # weight[:,0] = 0
             loss = weighted_mse_loss(pred,
@@ -84,6 +86,8 @@ def train_gnn_model(gnn_model, model_name, optimizer_name, train_params,
             optimizer.step()
             count = count + 1
         scheduler.step()
+        print(batched_graph.ndata['n_features'].float())
+        print(pred)
         print('\tloss = ' + str(global_loss / count))
 
         if checkpoint_fct != None:
@@ -126,23 +130,38 @@ def evaluate_error(model, model_name, train_dataloader, coefs_dict, do_plot, out
         graph = pp.set_state(graph, new_pressure, new_flowrate)
         pred = model(graph, graph.ndata['n_features'].float()).squeeze()
 
-        dp = pp.invert_normalize_function(pred[:,0].detach().numpy(), 'dp', coefs_dict)
-        prev_p = pp.invert_normalize_function(graph.ndata['pressure'].detach().numpy().squeeze(),
-                                              'pressure', coefs_dict)
-
-        p = dp + prev_p
-        # print(np.linalg.norm(p))
-        pressures_pred.append(p)
-        pressures_real.append(next_pressure.detach().numpy())
-
-        dq = pp.invert_normalize_function(pred[:,1].detach().numpy(), 'dq', coefs_dict)
-        prev_q = pp.invert_normalize_function(graph.ndata['flowrate'].detach().numpy().squeeze(),
-                                              'flowrate', coefs_dict)
-
-        q = dq + prev_q
-
-        flowrates_pred.append(q)
-        flowrates_real.append(next_flowrate.detach().numpy())
+        if (0):
+            dp = pp.invert_normalize_function(pred[:,0].detach().numpy(), 'dp', coefs_dict)
+            prev_p = pp.invert_normalize_function(graph.ndata['pressure'].detach().numpy().squeeze(),
+                                                  'pressure', coefs_dict)
+    
+            p = dp + prev_p
+            # print(np.linalg.norm(p))
+            pressures_pred.append(p)
+            pressures_real.append(next_pressure.detach().numpy())
+    
+            dq = pp.invert_normalize_function(pred[:,1].detach().numpy(), 'dq', coefs_dict)
+            prev_q = pp.invert_normalize_function(graph.ndata['flowrate'].detach().numpy().squeeze(),
+                                                  'flowrate', coefs_dict)
+    
+            q = dq + prev_q
+    
+            flowrates_pred.append(q)
+            flowrates_real.append(next_flowrate.detach().numpy())
+        else:
+            dp = pp.invert_normalize_function(pred[:,0].detach().numpy(), 'pressure', coefs_dict)
+    
+            p = dp 
+            # print(np.linalg.norm(p))
+            pressures_pred.append(p)
+            pressures_real.append(next_pressure.detach().numpy())
+    
+            dq = pp.invert_normalize_function(pred[:,1].detach().numpy(), 'flowrate', coefs_dict)
+    
+            q = dq
+    
+            flowrates_pred.append(q)
+            flowrates_real.append(next_flowrate.detach().numpy())
 
         err_p = err_p + np.linalg.norm(p - next_pressure.detach().numpy().squeeze())**2
         norm_p = norm_p + np.linalg.norm(next_pressure.detach().numpy().squeeze())**2
@@ -219,19 +238,19 @@ def launch_training(model_name, optimizer_name, params_dict,
 if __name__ == "__main__":
     params_dict = {'infeat_nodes': 6,
                    'infeat_edges': 4,
-                   'latent_size_gnn': 128,
-                   'latent_size_mlp': 64,
+                   'latent_size_gnn': 4,
+                   'latent_size_mlp': 4,
                    'out_size': 2,
-                   'process_iterations': 1,
+                   'process_iterations': 10,
                    'hl_mlp': 2,
                    'normalize': True}
     train_params = {'learning_rate': 0.005,
                     'weight_decay': 0.999,
                     'momentum': 0.0,
                     'resample_freq_timesteps': -1,
-                    'batch_size': 10,
-                    'nepochs': 30}
-    dataset_params = {'rate_noise': 1e-4,
+                    'batch_size': 1,
+                    'nepochs': 100}
+    dataset_params = {'rate_noise': 1e-5,
                       'random_walks': 0,
                       'normalization': 'standard',
                       'resample_freq_timesteps': 1}

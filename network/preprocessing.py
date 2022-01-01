@@ -26,20 +26,24 @@ def set_state(graph, pressure, flowrate):
     graph.ndata['pressure_bc'][om] = graph.ndata['pressure_next'][om]
     graph.ndata['flowrate_bc'][im] = graph.ndata['flowrate_next'][im]
 
-    graph.ndata['pressure'] = pressure
-    graph.ndata['flowrate'] = flowrate
+    graph.ndata['pressure'] = pressure * 0
+    graph.ndata['flowrate'] = flowrate * 0
     graph.ndata['pressure'][om] = graph.ndata['pressure_next'][om]
+    graph.ndata['pressure'][im] = graph.ndata['pressure_next'][im]
+    graph.ndata['flowrate'][om] = graph.ndata['flowrate_next'][om]
     graph.ndata['flowrate'][im] = graph.ndata['flowrate_next'][im]
     # graph.edata['flowrate_edge'] = flowrate_edge
-    graph.ndata['n_features'] = torch.cat((pressure, \
-                                           flowrate, \
+    graph.ndata['n_features'] = torch.cat((graph.ndata['pressure'], \
+                                           graph.ndata['flowrate'], \
                                            graph.ndata['area'], \
                                            graph.ndata['node_type']), 1)
     # graph.edata['e_features'] = torch.cat((graph.edata['position'], \
     #                                        flowrate_edge), 1)
     graph.edata['e_features'] = graph.edata['position']
-    graph.ndata['n_labels'] = torch.cat((graph.ndata['dp'], \
-                                         graph.ndata['dq']), 1)
+    # graph.ndata['n_labels'] = torch.cat((graph.ndata['dp'], \
+    #                                      graph.ndata['dq']), 1)
+    graph.ndata['n_labels'] = torch.cat((graph.ndata['pressure_next'], \
+                                         graph.ndata['flowrate_next']), 1)
     # graph.edata['e_labels'] = graph.edata['dq_edge']
     return graph
 
@@ -218,6 +222,12 @@ def normalize(graphs, type):
                              'max': np.max(cur_list, axis=0),
                              'mean': np.mean(cur_list, axis=0),
                              'std': np.std(cur_list, axis=0)}
+        
+        ncoefs = coefs_dict[field]['std'].shape[0]
+        for i in range(ncoefs):
+            if coefs_dict[field]['std'][i] == 0:
+                coefs_dict[field]['std'][i] = 1
+        
 
     for graph in graphs:
         cgraph = graph
