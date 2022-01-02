@@ -13,39 +13,27 @@ import numpy as np
 from dgl.data.utils import load_graphs
 from dgl.data import DGLDataset
 import generate_graphs as gg
+import copy
 
-def set_state(graph, pressure, flowrate):
-    # edges0 = graph.edges()[0]
-    # edges1 = graph.edges()[1]
-    # flowrate_edge = (flowrate[edges0] + flowrate[edges1]) / 2
-
-    im = np.where(graph.ndata['inlet_mask'].detach().numpy() == 1)[0]
-    om = np.where(graph.ndata['outlet_mask'].detach().numpy() == 1)[0]
-    graph.ndata['pressure_bc'] = graph.ndata['pressure'] * 0
-    graph.ndata['flowrate_bc'] = graph.ndata['flowrate'] * 0
-    graph.ndata['pressure_bc'][om] = graph.ndata['pressure_next'][om]
-    graph.ndata['flowrate_bc'][im] = graph.ndata['flowrate_next'][im]
-
-    graph.ndata['pressure'] = pressure * 0
-    graph.ndata['flowrate'] = flowrate * 0
-    graph.ndata['pressure'][om] = graph.ndata['pressure_next'][om]
-    graph.ndata['pressure'][im] = graph.ndata['pressure_next'][im]
-    graph.ndata['flowrate'][om] = graph.ndata['flowrate_next'][om]
-    graph.ndata['flowrate'][im] = graph.ndata['flowrate_next'][im]
-    # graph.edata['flowrate_edge'] = flowrate_edge
-    graph.ndata['n_features'] = torch.cat((graph.ndata['pressure'], \
-                                           graph.ndata['flowrate'], \
-                                           graph.ndata['area'], \
-                                           graph.ndata['node_type']), 1)
-    # graph.edata['e_features'] = torch.cat((graph.edata['position'], \
-    #                                        flowrate_edge), 1)
-    graph.edata['e_features'] = graph.edata['position']
-    # graph.ndata['n_labels'] = torch.cat((graph.ndata['dp'], \
-    #                                      graph.ndata['dq']), 1)
-    graph.ndata['n_labels'] = torch.cat((graph.ndata['pressure_next'], \
-                                         graph.ndata['flowrate_next']), 1)
-    # graph.edata['e_labels'] = graph.edata['dq_edge']
-    return graph
+def set_state(graph, state_dict):
+    def per_node_type(node_type):
+        graph.nodes[node_type].data['pressure'] = state_dict['pressure'][node_type]
+        graph.nodes[node_type].data['flowrate'] = state_dict['flowrate'][node_type]
+        if node_type == 'inner':
+            graph.nodes[node_type].data['n_features'] = torch.cat((graph.nodes[node_type].data['pressure'], \
+                                                                   graph.nodes[node_type].data['flowrate'], \
+                                                                   graph.nodes[node_type].data['area'], \
+                                                                   graph.nodes[node_type].data['node_type']), 1)
+        else:
+            graph.nodes[node_type].data['area']
+            graph.nodes[node_type].data['n_features'] = torch.cat((graph.nodes[node_type].data['pressure'], \
+                                                                   graph.nodes[node_type].data['flowrate'], \
+                                                                   graph.nodes[node_type].data['area']), 1)
+        graph.nodes[node_type].data['n_labels'] = torch.cat((graph.nodes[node_type].data['pressure_next'], \
+                                                             graph.nodes[node_type].data['flowrate_next']), 1)
+    per_node_type('inner')
+    per_node_type('inlet')
+    per_node_type('outlet')
 
 def set_bcs(graph, next_pressure, next_flowrate):
     graph.ndata['pressure_next'] = next_pressure
@@ -62,8 +50,14 @@ class DGL_Dataset(DGLDataset):
 
     def process(self):
         for graph in self.graphs:
-            graph = set_state(graph, graph.ndata['pressure'],
-                                     graph.ndata['flowrate'])
+            pressure_dict = {'inner': graph.nodes['inner'].data['pressure'],
+                             'inlet': graph.nodes['inlet'].data['pressure'],
+                             'outlet': graph.nodes['outlet'].data['pressure']}
+            flowrate_dict = {'inner': graph.nodes['inner'].data['flowrate'],
+                             'inlet': graph.nodes['inlet'].data['flowrate'],
+                             'outlet': graph.nodes['outlet'].data['flowrate']}
+            state_dict = {'pressure': pressure_dict, 'flowrate': flowrate_dict}
+            set_state(graph, state_dict)
 
     def __getitem__(self, i):
         return self.graphs[i]
@@ -74,7 +68,7 @@ class DGL_Dataset(DGLDataset):
 def get_times(graph):
     times = []
 
-    features = graph.ndata
+    features = graph.nodes['inner'].data
     for feature in features:
         if 'pressure' in feature:
             ind  = feature.find('_')
@@ -83,36 +77,52 @@ def get_times(graph):
 
     return times
 
+def free_fields(graph, times):
+    def per_node_type(node_type):
+        for t in times:
+            del(graph.nodes[node_type].data['pressure_' + str(t)])
+            del(graph.nodes[node_type].data['noise_p_' + str(t)])
+            del(graph.nodes[node_type].data['flowrate_' + str(t)])
+            del(graph.nodes[node_type].data['noise_q_' + str(t)])
+    per_node_type('inner')
+    per_node_type('inlet')
+    per_node_type('outlet')
+    
+def set_timestep(targetgraph, allgraph, t, tp1):
+    def per_node_type(node_type):
+        targetgraph.nodes[node_type].data['pressure'] = allgraph.nodes[node_type].data['pressure_' + str(t)] + \
+                                                        allgraph.nodes[node_type].data['noise_p_' + str(t)]
+        targetgraph.nodes[node_type].data['dp'] = allgraph.nodes[node_type].data['pressure_' + str(tp1)] - \
+                                allgraph.nodes[node_type].data['pressure_' + str(t)] - \
+                                allgraph.nodes[node_type].data['noise_p_' + str(t)]
+
+        targetgraph.nodes[node_type].data['flowrate'] = allgraph.nodes[node_type].data['flowrate_' + str(t)] + \
+                                      allgraph.nodes[node_type].data['noise_q_' + str(t)]
+        targetgraph.nodes[node_type].data['dq'] = allgraph.nodes[node_type].data['flowrate_' + str(tp1)] - \
+                                allgraph.nodes[node_type].data['flowrate_' + str(t)] - \
+                                allgraph.nodes[node_type].data['noise_q_' + str(t)]
+
+        targetgraph.nodes[node_type].data['pressure_next'] = allgraph.nodes[node_type].data['pressure_' + str(tp1)]
+        targetgraph.nodes[node_type].data['flowrate_next'] = allgraph.nodes[node_type].data['flowrate_' + str(tp1)]
+    
+    per_node_type('inner')
+    per_node_type('inlet')
+    per_node_type('outlet')
+
 def create_single_timestep_graphs(graphs):
     out_graphs = []
     for graph in graphs:
         times = get_times(graph)
+        graph_no_fields = copy.deepcopy(graph)
+        free_fields(graph_no_fields, times)
         ntimes = len(times)
         for tind in range(0, ntimes-1):
             t = times[tind]
             tp1 = times[tind+1]
 
-            new_graph = dgl.graph((graph.edges()[0], graph.edges()[1]))
-            new_graph.ndata['area'] = torch.clone(graph.ndata['area'])
-            new_graph.ndata['node_type'] = torch.clone(graph.ndata['node_type'])
-            new_graph.edata['position'] = torch.clone(graph.edata['position'])
-            new_graph.ndata['inlet_mask'] = torch.clone(graph.ndata['inlet_mask'])
-            new_graph.ndata['outlet_mask'] = torch.clone(graph.ndata['outlet_mask'])
+            new_graph = copy.deepcopy(graph_no_fields)
+            set_timestep(new_graph, graph, t, tp1)
 
-            new_graph.ndata['pressure'] = graph.ndata['pressure_' + str(t)] + \
-                                          graph.ndata['noise_p_' + str(t)]
-            new_graph.ndata['dp'] = graph.ndata['pressure_' + str(tp1)] - \
-                                    graph.ndata['pressure_' + str(t)] - \
-                                    graph.ndata['noise_p_' + str(t)]
-
-            new_graph.ndata['flowrate'] = graph.ndata['flowrate_' + str(t)] + \
-                                          graph.ndata['noise_q_' + str(t)]
-            new_graph.ndata['dq'] = graph.ndata['flowrate_' + str(tp1)] - \
-                                    graph.ndata['flowrate_' + str(t)] - \
-                                    graph.ndata['noise_q_' + str(t)]
-
-            new_graph.ndata['pressure_next'] = graph.ndata['pressure_' + str(tp1)]
-            new_graph.ndata['flowrate_next'] = graph.ndata['flowrate_' + str(tp1)]
 
             out_graphs.append(new_graph)
 
@@ -130,23 +140,30 @@ def invert_min_max(field, bounds):
     return bounds['min'] + field * (bounds['max'] - bounds['min'])
 
 def min_max_normalization(graph, fields, bounds_dict):
-    node_features = graph.ndata
-    for feat in node_features:
-        for field in fields:
-            if field in feat:
-                if np.linalg.norm(np.min(graph.ndata[feat].detach().numpy()) - 0) > 1e-5 and \
-                   np.linalg.norm(np.max(graph.ndata[feat].detach().numpy()) - 1) > 1e-5:
-                       graph.ndata[feat] = min_max(graph.ndata[feat], bounds_dict[field])
-
-    edge_features = graph.edata
-    for feat in edge_features:
-        for field in fields:
-            if field in feat:
-                if np.linalg.norm(np.min(graph.edata[feat].detach().numpy()) - 0) > 1e-5 and \
-                   np.linalg.norm(np.max(graph.edata[feat].detach().numpy()) - 1) > 1e-5:
-                       graph.edata[feat] = min_max(graph.edata[feat], bounds_dict[field])
-
-    return graph
+    def per_node_type(node_type):
+        node_features = graph.nodes[node_type].data
+        for feat in node_features:
+            for field in fields:
+                if field in feat:
+                    if np.linalg.norm(np.min(graph.ndata[feat].detach().numpy()) - 0) > 1e-5 and \
+                       np.linalg.norm(np.max(graph.ndata[feat].detach().numpy()) - 1) > 1e-5:
+                           graph.ndata[feat] = min_max(graph.ndata[feat], bounds_dict[field])
+                           
+    def per_edge_type(edge_type):     
+        edge_features = graph.edata[edge_type].data
+        for feat in edge_features:
+            for field in fields:
+                if field in feat:
+                    if np.linalg.norm(np.min(graph.edata[feat].detach().numpy()) - 0) > 1e-5 and \
+                       np.linalg.norm(np.max(graph.edata[feat].detach().numpy()) - 1) > 1e-5:
+                           graph.edata[feat] = min_max(graph.edata[feat], bounds_dict[field])
+                           
+    per_node_type('inner')
+    per_node_type('inlet')
+    per_node_type('outlet')
+    per_edge_type('inner_to_inner')
+    per_edge_type('in_to_inner')
+    per_edge_type('out_to_inner')
 
 def standardize(field, coeffs):
     ncomponents = coeffs['mean'].size
@@ -160,19 +177,26 @@ def invert_standardize(field, coeffs):
     return coeffs['mean'] + field * coeffs['std']
 
 def standard_normalization(graph, fields, coeffs_dict):
-    node_features = graph.ndata
-    for feat in node_features:
-        for field in fields:
-            if field in feat:
-                graph.ndata[feat] = standardize(graph.ndata[feat], coeffs_dict[field])
+    def per_node_type(node_type):
+        node_features = graph.nodes[node_type].data
+        for feat in node_features:
+            for field in fields:
+                if field in feat:
+                    graph.nodes[node_type].data[feat] = standardize(graph.nodes[node_type].data[feat], coeffs_dict[field])
 
-    edge_features = graph.edata
-    for feat in edge_features:
-        for field in fields:
-            if field in feat:
-                graph.edata[feat] = standardize(graph.edata[feat], coeffs_dict[field])
-
-    return graph
+    def per_edge_type(edge_type):     
+        edge_features = graph.edges[edge_type].data
+        for feat in edge_features:
+            for field in fields:
+                if field in feat:
+                    graph.edges[edge_type].data[feat] = standardize(graph.edges[edge_type].data[feat], coeffs_dict[field])
+                    
+    per_node_type('inner')
+    per_node_type('inlet')
+    per_node_type('outlet')
+    per_edge_type('inner_to_inner')
+    per_edge_type('in_to_inner')
+    per_edge_type('out_to_inner')
 
 def normalize_function(field, field_name, coefs_dict):
     if coefs_dict['type'] == 'min_max':
@@ -189,21 +213,38 @@ def invert_normalize_function(field, field_name, coefs_dict):
     return []
 
 def add_to_list(graph, field, partial_list):
-    node_features = graph.ndata
-    for feat in node_features:
-        if field in feat:
-            if partial_list.size == 0:
-                partial_list = graph.ndata[feat].detach().numpy()
-            else:
-                partial_list = np.concatenate((partial_list, graph.ndata[feat].detach().numpy()), axis = 0)
-
-    edge_features = graph.edata
-    for feat in edge_features:
-        if field in feat:
-            if partial_list.size == 0:
-                partial_list = graph.edata[feat].detach().numpy()
-            else:
-                partial_list = np.concatenate((partial_list, graph.edata[feat].detach().numpy()), axis = 0)
+    def per_node_type(node_type, partial_list):
+        node_features = graph.nodes[node_type].data
+        for feat in node_features:
+            if field in feat:
+                value = graph.nodes[node_type].data[feat].detach().numpy()
+                if (len(value.shape) == 1):
+                    value = np.expand_dims(value, axis = 1)
+                if partial_list.size == 0:
+                    partial_list = value
+                else:
+                    partial_list = np.concatenate((partial_list,value), axis = 0)
+        return partial_list
+    
+    def per_edge_type(edge_type, partial_list):
+        edge_features = graph.edges[edge_type].data
+        for feat in edge_features:
+            if field in feat:
+                value = graph.edges[edge_type].data[feat].detach().numpy()
+                if (len(value.shape) == 1):
+                    value = np.expand_dims(value, axis = 1)
+                if partial_list.size == 0:
+                    partial_list = value
+                else:
+                    partial_list = np.concatenate((partial_list, value), axis = 0)
+        return partial_list
+                    
+    partial_list = per_node_type('inner', partial_list)
+    partial_list = per_node_type('inlet', partial_list)
+    partial_list = per_node_type('outlet', partial_list)
+    partial_list = per_edge_type('inner_to_inner', partial_list)
+    partial_list = per_edge_type('in_to_inner', partial_list)
+    partial_list = per_edge_type('out_to_inner', partial_list)
 
     return partial_list
 
@@ -232,9 +273,9 @@ def normalize(graphs, type):
     for graph in graphs:
         cgraph = graph
         if type == 'min_max':
-            cgraph = min_max_normalization(cgraph, fields, coefs_dict)
+            min_max_normalization(cgraph, fields, coefs_dict)
         if type == 'standard':
-            cgraph = standard_normalization(cgraph, fields, coefs_dict)
+            standard_normalization(cgraph, fields, coefs_dict)
 
         norm_graphs.append(cgraph)
 

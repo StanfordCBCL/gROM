@@ -43,7 +43,7 @@ def train_gnn_model(gnn_model, model_name, optimizer_name, train_params,
                                     train_params['learning_rate'],
                                     momentum=train_params['momentum'])
     else:
-        raise ValueError('Optimizer ' + optimizerizer_name + ' not implemented')
+        raise ValueError('Optimizer ' + optimizer_name + ' not implemented')
 
     nepochs = train_params['nepochs']
     scheduler_name = 'cosine'
@@ -66,19 +66,11 @@ def train_gnn_model(gnn_model, model_name, optimizer_name, train_params,
         count = 0
         for batched_graph in train_dataloader:
             pred = gnn_model(batched_graph,
-                             batched_graph.ndata['n_features'].float()).squeeze()
+                             batched_graph.nodes['inner'].data['n_features'].float()).squeeze()
             weight = torch.ones(pred.shape)
             # mask out values corresponding to boundary conditions
-            inlets = np.where(batched_graph.ndata['inlet_mask'].detach().numpy() == 1)[0]
-            outlets = np.where(batched_graph.ndata['outlet_mask'].detach().numpy() == 1)[0]
-            weight[inlets,:] = 100
-            weight[outlets,:] = 100
-            # weight[inlets,1] = 0
-            # weight[outlets,0] = 0
-            # weight[:,1] = 0
-            # weight[:,0] = 0
             loss = weighted_mse_loss(pred,
-                                     torch.reshape(batched_graph.ndata['n_labels'].float(),
+                                     torch.reshape( batched_graph.nodes['inner'].data['n_labels'].float(),
                                      pred.shape), weight)
             global_loss = global_loss + loss.detach().numpy()
             optimizer.zero_grad()
@@ -236,7 +228,7 @@ def launch_training(model_name, optimizer_name, params_dict,
     return gnn_model, loss, train_loader, coefs_dict, folder
 
 if __name__ == "__main__":
-    params_dict = {'infeat_nodes': 6,
+    params_dict = {'infeat_nodes': 5,
                    'infeat_edges': 4,
                    'latent_size_gnn': 4,
                    'latent_size_mlp': 4,

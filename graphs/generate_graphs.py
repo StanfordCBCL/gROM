@@ -17,6 +17,7 @@ import torch
 from dgl.data import DGLDataset
 from dgl.dataloading import GraphDataLoader
 from torch.utils.data.sampler import SubsetRandomSampler
+import copy
 
 DTYPE = np.float32
 
@@ -34,26 +35,105 @@ def create_geometry(model_name, input_dir, sampling, remove_caps, points_to_keep
     
     return ResampledGeometry(Geometry(p_array), sampling, remove_caps, doresample), fields
 
+def convert_nodes_to_heterogeneous(nodes, edges, inlet_node, outlet_nodes):
+    inlet_edge = np.where(edges == inlet_node)
+    row = inlet_edge[0]
+    if inlet_edge[1] == 0:
+        inlet_edge = np.array([edges[row,0], edges[row,1]]).transpose()
+    else: 
+        inlet_edge = np.array([edges[row,1], edges[row,0]]).transpose()
+    edges = np.delete(edges,row, axis=0)
+    
+    outlet_edges = []
+    for outlet_node in outlet_nodes:
+        outlet_edge = np.where(edges == outlet_node)
+        row = outlet_edge[0]
+        if outlet_edge[1] == 0:
+            outlet_edge = [edges[row,0], edges[row,1]]
+        else:
+            outlet_edge = [edges[row,1], edges[row,0]]
+        outlet_edges.append(outlet_edge)
+        edges = np.delete(edges,row, axis=0)
+
+    outlet_edges = np.array(outlet_edges).squeeze(axis = 2)
+    
+    inlet_original = np.copy(inlet_edge)
+    outlets_original = np.copy(outlet_edges)
+    edges_original = np.copy(edges)
+    
+    # change numbering
+    offset = np.min(edges)
+    inlet_edge[:,1] = inlet_edge[:,1] - offset
+    inlet_edge[0,0] = 0
+    outlet_edges[:,1] = outlet_edges[:,1] - offset
+    for j in range(outlet_edges.shape[0]):
+        outlet_edges[0] = j
+    edges = edges - offset
+    
+    # transform inner graph to bidirected
+    edges = np.concatenate((edges,np.array([edges[:,1],edges[:,0]]).transpose()),axis = 0)
+    edges_original = np.concatenate((edges_original,np.array([edges_original[:,1],edges_original[:,0]]).transpose()),axis = 0)
+
+    return inlet_edge, outlet_edges, edges, inlet_original, outlets_original, edges_original
+    
+
 def create_fixed_graph(geometry, area):
     nodes, edges, lengths, inlet_node, outlet_nodes = geometry.generate_nodes()
+    
+    inlet_edge, outlet_edges, edges, \
+    inlet_original, outlets_original, edges_original = convert_nodes_to_heterogeneous(nodes, edges, inlet_node, outlet_nodes)
+    
+    graph_data = {('inlet', 'in_to_inner', 'inner'): (inlet_edge[:,0], inlet_edge[:,1]),
+                  ('inner', 'inner_to_inner', 'inner'): (edges[:,0],edges[:,1]),
+                  ('outlet', 'out_to_inner', 'inner'): (outlet_edges[:,0],outlet_edges[:,1])}
 
-    graph = dgl.graph((edges[:,0], edges[:,1]))
-    graph = dgl.to_bidirected(graph)
-
+    graph = dgl.heterograph(graph_data)
+    # graph = dgl.to_bidirected(graph)
+    
+    
+    # compute position for inner edges
     pos_feat = []
 
-    edg0 = graph.edges()[0]
-    edg1 = graph.edges()[1]
+    edg0 = edges_original[:,0]
+    edg1 = edges_original[:,1]
     N = edg0.shape[0]
     for j in range(0, N):
         diff = nodes[edg1[j],:] - nodes[edg0[j],:]
         diff = np.hstack((diff, np.linalg.norm(diff)))
         pos_feat.append(diff)
+        
+    graph.edges['inner_to_inner'].data['position'] = torch.from_numpy(np.array(pos_feat).astype(DTYPE))
+    
+    # compute position for inlet edge
+    pos_feat = []
+    edg0 = inlet_original[:,0]
+    edg1 = inlet_original[:,1]
+    diff = nodes[edg1[0],:] - nodes[edg0[0],:]
+    diff = np.hstack((diff, np.linalg.norm(diff)))
+    pos_feat.append(diff)
+    
+    graph.edges['in_to_inner'].data['position'] = torch.from_numpy(np.array(pos_feat).astype(DTYPE))
+    
+    # compute position for outer edges
+    pos_feat = []
+    
+    edg0 = outlets_original[:,0]
+    edg1 = outlets_original[:,1]
+    N = edg0.shape[0]
+    for j in range(0, N):
+        diff = nodes[edg1[j],:] - nodes[edg0[j],:]
+        diff = np.hstack((diff, np.linalg.norm(diff)))
+        pos_feat.append(diff)
+       
+    graph.edges['out_to_inner'].data['position'] = torch.from_numpy(np.array(pos_feat).astype(DTYPE))
 
-    # find node type
-    nnodes = nodes.shape[0]
-    node_degree = np.zeros((nnodes))
-    for j in range(0, nnodes):
+    # find inner node type
+    edg0 = edges[:,0]
+    edg1 = edges[:,1]
+    # inner edges are bidirectional => /2
+    nnodes = int(edges.shape[0] / 2) + 1
+    node_degree = np.zeros((nnodes + 1))
+    for j in range(0, nnodes + 1):
         node_degree[j] = (np.count_nonzero(edg0 == j) + \
                           np.count_nonzero(edg1 == j))
 
@@ -62,32 +142,51 @@ def create_fixed_graph(geometry, area):
     for j in range(0, nnodes):
         degrees.add(node_degree[j])
 
-    # + 1 for boundary conditions (2 degrees nodes must be differentiated)
-    node_type = np.zeros((nnodes,len(degrees) + 1))
+    node_type = np.zeros((nnodes,len(degrees)))
     for j in range(0, nnodes):
-        if node_degree[j] != 2:
-            node_type[j,int(node_degree[j] / 2) - 2] = 1
+        node_type[j,int(node_degree[j] / 2) - 1] = 1
 
-    node_type[inlet_node, -2] = 1
-    node_type[outlet_nodes, -1] = 1
-
-    graph.ndata['area'] = torch.from_numpy(area.astype(DTYPE))
-    graph.edata['position'] = torch.from_numpy(np.array(pos_feat).astype(DTYPE))
-    graph.ndata['node_type'] = torch.from_numpy(node_type.astype(np.int))
-
-    inlet_mask = np.zeros(nnodes)
-    inlet_mask[inlet_node] = 1
-    graph.ndata['inlet_mask'] = torch.from_numpy(inlet_mask.astype(np.int))
-
-    outlet_mask = np.zeros(nnodes)
-    outlet_mask[outlet_nodes] = 1
-    graph.ndata['outlet_mask'] = torch.from_numpy(outlet_mask.astype(np.int))
+    graph.nodes['inner'].data['node_type'] = torch.from_numpy(node_type.astype(int))
+    
+    # graph.ndata['area'] = torch.from_numpy(area.astype(DTYPE))\
+        
+    # set global mask and area
+    nnodes = nodes.shape[0]
+    indices = np.arange(nnodes)
+    indices = np.delete(indices, [inlet_node] + outlet_nodes)
+    graph.nodes['inner'].data['global_mask'] = torch.from_numpy(indices.astype(DTYPE))
+    graph.nodes['inner'].data['area'] = torch.from_numpy(area[indices].astype(DTYPE))
+    
+    # set area inner
+    graph.nodes['inlet'].data['global_mask'] = torch.from_numpy(np.array([inlet_node]).astype(DTYPE))
+    areainlet = area[inlet_node]
+    if (len(areainlet.shape) == 1):
+        areainlet = np.expand_dims(areainlet, axis = 1)
+    graph.nodes['inlet'].data['area'] = torch.from_numpy(areainlet.astype(DTYPE))
+    
+    graph.nodes['outlet'].data['global_mask'] = torch.from_numpy(np.array(outlet_nodes).astype(DTYPE))
+    areaoutlet = area[outlet_nodes]
+    if (len(areaoutlet.shape) == 1):
+        areaoutlet = np.expand_dims(areaoutlet, axis = 1)
+    graph.nodes['outlet'].data['area'] = torch.from_numpy(areaoutlet.astype(DTYPE))
+    
 
     print('Graph generated:')
     print(' n. nodes = ' + str(nodes.shape[0]))
-    print(' n. edges = ' + str(N))
+    print(' n. inner edges = ' + str(edges.shape[0]))
+    print(' n. inlets = ' + str(inlet_edge.shape[0]))
+    print(' n. outlets = ' + str(outlet_edges.shape[0]))
 
     return graph
+
+def set_field(graph, name_field, field):
+    def set_in_node(node_type):
+        mask = graph.nodes[node_type].data['global_mask'].detach().numpy().astype(int)
+        masked_field = torch.from_numpy(field[mask].astype(DTYPE))
+        graph.nodes[node_type].data[name_field] = masked_field
+    set_in_node('inner')
+    set_in_node('inlet')
+    set_in_node('outlet')
 
 def add_fields(graph, pressure, velocity, random_walks, rate_noise):
     print('Writing fields:')
@@ -96,30 +195,23 @@ def add_fields(graph, pressure, velocity, random_walks, rate_noise):
     times.sort()
     nP = pressure[times[0]].shape[0]
     nQ = velocity[times[0]].shape[0]
-    edges0 = graph.edges()[0]
-    edges1 = graph.edges()[1]
     print('  n. times = ' + str(len(times)))
     while len(graphs) < random_walks + 1:
         print('  writing graph n. ' + str(len(graphs) + 1))
-        new_graph = dgl.graph((graph.edges()[0], graph.edges()[1]))
-        new_graph.ndata['area'] = torch.clone(graph.ndata['area'])
-        new_graph.ndata['node_type'] = torch.clone(graph.ndata['node_type'])
-        new_graph.edata['position'] = torch.clone(graph.edata['position'])
-        new_graph.ndata['inlet_mask'] = torch.clone(graph.ndata['inlet_mask'])
-        new_graph.ndata['outlet_mask'] = torch.clone(graph.ndata['outlet_mask'])
+        new_graph = copy.deepcopy(graph)
         noise_p = np.zeros((nP, 1))
         noise_q = np.zeros((nQ, 1))
         for t in times:
             new_p = pressure[t]
             if len(graphs) != 0:
                 noise_p = noise_p + np.random.normal(0, rate_noise, (nP, 1)) * new_p
-            new_graph.ndata['pressure_' + str(t)] = torch.from_numpy((new_p).astype(DTYPE))
-            new_graph.ndata['noise_p_' + str(t)] = torch.from_numpy((noise_p).astype(DTYPE))
+            set_field(new_graph, 'pressure_' + str(t), new_p)
+            set_field(new_graph, 'noise_p_' + str(t), noise_p)
             new_q = velocity[t]
             if len(graphs) != 0:
                 noise_q = noise_q + np.random.normal(0, rate_noise, (nQ, 1)) * new_q
-            new_graph.ndata['flowrate_' + str(t)] = torch.from_numpy((new_q).astype(DTYPE))
-            new_graph.ndata['noise_q_' + str(t)] = torch.from_numpy((noise_q).astype(DTYPE))
+            set_field(new_graph, 'flowrate_' + str(t), new_q)
+            set_field(new_graph, 'noise_q_' + str(t), noise_q)
         graphs.append(new_graph)
 
     return graphs

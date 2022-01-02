@@ -45,6 +45,9 @@ class MLP(Module):
 class GraphNet(Module):
     def __init__(self, params):
         super(GraphNet, self).__init__()
+        
+        self.encode_inlet_edge = MLP(7, 16, 8, 1, True)
+        self.encode_outlet_edge = MLP(7, 16, 8, 1, True)
 
         self.encoder_nodes = MLP(params['infeat_nodes'],
                                  params['latent_size_mlp'],
@@ -130,8 +133,9 @@ class GraphNet(Module):
     #     return g.ndata['h']
     
     def forward(self, g, in_feat):
-        g.ndata['features_c'] = in_feat
-        g.apply_nodes(self.encode_nodes)
+        g.nodes['inner'].data['features_c'] = in_feat
+        g.update_all(fn.u_add_v('proc_node', 'proc_node', 'm'), fn.sum('m', 'pe_sum'))
+        g.apply_nodes(self.encode_nodes, ntype='inner')
         for i in range(self.process_iters):
             def pn(nodes):
                 return self.process_nodes(nodes, i)
