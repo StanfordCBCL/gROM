@@ -34,47 +34,6 @@ def create_geometry(model_name, input_dir, sampling, remove_caps, points_to_keep
     #     fields[field] = np.ones((20))
     
     return ResampledGeometry(Geometry(p_array), sampling, remove_caps, doresample), fields
-
-# def convert_nodes_to_heterogeneous(nodes, edges, inlet_node, outlet_nodes):
-#     inlet_edge = np.where(edges == inlet_node)
-#     row = inlet_edge[0]
-#     if inlet_edge[1] == 0:
-#         inlet_edge = np.array([edges[row,0], edges[row,1]]).transpose()
-#     else: 
-#         inlet_edge = np.array([edges[row,1], edges[row,0]]).transpose()
-#     edges = np.delete(edges,row, axis=0)
-    
-#     outlet_edges = []
-#     for outlet_node in outlet_nodes:
-#         outlet_edge = np.where(edges == outlet_node)
-#         row = outlet_edge[0]
-#         if outlet_edge[1] == 0:
-#             outlet_edge = [edges[row,0], edges[row,1]]
-#         else:
-#             outlet_edge = [edges[row,1], edges[row,0]]
-#         outlet_edges.append(outlet_edge)
-#         edges = np.delete(edges,row, axis=0)
-
-#     outlet_edges = np.array(outlet_edges).squeeze(axis = 2)
-    
-#     inlet_original = np.copy(inlet_edge)
-#     outlets_original = np.copy(outlet_edges)
-#     edges_original = np.copy(edges)
-    
-#     # change numbering
-#     offset = np.min(edges)
-#     inlet_edge[:,1] = inlet_edge[:,1] - offset
-#     inlet_edge[0,0] = 0
-#     outlet_edges[:,1] = outlet_edges[:,1] - offset
-#     for j in range(outlet_edges.shape[0]):
-#         outlet_edges[0] = j
-#     edges = edges - offset
-    
-#     # transform inner graph to bidirected
-#     edges = np.concatenate((edges,np.array([edges[:,1],edges[:,0]]).transpose()),axis = 0)
-#     edges_original = np.concatenate((edges_original,np.array([edges_original[:,1],edges_original[:,0]]).transpose()),axis = 0)
-
-#     return inlet_edge, outlet_edges, edges, inlet_original, outlets_original, edges_original
     
 def convert_nodes_to_heterogeneous(nodes, edges, inlet_index, outlet_indices):
     # Dijkstra's algorithm
@@ -157,7 +116,16 @@ def convert_nodes_to_heterogeneous(nodes, edges, inlet_index, outlet_indices):
                 break
         outlet_physical_contiguous = np.concatenate((outlet_physical_contiguous, cur_opc))
     
-    outlet_dict = {'edges': outlet_edges.astype(int), 'distance': distances_outlets, 'mask': outlet_mask, 'physical_contiguous': outlet_physical_contiguous.astype(int)}
+    # we select the edges and properties such that each inner node is only connected to one outlet
+    # (based on smaller distance)
+    single_connection_mask = []
+    for inod in range(nninner_nodes):
+        mindist = np.amin(distances_outlets[inod::nninner_nodes])
+        indx = np.where(np.abs(distances_outlets - mindist) < 1e-14)[0]
+        single_connection_mask.append(int(indx))
+        
+    
+    outlet_dict = {'edges': outlet_edges[single_connection_mask,:].astype(int), 'distance': distances_outlets[single_connection_mask], 'mask': outlet_mask, 'physical_contiguous': outlet_physical_contiguous[single_connection_mask].astype(int)}
     
     # process inner
     
@@ -332,7 +300,7 @@ def generate_analytic(pressure, velocity, area):
 def generate_graphs(argv, dataset_params, input_dir, save = True):
     print('Generating_graphs with params ' + str(dataset_params))
     model_name = sys.argv[1]
-    geo, fields = create_geometry(model_name, input_dir, 1, remove_caps = True,
+    geo, fields = create_geometry(model_name, input_dir, 10, remove_caps = True,
                                   points_to_keep = None, doresample = True)
     pressure, velocity = io.gather_pressures_velocities(fields)
     pressure, velocity, area = geo.generate_fields(pressure,
