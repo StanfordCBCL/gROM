@@ -46,10 +46,12 @@ class GraphNet(Module):
     def __init__(self, params):
         super(GraphNet, self).__init__()
         
-        self.encode_inlet_edge = MLP(7, 16, 8, 1, True)
-        self.encode_outlet_edge = MLP(7, 16, 8, 1, True)
+        # out_bc_encoder = 8
+        
+        # self.encoder_inlet_edge = MLP(5, 16, out_bc_encoder, 1, True)
+        # self.encoder_outlet_edge = MLP(5, 16, out_bc_encoder, 1, True)
 
-        self.encoder_nodes = MLP(params['infeat_nodes'],
+        self.encoder_nodes = MLP(params['infeat_nodes'] + 10,
                                  params['latent_size_mlp'],
                                  params['latent_size_gnn'],
                                  params['hl_mlp'],
@@ -82,10 +84,25 @@ class GraphNet(Module):
                           False)
 
         # self.dropout = Dropout(0.5)
+        
+    def encode_inlet_edge(self, edges):
+        f1 = edges.data['e_features']
+        f2 = edges.src['n_features']
+        # enc_edge = self.encoder_inlet_edge(torch.cat((f1, f2),dim=1))
+        return {'inlet_info' : torch.cat((f1, f2),dim=1)}
+    
+    def encode_outlet_edge(self, edges):
+        f1 = edges.data['e_features']
+        f2 = edges.src['n_features']
+        # enc_edge = self.encoder_outlet_edge(torch.cat((f1, f2),dim=1))
+        return {'outlet_info' : torch.cat((f1, f2),dim=1)}
 
     def encode_nodes(self, nodes):
         f = nodes.data['features_c']
-        enc_features = self.encoder_nodes(f)
+        fin = nodes.data['inlet_info']
+        fout = nodes.data['outlet_info']
+
+        enc_features = self.encoder_nodes(torch.cat((f, fin, fout),dim=1))
         return {'proc_node': enc_features}
 
     def encode_edges(self, edges):
@@ -134,12 +151,27 @@ class GraphNet(Module):
     
     def forward(self, g, in_feat):
         g.nodes['inner'].data['features_c'] = in_feat
-        g.update_all(fn.u_add_v('proc_node', 'proc_node', 'm'), fn.sum('m', 'pe_sum'))
+        g.apply_edges(self.encode_inlet_edge, etype='in_to_inner')
+        g.update_all(fn.copy_e('inlet_info', 'm'), fn.sum('m', 'inlet_info'), etype='in_to_inner')
+        g.apply_edges(self.encode_outlet_edge, etype='out_to_inner')
+        g.update_all(fn.copy_e('outlet_info', 'm'), fn.sum('m', 'outlet_info'), etype='out_to_inner')
         g.apply_nodes(self.encode_nodes, ntype='inner')
+        g.apply_edges(self.encode_edges, etype='inner_to_inner')
+
         for i in range(self.process_iters):
+            def pe(edges):
+                return self.process_edges(edges, i)
             def pn(nodes):
                 return self.process_nodes(nodes, i)
-            g.update_all(fn.u_add_v('proc_node', 'proc_node', 'm'), fn.sum('m', 'pe_sum'))
-            g.apply_nodes(pn)
-        g.apply_nodes(self.decode)
-        return g.ndata['h']
+            g.apply_edges(pe, etype='inner_to_inner')
+            # aggregate new edge features in nodes
+            g.update_all(fn.copy_e('proc_edge', 'm'), fn.sum('m', 'pe_sum'), etype='inner_to_inner')
+            g.apply_nodes(pn, ntype='inner')
+        g.apply_nodes(self.decode, ntype='inner')
+        return g.nodes['inner'].data['h']
+    
+    # def forward(self, g, in_feat):
+    #     g.nodes['inner'].data['features_c'] = in_feat
+    #     g.apply_edges(self.encode_inlet_edge, etype='in_to_inner')
+    #     g.update_all(fn.copy_e('inlet_info', 'm'), fn.sum('m', 'inlet_info'), etype='in_to_inner')
+    #     return g.nodes['inner'].data['inlet_info'][:,2:4]

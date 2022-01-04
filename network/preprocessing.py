@@ -14,6 +14,8 @@ from dgl.data.utils import load_graphs
 from dgl.data import DGLDataset
 import generate_graphs as gg
 import copy
+import random
+
 
 def set_state(graph, state_dict):
     def per_node_type(node_type):
@@ -25,20 +27,32 @@ def set_state(graph, state_dict):
                                                                    graph.nodes[node_type].data['area'], \
                                                                    graph.nodes[node_type].data['node_type']), 1)
         else:
-            graph.nodes[node_type].data['area']
-            graph.nodes[node_type].data['n_features'] = torch.cat((graph.nodes[node_type].data['pressure'], \
-                                                                   graph.nodes[node_type].data['flowrate'], \
+            graph.nodes[node_type].data['n_features'] = torch.cat((graph.nodes[node_type].data['pressure_next'], \
+                                                                   graph.nodes[node_type].data['flowrate_next'], \
                                                                    graph.nodes[node_type].data['area']), 1)
-        graph.nodes[node_type].data['n_labels'] = torch.cat((graph.nodes[node_type].data['pressure_next'], \
-                                                             graph.nodes[node_type].data['flowrate_next']), 1)
+        graph.nodes[node_type].data['n_labels'] = torch.cat((graph.nodes[node_type].data['dp'], \
+                                                             graph.nodes[node_type].data['dq']), 1)
+            
+    def per_edge_type(edge_type):
+        if edge_type == 'inner_to_inner':
+            graph.edges[edge_type].data['e_features'] = graph.edges[edge_type].data['position']
+        else:
+            graph.edges[edge_type].data['e_features'] = torch.cat((graph.edges[edge_type].data['distance'][:,None],
+                                                                   graph.edges[edge_type].data['physical_contiguous'][:,None]), 1)
     per_node_type('inner')
     per_node_type('inlet')
     per_node_type('outlet')
+    per_edge_type('inner_to_inner')
+    per_edge_type('in_to_inner')
+    per_edge_type('out_to_inner')
 
-def set_bcs(graph, next_pressure, next_flowrate):
-    graph.ndata['pressure_next'] = next_pressure
-    graph.ndata['flowrate_next'] = next_flowrate
-    return graph
+
+def set_bcs(graph, state_dict):
+    def per_node_type(node_type):
+        graph.nodes[node_type].data['pressure_next'] = state_dict['pressure'][node_type]
+        graph.nodes[node_type].data['flowrate_next'] = state_dict['flowrate'][node_type]
+    per_node_type('inlet')
+    per_node_type('outlet')
 
 class DGL_Dataset(DGLDataset):
     def __init__(self, graphs, resample_freq_timesteps = -1):
@@ -47,6 +61,7 @@ class DGL_Dataset(DGLDataset):
         else:
             self.graphs = graphs
         super().__init__(name='dgl_dataset')
+        random.shuffle(self.graphs)
 
     def process(self):
         for graph in self.graphs:
@@ -145,18 +160,18 @@ def min_max_normalization(graph, fields, bounds_dict):
         for feat in node_features:
             for field in fields:
                 if field in feat:
-                    if np.linalg.norm(np.min(graph.ndata[feat].detach().numpy()) - 0) > 1e-5 and \
-                       np.linalg.norm(np.max(graph.ndata[feat].detach().numpy()) - 1) > 1e-5:
-                           graph.ndata[feat] = min_max(graph.ndata[feat], bounds_dict[field])
+                    if np.linalg.norm(np.min(graph.nodes[node_type].data[feat].detach().numpy()) - 0) > 1e-5 and \
+                       np.linalg.norm(np.max(graph.nodes[node_type].data[feat].detach().numpy()) - 1) > 1e-5:
+                           graph.nodes[node_type].data[feat] = min_max(graph.nodes[node_type].data[feat], bounds_dict[field])
                            
     def per_edge_type(edge_type):     
-        edge_features = graph.edata[edge_type].data
+        edge_features = graph.edges[edge_type].data
         for feat in edge_features:
             for field in fields:
                 if field in feat:
-                    if np.linalg.norm(np.min(graph.edata[feat].detach().numpy()) - 0) > 1e-5 and \
-                       np.linalg.norm(np.max(graph.edata[feat].detach().numpy()) - 1) > 1e-5:
-                           graph.edata[feat] = min_max(graph.edata[feat], bounds_dict[field])
+                    if np.linalg.norm(np.min(graph.edges[edge_type].data[feat].detach().numpy()) - 0) > 1e-5 and \
+                       np.linalg.norm(np.max(graph.edges[edge_type].data[feat].detach().numpy()) - 1) > 1e-5:
+                           graph.edges[edge_type].data[feat] = min_max(graph.edges[edge_type].data[feat], bounds_dict[field])
                            
     per_node_type('inner')
     per_node_type('inlet')
@@ -253,7 +268,7 @@ def normalize(graphs, type):
     coefs_dict = {}
     list_fields = {}
     coefs_dict['type'] = type
-    fields = {'pressure', 'flowrate', 'area', 'position', 'dp', 'dq'}
+    fields = {'pressure', 'flowrate', 'area', 'position', 'dp', 'dq', 'distance'}
     for field in fields:
         cur_list = np.zeros((0,0))
         for graph in graphs:
@@ -266,7 +281,7 @@ def normalize(graphs, type):
         
         ncoefs = coefs_dict[field]['std'].shape[0]
         for i in range(ncoefs):
-            if coefs_dict[field]['std'][i] == 0:
+            if coefs_dict[field]['std'][i] < 1e-12:
                 coefs_dict[field]['std'][i] = 1
         
 
