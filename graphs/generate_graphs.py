@@ -18,6 +18,8 @@ from dgl.data import DGLDataset
 from dgl.dataloading import GraphDataLoader
 from torch.utils.data.sampler import SubsetRandomSampler
 import copy
+from scipy import interpolate
+from matplotlib import animation
 
 DTYPE = np.float32
 
@@ -192,9 +194,9 @@ def create_fixed_graph(geometry, area):
     edg0 = inner_dict['edges'][:,0]
     edg1 = inner_dict['edges'][:,1]
     # inner edges are bidirectional => /2
-    nnodes = int(inner_dict['edges'].shape[0] / 2) + 1
-    node_degree = np.zeros((nnodes + 1))
-    for j in range(0, nnodes + 1):
+    nnodes = np.max(inner_dict['edges']) + 1
+    node_degree = np.zeros((nnodes))
+    for j in range(0, nnodes):
         node_degree[j] = (np.count_nonzero(edg0 == j) + \
                           np.count_nonzero(edg1 == j))
 
@@ -296,16 +298,95 @@ def generate_analytic(pressure, velocity, area):
         
     return pressure, velocity
 
+def augment_time(field, period, ntimepoints):
+    times_before = [t for t in field]
+    times_before.sort()
+    ntimes = len(times_before)
+    
+    npoints = field[times_before[0]].shape[0]
+    
+    times_scaled = np.linspace(0, period, ntimes)    
+    times_new = np.linspace(0, period, ntimepoints)
+    
+    Y = np.zeros((npoints, ntimepoints))
+    for ipoint in range(npoints):
+        y = []
+        for t in times_before:
+            y.append(field[t][ipoint])
+        
+        tck = interpolate.splrep(times_scaled, y, s=0)
+        Y[ipoint,:] = interpolate.splev(times_new, tck, der=0)
+    
+    newfield = {}
+    count = 0
+    for t in times_new:
+        newfield[t] = np.expand_dims(Y[:,count],axis=1)
+        count = count + 1
+    
+    return newfield
+
+def save_animation(pressure, velocity, filename):
+    def find_min_max(field):
+        times = [t for t in field]
+        
+        minv = np.infty
+        maxv = np.NINF
+        
+        for t in times:
+            curmin = np.min(field[t])
+            curmax = np.max(field[t])
+            if curmin < minv:
+                minv = curmin
+            if curmax > maxv:
+                maxv = curmax
+        return minv, maxv
+    
+    times = [t for t in pressure]
+    minp, maxp = find_min_max(pressure)
+    minv, maxv = find_min_max(velocity)
+
+    fig, ax = plt.subplots(2)
+    line_p, = ax[0].plot([],[],'r')
+    line_v, = ax[1].plot([],[],'r')
+
+    def animation_frame(i):
+        line_p.set_xdata(range(0,len(pressure[times[i]])))
+        line_p.set_ydata(pressure[times[i]])
+        line_v.set_xdata(range(0,len(velocity[times[i]])))
+        line_v.set_ydata(velocity[times[i]])
+        ax[0].set_xlim(0,len(pressure[times[i]]))
+        ax[0].set_ylim(minp-np.abs(minp)*0.1,maxp+np.abs(maxp)*0.1)
+        ax[1].set_xlim(0,len(velocity[times[i]]))
+        ax[1].set_ylim(minv-np.abs(minv)*0.1,maxv+np.abs(maxv)*0.1)
+        ax[0].set_title('pressure ' + str(times[i]))
+        ax[1].set_title('velocity ' + str(times[i]))
+        return line_p, line_v
+
+    anim = animation.FuncAnimation(fig, animation_frame,
+                                   frames=len(pressure),
+                                   interval=20)
+    writervideo = animation.FFMpegWriter(fps=60)
+    anim.save(filename + '.mp4', writer = writervideo)
 
 def generate_graphs(argv, dataset_params, input_dir, save = True):
     print('Generating_graphs with params ' + str(dataset_params))
     model_name = sys.argv[1]
-    geo, fields = create_geometry(model_name, input_dir, 10, remove_caps = True,
+    geo, fields = create_geometry(model_name, input_dir, 15, remove_caps = True,
                                   points_to_keep = None, doresample = True)
     pressure, velocity = io.gather_pressures_velocities(fields)
     pressure, velocity, area = geo.generate_fields(pressure,
                                                    velocity,
                                                    fields['area'])
+    
+    # save_animation(pressure, velocity, 'original_fields')
+    
+    # the period
+    T = 0.7
+    npoints = 3000
+
+    pressure = augment_time(pressure, T, npoints)
+    velocity = augment_time(velocity, T, npoints)
+    # save_animation(pressure, velocity, 'interpolated_fields')
 
     # pressure, velocity = generate_analytic(pressure, velocity, area)
 

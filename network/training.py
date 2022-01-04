@@ -198,6 +198,11 @@ def evaluate_error(model, model_name, train_dataloader, coefs_dict, do_plot, out
     err_q = np.sqrt(err_q / norm_q)
 
     if do_plot:
+        pressures_pred = pressures_pred[0::10]
+        pressures_real = pressures_real[0::10]
+        flowrates_pred = flowrates_pred[0::10]
+        flowrates_real = flowrates_real[0::10]
+
         fig, ax = plt.subplots(2)
         line_pred_p, = ax[0].plot([],[],'r')
         line_real_p, = ax[0].plot([],[],'--b')
@@ -272,7 +277,7 @@ if __name__ == "__main__":
                     'momentum': 0.0,
                     'resample_freq_timesteps': -1,
                     'batch_size': 10,
-                    'nepochs': 100}
+                    'nepochs': 30}
     dataset_params = {'rate_noise': 1e-5,
                       'random_walks': 3,
                       'normalization': 'standard',
