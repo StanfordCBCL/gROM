@@ -27,16 +27,16 @@ def create_geometry(model_name, input_dir, sampling, remove_caps, points_to_keep
     print('Create geometry: ' + model_name)
     soln = io.read_geo(input_dir + '/' + model_name + '.vtp').GetOutput()
     fields, _, p_array = io.get_all_arrays(soln, points_to_keep)
-    
-    
+
+
     # p_array = np.zeros((20,3))
     # p_array[:,0] = np.linspace(0,1,20)
-    
+
     # for field in fields:
     #     fields[field] = np.ones((20))
-    
+
     return ResampledGeometry(Geometry(p_array), sampling, remove_caps, doresample), fields
-    
+
 def convert_nodes_to_heterogeneous(nodes, edges, inlet_index, outlet_indices):
     # Dijkstra's algorithm
     def dijkstra_algorithm(nodes, edges, index):
@@ -46,23 +46,23 @@ def convert_nodes_to_heterogeneous(nodes, edges, inlet_index, outlet_indices):
         dists = np.ones((nnodes)) * np.infty
         prevs = np.ones((nnodes)) * (-1)
         b_edges = np.concatenate((edges, np.array([edges[:,1],edges[:,0]]).transpose()), axis = 0)
-    
+
         dists[index] = 0
         while len(tovisit) != 0:
-            
+
             minindex = -1
             minlen = np.infty
             for iinde in range(len(tovisit)):
                 if dists[tovisit[iinde]] < minlen:
                     minindex = iinde
                     minlen = dists[tovisit[iinde]]
-            
-            curindex = tovisit[minindex] 
+
+            curindex = tovisit[minindex]
             tovisit = np.delete(tovisit, minindex)
-            
+
             # find neighbors of curindex
             inb = b_edges[np.where(b_edges[:,0] == curindex)[0],1]
-            
+
             for neib in inb:
                 if np.where(tovisit == neib)[0].size != 0:
                     alt = dists[curindex] + np.linalg.norm(nodes[curindex,:] - nodes[neib,:])
@@ -70,20 +70,20 @@ def convert_nodes_to_heterogeneous(nodes, edges, inlet_index, outlet_indices):
                         dists[neib] = alt
                         prevs[neib] = curindex
         return dists, prevs
-    
+
     nnodes = nodes.shape[0]
     nninner_nodes = nnodes - len([inlet_index] + outlet_indices)
-    
+
     # create inner mask from local to global
     indices = np.arange(nnodes)
     inner_mask = np.delete(indices, [inlet_index] + outlet_indices)
-    
+
     # process inlet
     indices = np.arange(nnodes)
     inlet_mask = np.array([indices[inlet_index]])
     inlet_edges = np.zeros((nninner_nodes,2))
     inlet_edges[:,1] = np.arange(nninner_nodes)
-    distances_inlet, _ = dijkstra_algorithm(nodes, edges, inlet_index)  
+    distances_inlet, _ = dijkstra_algorithm(nodes, edges, inlet_index)
     distances_inlet = np.delete(distances_inlet, [inlet_index] + outlet_indices)
     inlet_physical_contiguous = np.zeros(nninner_nodes)
     for iedg in range(edges.shape[0]):
@@ -94,7 +94,7 @@ def convert_nodes_to_heterogeneous(nodes, edges, inlet_index, outlet_indices):
             inlet_physical_contiguous[np.where(inner_mask == edges[iedg,0])[0]] = 1
             break
     inlet_dict = {'edges': inlet_edges.astype(int), 'distance': distances_inlet, 'mask': inlet_mask, 'physical_contiguous': inlet_physical_contiguous.astype(int)}
-    
+
     # process outlets
     indices = np.arange(nnodes)
     outlet_mask = indices[outlet_indices]
@@ -105,7 +105,7 @@ def convert_nodes_to_heterogeneous(nodes, edges, inlet_index, outlet_indices):
         curoutedge = np.copy(inlet_edges)
         curoutedge[:,0] = out_index
         outlet_edges = np.concatenate((outlet_edges, curoutedge), axis = 0)
-        curdistances, _ = dijkstra_algorithm(nodes, edges, outlet_indices[out_index])  
+        curdistances, _ = dijkstra_algorithm(nodes, edges, outlet_indices[out_index])
         curdistances = np.delete(curdistances, [inlet_index] + outlet_indices)
         distances_outlets = np.concatenate((distances_outlets, curdistances))
         cur_opc = np.zeros(nninner_nodes).astype(int)
@@ -117,7 +117,7 @@ def convert_nodes_to_heterogeneous(nodes, edges, inlet_index, outlet_indices):
                 cur_opc[np.where(inner_mask == edges[iedg,0])[0]] = 1
                 break
         outlet_physical_contiguous = np.concatenate((outlet_physical_contiguous, cur_opc))
-    
+
     # we select the edges and properties such that each inner node is only connected to one outlet
     # (based on smaller distance)
     single_connection_mask = []
@@ -125,65 +125,65 @@ def convert_nodes_to_heterogeneous(nodes, edges, inlet_index, outlet_indices):
         mindist = np.amin(distances_outlets[inod::nninner_nodes])
         indx = np.where(np.abs(distances_outlets - mindist) < 1e-14)[0]
         single_connection_mask.append(int(indx))
-        
-    
+
+
     outlet_dict = {'edges': outlet_edges[single_connection_mask,:].astype(int), 'distance': distances_outlets[single_connection_mask], 'mask': outlet_mask, 'physical_contiguous': outlet_physical_contiguous[single_connection_mask].astype(int)}
-    
+
     # process inner
-    
-    # renumber edges 
+
+    # renumber edges
     rowstodelete = []
     for irow in range(edges.shape[0]):
         for bcindex in [inlet_index] + outlet_indices:
             if bcindex in edges[irow,:]:
                 rowstodelete.append(irow)
-                
-                
-    
+
+
+
     edges = np.delete(edges, rowstodelete, axis = 0)
     edges_c = np.copy(edges)
     edges_c2 = np.copy(edges)
     for nodein in range(nninner_nodes):
         minind = np.amin(edges_c)
         indices = np.where(edges == minind)
-        
+
         for idx in range(indices[0].shape[0]):
             edges[indices[0][idx],indices[1][idx]] = nodein
             edges_c[indices[0][idx],indices[1][idx]] = 1e9
-            
+
     # make it bidirectional
     edges = np.concatenate((edges,np.array([edges[:,1],edges[:,0]]).transpose()),axis = 0)
-            
+
     inner_nodes = np.delete(nodes, [inlet_index] + outlet_indices, axis = 0)
-    
+
     nedges = edges.shape[0]
     inner_pos = np.zeros((nedges, 4))
-    
+
     for iedg in range(nedges):
         inner_pos[iedg,0:3] = inner_nodes[edges[iedg,1],:] - inner_nodes[edges[iedg,0],:]
         inner_pos[iedg,3] = np.linalg.norm(inner_pos[iedg,0:2])
-    
-    
+
+
     inner_dict = {'edges': edges, 'position': inner_pos, 'mask': inner_mask}
-        
+
     return inner_dict, inlet_dict, outlet_dict
-    
-    
-    
+
+
+
 
 
 
 def create_fixed_graph(geometry, area):
     nodes, edges, _, inlet_index, outlet_indices = geometry.generate_nodes()
-    
+
     inner_dict, inlet_dict, outlet_dict = convert_nodes_to_heterogeneous(nodes, edges, inlet_index, outlet_indices)
-    
+
     graph_data = {('inner', 'inner_to_inner', 'inner'): (inner_dict['edges'][:,0], inner_dict['edges'][:,1]),
                   ('inlet', 'in_to_inner', 'inner'): (inlet_dict['edges'][:,0], inlet_dict['edges'][:,1]),
                   ('outlet', 'out_to_inner', 'inner'): (outlet_dict['edges'][:,0],outlet_dict['edges'][:,1])}
 
     graph = dgl.heterograph(graph_data)
-    
+
     graph.edges['inner_to_inner'].data['position'] = torch.from_numpy(inner_dict['position'].astype(DTYPE))
     graph.edges['in_to_inner'].data['distance'] = torch.from_numpy(inlet_dict['distance'].astype(DTYPE))
     graph.edges['in_to_inner'].data['physical_contiguous'] = torch.from_numpy(inlet_dict['physical_contiguous'])
@@ -210,13 +210,13 @@ def create_fixed_graph(geometry, area):
         node_type[j,int(node_degree[j] / 2) - 1] = 1
 
     graph.nodes['inner'].data['node_type'] = torch.from_numpy(node_type.astype(int))
-            
+
     graph.nodes['inner'].data['global_mask'] = torch.from_numpy(inner_dict['mask'])
     graph.nodes['inner'].data['area'] = torch.from_numpy(area[inner_dict['mask']].astype(DTYPE))
-    
+
     graph.nodes['inlet'].data['global_mask'] = torch.from_numpy(inlet_dict['mask'])
     graph.nodes['inlet'].data['area'] = torch.from_numpy(area[inlet_dict['mask']].astype(DTYPE))
-    
+
     graph.nodes['outlet'].data['global_mask'] = torch.from_numpy(outlet_dict['mask'])
     graph.nodes['outlet'].data['area'] = torch.from_numpy(area[outlet_dict['mask']].astype(DTYPE))
 
@@ -270,7 +270,7 @@ def add_fields(graph, pressure, velocity, random_walks, rate_noise):
 def generate_analytic(pressure, velocity, area):
     times = [t for t in pressure]
     times.sort()
-    
+
     N = np.size(pressure[times[0]])
 
     xs = np.linspace(0, 2 * np.pi, N)
@@ -287,7 +287,7 @@ def generate_analytic(pressure, velocity, area):
     #         # velocity[times[tin]][n] = velocity[times[tin-1]][n] + 0.001 * np.sqrt(area[n]) * np.cos(pressure[times[tin-1]][n])
     #     # pressure[times[tin]] = pressure[times[tin-1]] + 0.001 * area * np.sin(velocity[times[tin-1]])
     #     # velocity[times[tin]] = velocity[times[tin-1]] + 0.001 * np.sqrt(area) * np.cos(pressure[times[tin-1]])
-    
+
     T = len(times)
     for tin in range(0, T):
         for i in range(0, N):
@@ -295,43 +295,43 @@ def generate_analytic(pressure, velocity, area):
             # velocity[times[tin]][i] = np.cos(0.01 * tin) * 0.01 * tin
             pressure[times[tin]][i] = np.sin(2 * np.pi * tin / T)
             velocity[times[tin]][i] = np.cos(2 * np.pi * tin / T)
-        
+
     return pressure, velocity
 
 def augment_time(field, period, ntimepoints):
     times_before = [t for t in field]
     times_before.sort()
     ntimes = len(times_before)
-    
+
     npoints = field[times_before[0]].shape[0]
-    
-    times_scaled = np.linspace(0, period, ntimes)    
+
+    times_scaled = np.linspace(0, period, ntimes)
     times_new = np.linspace(0, period, ntimepoints)
-    
+
     Y = np.zeros((npoints, ntimepoints))
     for ipoint in range(npoints):
         y = []
         for t in times_before:
             y.append(field[t][ipoint])
-        
+
         tck = interpolate.splrep(times_scaled, y, s=0)
         Y[ipoint,:] = interpolate.splev(times_new, tck, der=0)
-    
+
     newfield = {}
     count = 0
     for t in times_new:
         newfield[t] = np.expand_dims(Y[:,count],axis=1)
         count = count + 1
-    
+
     return newfield
 
 def save_animation(pressure, velocity, filename):
     def find_min_max(field):
         times = [t for t in field]
-        
+
         minv = np.infty
         maxv = np.NINF
-        
+
         for t in times:
             curmin = np.min(field[t])
             curmax = np.max(field[t])
@@ -340,7 +340,7 @@ def save_animation(pressure, velocity, filename):
             if curmax > maxv:
                 maxv = curmax
         return minv, maxv
-    
+
     times = [t for t in pressure]
     minp, maxp = find_min_max(pressure)
     minv, maxv = find_min_max(velocity)
@@ -377,12 +377,12 @@ def generate_graphs(argv, dataset_params, input_dir, save = True):
     pressure, velocity, area = geo.generate_fields(pressure,
                                                    velocity,
                                                    fields['area'])
-    
+
     # save_animation(pressure, velocity, 'original_fields')
-    
+
     # the period
     T = 0.7
-    npoints = 3000
+    npoints = 6000
 
     pressure = augment_time(pressure, T, npoints)
     velocity = augment_time(velocity, T, npoints)

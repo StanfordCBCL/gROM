@@ -1,9 +1,10 @@
 name: gROM Optimization
 metrics:
 - name: error_pressure
-  strategy: optimize
-  objective: minimize
+  strategy: store
 - name: error_flowrate
+  strategy: store
+- name: loss
   strategy: optimize
   objective: minimize
 parameters:

@@ -28,6 +28,7 @@ def train_gnn_model(gnn_model, model_name, optimizer_name, train_params,
                     checkpoint_fct = None, dataset_params = None):
     dataset, coefs_dict = pp.generate_dataset(model_name,
                                               dataset_params)
+    gnn_model.set_normalization_coefs(coefs_dict)
     num_examples = len(dataset)
     num_train = int(num_examples)
     train_sampler = SubsetRandomSampler(torch.arange(num_train))
@@ -100,20 +101,20 @@ def evaluate_error(model, model_name, train_dataloader, coefs_dict, do_plot, out
                                                'pressure', coefs_dict)
     new_flowrate = pp.normalize_function(true_graph.nodes['inner'].data['flowrate_' + str(times[0])],
                                              'flowrate', coefs_dict)
-    
-    pressure_dict = {'inner': pp.normalize_function(true_graph.nodes['inner'].data['pressure_' + str(times[0])], 
+
+    pressure_dict = {'inner': pp.normalize_function(true_graph.nodes['inner'].data['pressure_' + str(times[0])],
                              'pressure', coefs_dict),
-                     'inlet': pp.normalize_function(true_graph.nodes['inlet'].data['pressure_' + str(times[0])], 
+                     'inlet': pp.normalize_function(true_graph.nodes['inlet'].data['pressure_' + str(times[0])],
                              'pressure', coefs_dict),
-                     'outlet': pp.normalize_function(true_graph.nodes['outlet'].data['pressure_' + str(times[0])], 
+                     'outlet': pp.normalize_function(true_graph.nodes['outlet'].data['pressure_' + str(times[0])],
                              'pressure', coefs_dict)}
-    flowrate_dict = {'inner': pp.normalize_function(true_graph.nodes['inner'].data['flowrate_' + str(times[0])], 
+    flowrate_dict = {'inner': pp.normalize_function(true_graph.nodes['inner'].data['flowrate_' + str(times[0])],
                              'flowrate', coefs_dict),
-                     'inlet': pp.normalize_function(true_graph.nodes['inlet'].data['flowrate_' + str(times[0])], 
+                     'inlet': pp.normalize_function(true_graph.nodes['inlet'].data['flowrate_' + str(times[0])],
                              'flowrate', coefs_dict),
-                     'outlet': pp.normalize_function(true_graph.nodes['outlet'].data['flowrate_' + str(times[0])], 
+                     'outlet': pp.normalize_function(true_graph.nodes['outlet'].data['flowrate_' + str(times[0])],
                              'flowrate', coefs_dict)}
-    
+
     new_state = {'pressure': pressure_dict, 'flowrate': flowrate_dict}
 
     err_p = 0
@@ -130,18 +131,18 @@ def evaluate_error(model, model_name, train_dataloader, coefs_dict, do_plot, out
 
         next_pressure = true_graph.nodes['inner'].data['pressure_' + str(tp1)]
         next_flowrate = true_graph.nodes['inner'].data['flowrate_' + str(tp1)]
-        
-        pressure_dict = {'inlet': pp.normalize_function(true_graph.nodes['inlet'].data['pressure_' + str(tp1)], 
+
+        pressure_dict = {'inlet': pp.normalize_function(true_graph.nodes['inlet'].data['pressure_' + str(tp1)],
                                  'pressure', coefs_dict),
-                         'outlet': pp.normalize_function(true_graph.nodes['outlet'].data['pressure_' + str(tp1)], 
+                         'outlet': pp.normalize_function(true_graph.nodes['outlet'].data['pressure_' + str(tp1)],
                                  'pressure', coefs_dict)}
-        flowrate_dict = {'inlet': pp.normalize_function(true_graph.nodes['inlet'].data['flowrate_' + str(tp1)], 
+        flowrate_dict = {'inlet': pp.normalize_function(true_graph.nodes['inlet'].data['flowrate_' + str(tp1)],
                                  'flowrate', coefs_dict),
-                         'outlet': pp.normalize_function(true_graph.nodes['outlet'].data['flowrate_' + str(tp1)], 
+                         'outlet': pp.normalize_function(true_graph.nodes['outlet'].data['flowrate_' + str(tp1)],
                                  'flowrate', coefs_dict)}
 
         new_bcs = {'pressure': pressure_dict, 'flowrate': flowrate_dict}
-        
+
         pp.set_bcs(graph, new_bcs)
         pp.set_state(graph, new_state)
         pred = model(graph, graph.nodes['inner'].data['n_features'].float()).squeeze()
@@ -150,29 +151,29 @@ def evaluate_error(model, model_name, train_dataloader, coefs_dict, do_plot, out
             dp = pp.invert_normalize_function(pred[:,0].detach().numpy(), 'dp', coefs_dict)
             prev_p = pp.invert_normalize_function(graph.nodes['inner'].data['pressure'].detach().numpy().squeeze(),
                                                   'pressure', coefs_dict)
-    
+
             p = dp + prev_p
             # print(np.linalg.norm(p))
             pressures_pred.append(p)
             pressures_real.append(next_pressure.detach().numpy())
-    
+
             dq = pp.invert_normalize_function(pred[:,1].detach().numpy(), 'dq', coefs_dict)
             prev_q = pp.invert_normalize_function(graph.nodes['inner'].data['flowrate'].detach().numpy().squeeze(),
                                                   'flowrate', coefs_dict)
-    
+
             q = dq + prev_q
-    
+
             flowrates_pred.append(q)
             flowrates_real.append(next_flowrate.detach().numpy())
         else:
             p = pp.invert_normalize_function(pred[:,0].detach().numpy(), 'pressure', coefs_dict)
-    
+
             # print(np.linalg.norm(p))
             pressures_pred.append(p)
             pressures_real.append(next_pressure.detach().numpy())
-    
+
             q = pp.invert_normalize_function(pred[:,1].detach().numpy(), 'flowrate', coefs_dict)
-        
+
             flowrates_pred.append(q)
             flowrates_real.append(next_flowrate.detach().numpy())
 
@@ -180,18 +181,18 @@ def evaluate_error(model, model_name, train_dataloader, coefs_dict, do_plot, out
         norm_p = norm_p + np.linalg.norm(next_pressure.detach().numpy().squeeze())**2
         err_q = err_q + np.linalg.norm(q - next_flowrate.detach().numpy().squeeze())**2
         norm_q = norm_q + np.linalg.norm(next_flowrate.detach().numpy().squeeze())**2
-        
+
         pressure_dict = {'inner': torch.from_numpy(np.expand_dims(pp.normalize_function(p,'pressure', coefs_dict),axis=1)),
-                         'inlet': pp.normalize_function(true_graph.nodes['inlet'].data['pressure_' + str(tp1)], 
+                         'inlet': pp.normalize_function(true_graph.nodes['inlet'].data['pressure_' + str(tp1)],
                                  'pressure', coefs_dict),
-                         'outlet': pp.normalize_function(true_graph.nodes['outlet'].data['pressure_' + str(tp1)], 
+                         'outlet': pp.normalize_function(true_graph.nodes['outlet'].data['pressure_' + str(tp1)],
                                  'pressure', coefs_dict)}
         flowrate_dict = {'inner': torch.from_numpy(np.expand_dims(pp.normalize_function(p,'flowrate', coefs_dict),axis=1)),
-                         'inlet': pp.normalize_function(true_graph.nodes['inlet'].data['flowrate_' + str(tp1)], 
+                         'inlet': pp.normalize_function(true_graph.nodes['inlet'].data['flowrate_' + str(tp1)],
                                  'flowrate', coefs_dict),
-                         'outlet': pp.normalize_function(true_graph.nodes['outlet'].data['flowrate_' + str(tp1)], 
+                         'outlet': pp.normalize_function(true_graph.nodes['outlet'].data['flowrate_' + str(tp1)],
                                  'flowrate', coefs_dict)}
-        
+
         new_state = {'pressure': pressure_dict, 'flowrate': flowrate_dict}
 
     err_p = np.sqrt(err_p / norm_p)

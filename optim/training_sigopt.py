@@ -63,6 +63,13 @@ if __name__ == "__main__":
                                                  do_plot = True,
                                                  out_folder = out_fdr)
 
+    print('Error pressure ' + str(err_p))
+    print('Error flowrate ' + str(err_q))
+    print('Global error ' + str(global_err))
+
+    sigopt.log_metadata(key, value)
+    sigopt.log_metric(name="loss", value=loss)
+
     if err_p != err_p or err_p > 1e10:
         sys.exit()
 
@@ -70,12 +77,8 @@ if __name__ == "__main__":
         sys.exit()
 
     if global_err != global_err or global_err > 1e10:
-        sys.exit() 
+        sys.exit()
 
-    print('Error pressure ' + str(err_p))
-    print('Error flowrate ' + str(err_q))
-    print('Global error ' + str(global_err))
-    sigopt.log_metric(name="loss", value=loss)
     sigopt.log_metric(name="error_pressure", value=err_p)
     sigopt.log_metric(name="error_flowrate", value=err_q)
     sigopt.log_metric(name="global_error", value=global_err)

@@ -45,9 +45,9 @@ class MLP(Module):
 class GraphNet(Module):
     def __init__(self, params):
         super(GraphNet, self).__init__()
-        
+
         # out_bc_encoder = 8
-        
+
         # self.encoder_inlet_edge = MLP(5, 16, out_bc_encoder, 1, True)
         # self.encoder_outlet_edge = MLP(5, 16, out_bc_encoder, 1, True)
 
@@ -84,13 +84,16 @@ class GraphNet(Module):
                           False)
 
         # self.dropout = Dropout(0.5)
-        
+
+    def set_normalization_coefs(self, coefs_dict):
+        self.normalization_coefs = coefs_dict
+
     def encode_inlet_edge(self, edges):
         f1 = edges.data['e_features']
         f2 = edges.src['n_features']
         # enc_edge = self.encoder_inlet_edge(torch.cat((f1, f2),dim=1))
         return {'inlet_info' : torch.cat((f1, f2),dim=1)}
-    
+
     def encode_outlet_edge(self, edges):
         f1 = edges.data['e_features']
         f2 = edges.src['n_features']
@@ -148,7 +151,7 @@ class GraphNet(Module):
     #         g.apply_nodes(pn)
     #     g.apply_nodes(self.decode)
     #     return g.ndata['h']
-    
+
     def forward(self, g, in_feat):
         g.nodes['inner'].data['features_c'] = in_feat
         g.apply_edges(self.encode_inlet_edge, etype='in_to_inner')
@@ -169,7 +172,7 @@ class GraphNet(Module):
             g.apply_nodes(pn, ntype='inner')
         g.apply_nodes(self.decode, ntype='inner')
         return g.nodes['inner'].data['h']
-    
+
     # def forward(self, g, in_feat):
     #     g.nodes['inner'].data['features_c'] = in_feat
     #     g.apply_edges(self.encode_inlet_edge, etype='in_to_inner')
