@@ -20,7 +20,7 @@ if __name__ == "__main__":
         momentum=0.0,
         process_iterations=1,
         hl_mlp=2,
-        normalize=True,
+        normalize=1,
         nepochs=30,
         batch_size=100,
         rate_noise=1e-4,
@@ -29,7 +29,7 @@ if __name__ == "__main__":
         normalization='standard',
         optimizer='adam'
     )
-    network_params = {'infeat_nodes': 8,
+    network_params = {'infeat_nodes': 7,
                     'infeat_edges': 4,
                     'latent_size_gnn': sigopt.params.latent_size_gnn,
                     'latent_size_mlp': sigopt.params.latent_size_mlp,
