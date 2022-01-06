@@ -67,7 +67,7 @@ if __name__ == "__main__":
     print('Error flowrate ' + str(err_q))
     print('Global error ' + str(global_err))
 
-    sigopt.log_metadata(key, value)
+    sigopt.log_metadata('folder', out_fdr)
     sigopt.log_metric(name="loss", value=loss)
 
     if err_p != err_p or err_p > 1e10:

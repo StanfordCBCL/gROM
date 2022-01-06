@@ -14,7 +14,6 @@ class ResampledGeometry:
 
         if remove_caps:
             self.construct_interpolation_matrices()
-        
 
     def assign_area(self, area):
         self.areas = []
@@ -27,7 +26,7 @@ class ResampledGeometry:
         self.p_portions = []
         for portion in portions:
             p_portion = self.geometry.points[portion[0]:portion[1]+1,:]
-            
+
             if not doresample:
                 self.p_portions.append(p_portion)
             else:
@@ -36,10 +35,10 @@ class ResampledGeometry:
                 alength = 0
                 for i in range(0, p_portion.shape[0] - 1):
                     alength += np.linalg.norm(p_portion[i+1,:] - p_portion[i,:])
-    
+
                 N = int(np.floor(alength / (coeff * self.geometry.h)))
-    
-    
+
+
                 tck, u = scipy.interpolate.splprep([p_portion[:,0],
                                                     p_portion[:,1],
                                                     p_portion[:,2]], s=0, k = 3)
@@ -164,7 +163,7 @@ class ResampledGeometry:
                 proj_values = proj_values[self.removed_nodes:]
             if index_portion in self.outlets:
                 proj_values = proj_values[:-self.removed_nodes]
-            
+
         return proj_values
 
     def compare_field_along_centerlines(self, field):
@@ -331,7 +330,7 @@ class ResampledGeometry:
 
         if len(outlets) == 0:
             outlets.append(0)
-            
+
         self.inlet = inlet
         self.outlets = outlets
 
