@@ -32,7 +32,7 @@ def set_state(graph, state_dict):
                                                                    graph.nodes[node_type].data['area']), 1)
         graph.nodes[node_type].data['n_labels'] = torch.cat((graph.nodes[node_type].data['dp'], \
                                                              graph.nodes[node_type].data['dq']), 1)
-            
+
     def per_edge_type(edge_type):
         if edge_type == 'inner_to_inner':
             graph.edges[edge_type].data['e_features'] = graph.edges[edge_type].data['position']
@@ -61,7 +61,7 @@ class DGL_Dataset(DGLDataset):
         else:
             self.graphs = graphs
         super().__init__(name='dgl_dataset')
-        random.shuffle(self.graphs)
+        # random.shuffle(self.graphs)
 
     def process(self):
         for graph in self.graphs:
@@ -102,7 +102,7 @@ def free_fields(graph, times):
     per_node_type('inner')
     per_node_type('inlet')
     per_node_type('outlet')
-    
+
 def set_timestep(targetgraph, allgraph, t, tp1):
     def per_node_type(node_type):
         targetgraph.nodes[node_type].data['pressure'] = allgraph.nodes[node_type].data['pressure_' + str(t)] + \
@@ -119,10 +119,13 @@ def set_timestep(targetgraph, allgraph, t, tp1):
 
         targetgraph.nodes[node_type].data['pressure_next'] = allgraph.nodes[node_type].data['pressure_' + str(tp1)]
         targetgraph.nodes[node_type].data['flowrate_next'] = allgraph.nodes[node_type].data['flowrate_' + str(tp1)]
-    
+
     per_node_type('inner')
     per_node_type('inlet')
     per_node_type('outlet')
+
+    # we add also current time to graph(for debugging()
+    targetgraph.nodes['inlet'].data['time'] = torch.from_numpy(np.array([t]))
 
 def create_single_timestep_graphs(graphs):
     out_graphs = []
@@ -163,8 +166,8 @@ def min_max_normalization(graph, fields, bounds_dict):
                     if np.linalg.norm(np.min(graph.nodes[node_type].data[feat].detach().numpy()) - 0) > 1e-5 and \
                        np.linalg.norm(np.max(graph.nodes[node_type].data[feat].detach().numpy()) - 1) > 1e-5:
                            graph.nodes[node_type].data[feat] = min_max(graph.nodes[node_type].data[feat], bounds_dict[field])
-                           
-    def per_edge_type(edge_type):     
+
+    def per_edge_type(edge_type):
         edge_features = graph.edges[edge_type].data
         for feat in edge_features:
             for field in fields:
@@ -172,7 +175,7 @@ def min_max_normalization(graph, fields, bounds_dict):
                     if np.linalg.norm(np.min(graph.edges[edge_type].data[feat].detach().numpy()) - 0) > 1e-5 and \
                        np.linalg.norm(np.max(graph.edges[edge_type].data[feat].detach().numpy()) - 1) > 1e-5:
                            graph.edges[edge_type].data[feat] = min_max(graph.edges[edge_type].data[feat], bounds_dict[field])
-                           
+
     per_node_type('inner')
     per_node_type('inlet')
     per_node_type('outlet')
@@ -199,13 +202,13 @@ def standard_normalization(graph, fields, coeffs_dict):
                 if field in feat:
                     graph.nodes[node_type].data[feat] = standardize(graph.nodes[node_type].data[feat], coeffs_dict[field])
 
-    def per_edge_type(edge_type):     
+    def per_edge_type(edge_type):
         edge_features = graph.edges[edge_type].data
         for feat in edge_features:
             for field in fields:
                 if field in feat:
                     graph.edges[edge_type].data[feat] = standardize(graph.edges[edge_type].data[feat], coeffs_dict[field])
-                    
+
     per_node_type('inner')
     per_node_type('inlet')
     per_node_type('outlet')
@@ -240,7 +243,7 @@ def add_to_list(graph, field, partial_list):
                 else:
                     partial_list = np.concatenate((partial_list,value), axis = 0)
         return partial_list
-    
+
     def per_edge_type(edge_type, partial_list):
         edge_features = graph.edges[edge_type].data
         for feat in edge_features:
@@ -253,7 +256,7 @@ def add_to_list(graph, field, partial_list):
                 else:
                     partial_list = np.concatenate((partial_list, value), axis = 0)
         return partial_list
-                    
+
     partial_list = per_node_type('inner', partial_list)
     partial_list = per_node_type('inlet', partial_list)
     partial_list = per_node_type('outlet', partial_list)
@@ -278,12 +281,12 @@ def normalize(graphs, type):
                              'max': np.max(cur_list, axis=0),
                              'mean': np.mean(cur_list, axis=0),
                              'std': np.std(cur_list, axis=0)}
-        
+
         ncoefs = coefs_dict[field]['std'].shape[0]
         for i in range(ncoefs):
             if coefs_dict[field]['std'][i] < 1e-12:
                 coefs_dict[field]['std'][i] = 1
-        
+
 
     for graph in graphs:
         cgraph = graph

@@ -24,6 +24,26 @@ def weighted_mse_loss(input, target, weight):
 def generate_gnn_model(params_dict):
     return GraphNet(params_dict)
 
+def compute_dataset_loss(gnn_model, train_dataloader, optimizer = None):
+    global_loss = 0
+    count = 0
+    for batched_graph in train_dataloader:
+        pred = gnn_model(batched_graph,
+                         batched_graph.nodes['inner'].data['n_features'].float()).squeeze()
+        weight = torch.ones(pred.shape)
+        loss = weighted_mse_loss(pred,
+                                 torch.reshape(batched_graph.nodes['inner'].data['n_labels'].float(),
+                                 pred.shape), weight)
+        time = batched_graph.nodes['inlet'].data['time'].detach().numpy()
+        global_loss = global_loss + loss.detach().numpy()
+        if optimizer != None:
+            optimizer.zero_grad()
+            loss.backward()
+            optimizer.step()
+        count = count + 1
+
+    return global_loss, count
+
 def train_gnn_model(gnn_model, model_name, optimizer_name, train_params,
                     checkpoint_fct = None, dataset_params = None):
     dataset, coefs_dict = pp.generate_dataset(model_name,
@@ -63,28 +83,17 @@ def train_gnn_model(gnn_model, model_name, optimizer_name, train_params,
 
     for epoch in range(nepochs):
         print('ep = ' + str(epoch))
-        global_loss = 0
-        count = 0
-        # if (epoch == nepochs):
-        #     losses = {}
-        for batched_graph in train_dataloader:
-            pred = gnn_model(batched_graph,
-                             batched_graph.nodes['inner'].data['n_features'].float()).squeeze()
-            weight = torch.ones(pred.shape)
-            loss = weighted_mse_loss(pred,
-                                     torch.reshape(batched_graph.nodes['inner'].data['n_labels'].float(),
-                                     pred.shape), weight)
-            global_loss = global_loss + loss.detach().numpy()
-            optimizer.zero_grad()
-            loss.backward()
-            optimizer.step()
-            count = count + 1
+        global_loss, count = compute_dataset_loss(gnn_model, train_dataloader, optimizer)
         scheduler.step()
         print('\tloss = ' + str(global_loss / count))
 
         if checkpoint_fct != None:
             if epoch in chckp_epochs:
                 checkpoint_fct(global_loss/count)
+
+    # compute final loss
+    global_loss, count = compute_dataset_loss(gnn_model, train_dataloader)
+    print('\tFinal loss = ' + str(global_loss / count))
 
     return gnn_model, train_dataloader, global_loss / count, coefs_dict
 
@@ -276,11 +285,10 @@ if __name__ == "__main__":
     train_params = {'learning_rate': 0.001,
                     'weight_decay': 0.7,
                     'momentum': 0.0,
-                    'resample_freq_timesteps': -1,
-                    'batch_size': 10,
-                    'nepochs': 30}
+                    'batch_size': 1,
+                    'nepochs': 2}
     dataset_params = {'rate_noise': 1e-5,
-                      'random_walks': 3,
+                      'random_walks': 0,
                       'normalization': 'standard',
                       'resample_freq_timesteps': 1}
 

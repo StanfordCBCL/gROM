@@ -261,8 +261,6 @@ def add_fields(graph, pressure, velocity, random_walks, rate_noise):
                 noise_q = noise_q + np.random.normal(0, rate_noise, (nQ, 1)) * new_q
             set_field(new_graph, 'flowrate_' + str(t), new_q)
             set_field(new_graph, 'noise_q_' + str(t), noise_q)
-            # we add also current time to graph(for debugging()
-            new_graph.nodes['inlet'].data['time'] = torch.from_numpy(np.array([t]))
         graphs.append(new_graph)
 
     return graphs
@@ -368,9 +366,8 @@ def save_animation(pressure, velocity, filename):
     writervideo = animation.FFMpegWriter(fps=60)
     anim.save(filename + '.mp4', writer = writervideo)
 
-def generate_graphs(argv, dataset_params, input_dir, save = True):
+def generate_graphs(model_name, dataset_params, input_dir, save = True):
     print('Generating_graphs with params ' + str(dataset_params))
-    model_name = sys.argv[1]
     geo, fields = create_geometry(model_name, input_dir, 15, remove_caps = True,
                                   points_to_keep = None, doresample = True)
     pressure, velocity = io.gather_pressures_velocities(fields)
@@ -382,7 +379,7 @@ def generate_graphs(argv, dataset_params, input_dir, save = True):
 
     # the period
     T = 0.7
-    npoints = 6000
+    npoints = 3000
 
     pressure = augment_time(pressure, T, npoints)
     velocity = augment_time(velocity, T, npoints)
