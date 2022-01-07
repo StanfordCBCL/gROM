@@ -16,7 +16,6 @@ import generate_graphs as gg
 import copy
 import random
 
-
 def set_state(graph, state_dict):
     def per_node_type(node_type):
         graph.nodes[node_type].data['pressure'] = state_dict['pressure'][node_type]
@@ -55,13 +54,16 @@ def set_bcs(graph, state_dict):
     per_node_type('outlet')
 
 class DGL_Dataset(DGLDataset):
-    def __init__(self, graphs, resample_freq_timesteps = -1):
+    def __init__(self, graphs = None, resample_freq_timesteps = -1):
         if resample_freq_timesteps != -1:
             self.graphs = graphs[::resample_freq_timesteps]
         else:
             self.graphs = graphs
         super().__init__(name='dgl_dataset')
         # random.shuffle(self.graphs)
+
+    def save_graphs(self, folder):
+        dgl.save_graphs(folder + '/dataset.grph', self.graphs)
 
     def process(self):
         for graph in self.graphs:

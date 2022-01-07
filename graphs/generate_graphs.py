@@ -244,26 +244,53 @@ def add_fields(graph, pressure, velocity, random_walks, rate_noise):
     times.sort()
     nP = pressure[times[0]].shape[0]
     nQ = velocity[times[0]].shape[0]
+
+    # compute ranges for pressure and velocity for noise
+    minp = np.infty
+    minv = np.infty
+    maxp = np.NINF
+    maxv = np.NINF
+
     print('  n. times = ' + str(len(times)))
+    noised_pressures = []
+    noised_flowrates = []
     while len(graphs) < random_walks + 1:
         print('  writing graph n. ' + str(len(graphs) + 1))
         new_graph = copy.deepcopy(graph)
         noise_p = np.zeros((nP, 1))
         noise_q = np.zeros((nQ, 1))
+        noised_pressure = {}
+        noised_flowrate = {}
         for t in times:
             new_p = pressure[t]
-            if len(graphs) != 0:
-                noise_p = noise_p + np.random.normal(0, rate_noise, (nP, 1)) * new_p
+            if len(graphs) == 0:
+                minp = np.min(np.array([minp,np.min(new_p)]))
+                maxp = np.max(np.array([maxp,np.max(new_p)]))
+            else:
+                coeff = np.abs(maxp - minp) * (times[1] - times[0])
+                noise_p = noise_p + np.random.normal(0, rate_noise, (nP, 1)) * coeff
+                noised_pressure[t] = new_p + noise_p
+
             set_field(new_graph, 'pressure_' + str(t), new_p)
             set_field(new_graph, 'noise_p_' + str(t), noise_p)
+
             new_q = velocity[t]
-            if len(graphs) != 0:
-                noise_q = noise_q + np.random.normal(0, rate_noise, (nQ, 1)) * new_q
+            if len(graphs) == 0:
+                minv = np.min(np.array([minv,np.min(new_q)]))
+                maxv = np.max(np.array([maxv,np.max(new_q)]))
+            else:
+                coeff = np.abs(maxv - minv) * (times[1] - times[0])
+                noise_q = noise_q + np.random.normal(0, rate_noise, (nQ, 1)) * coeff
+                noised_flowrate[t] = new_q + noise_q
             set_field(new_graph, 'flowrate_' + str(t), new_q)
             set_field(new_graph, 'noise_q_' + str(t), noise_q)
+
+        if (len(graphs) != 0):
+            noised_pressures.append(noised_pressure)
+            noised_flowrates.append(noised_flowrate)
         graphs.append(new_graph)
 
-    return graphs
+    return graphs, noised_pressures, noised_flowrates
 
 def generate_analytic(pressure, velocity, area):
     times = [t for t in pressure]
@@ -273,24 +300,9 @@ def generate_analytic(pressure, velocity, area):
 
     xs = np.linspace(0, 2 * np.pi, N)
 
-    # for i in range(0, N):
-    #     pressure[times[0]][i] = np.sin(xs[i])
-    #     velocity[times[0]][i] = xs[i] * xs[i]
-
-    # for tin in range(1,len(times)):
-    #     for n in range(1, N-1):
-    #         pressure[times[tin]][n] = pressure[times[tin-1]][n] + 0.001 * area[n] * np.sin(velocity[times[tin-1]][n-1]) * np.cos(velocity[times[tin-1]][n+1])
-    #         velocity[times[tin]][n] = velocity[times[tin-1]][n] + 0.001 * np.sqrt(area[n]) * np.cos((pressure[times[tin-1]][n-1] + pressure[times[tin-1]][n+1])/2)
-    #         # pressure[times[tin]][n] = pressure[times[tin-1]][n] + 0.001 * area[n] * np.sin(velocity[times[tin-1]][n])
-    #         # velocity[times[tin]][n] = velocity[times[tin-1]][n] + 0.001 * np.sqrt(area[n]) * np.cos(pressure[times[tin-1]][n])
-    #     # pressure[times[tin]] = pressure[times[tin-1]] + 0.001 * area * np.sin(velocity[times[tin-1]])
-    #     # velocity[times[tin]] = velocity[times[tin-1]] + 0.001 * np.sqrt(area) * np.cos(pressure[times[tin-1]])
-
     T = len(times)
     for tin in range(0, T):
         for i in range(0, N):
-            # pressure[times[tin]][i] = np.sin(0.01 * tin) * np.cos(0.01 * tin)
-            # velocity[times[tin]][i] = np.cos(0.01 * tin) * 0.01 * tin
             pressure[times[tin]][i] = np.sin(2 * np.pi * tin / T)
             velocity[times[tin]][i] = np.cos(2 * np.pi * tin / T)
 
@@ -388,15 +400,17 @@ def generate_graphs(model_name, dataset_params, input_dir, save = True):
     # pressure, velocity = generate_analytic(pressure, velocity, area)
 
     fixed_graph = create_fixed_graph(geo, area)
-    graphs = add_fields(fixed_graph, pressure, velocity,
+    graphs, noised_pressures, noised_flowrates = \
+                        add_fields(fixed_graph, pressure, velocity,
                         random_walks=dataset_params['random_walks'],
                         rate_noise=dataset_params['rate_noise'])
+    # save_animation(noised_pressures[0], noised_flowrates[0], 'noised_fields')
     if save:
         dgl.save_graphs('data/' + sys.argv[2], graphs)
     return graphs
 
 if __name__ == "__main__":
     input_dir = 'vtps'
-    dataset_params = {'random_walks': 0,
-                      'rate_noise': 1e-3}
-    generate_graphs(sys.argv, dataset_params, input_dir, True)
+    dataset_params = {'random_walks': 1,
+                      'rate_noise': 1e-1}
+    generate_graphs(sys.argv[1], dataset_params, input_dir, True)

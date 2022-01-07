@@ -95,7 +95,7 @@ def train_gnn_model(gnn_model, model_name, optimizer_name, train_params,
     global_loss, count = compute_dataset_loss(gnn_model, train_dataloader)
     print('\tFinal loss = ' + str(global_loss / count))
 
-    return gnn_model, train_dataloader, global_loss / count, coefs_dict
+    return gnn_model, train_dataloader, global_loss / count, coefs_dict, dataset
 
 def evaluate_error(model, model_name, train_dataloader, coefs_dict, do_plot, out_folder):
     it = iter(train_dataloader)
@@ -251,44 +251,46 @@ def create_directory(path):
 def launch_training(model_name, optimizer_name, params_dict,
                     train_params, plot_validation = True, checkpoint_fct = None,
                     dataset_params = None):
-    create_directory('models')
-    gnn_model = generate_gnn_model(params_dict)
-    gnn_model, train_loader, loss, coefs_dict = train_gnn_model(gnn_model,
-                                                                model_name,
-                                                                optimizer_name,
-                                                                train_params,
-                                                                checkpoint_fct,
-                                                                dataset_params)
-
     now = datetime.now()
     dt_string = now.strftime("%d.%m.%Y_%H.%M.%S")
     folder = 'models/' + dt_string
+    create_directory('models')
     create_directory(folder)
-    torch.save(gnn_model.state_dict(), folder + '/gnn.pms')
+    gnn_model = generate_gnn_model(params_dict)
+    torch.save(gnn_model.state_dict(), folder + '/initial_gnn.pms')
+    gnn_model, train_loader, loss, coefs_dict, dataset = train_gnn_model(gnn_model,
+                                                                         model_name,
+                                                                         optimizer_name,
+                                                                         train_params,
+                                                                         checkpoint_fct,
+                                                                         dataset_params)
+
+    torch.save(gnn_model.state_dict(), folder + '/trained_gnn.pms')
     json_params = json.dumps(params_dict, indent = 4)
     json_train = json.dumps(train_params, indent = 4)
     with open(folder + '/hparams.json', 'w') as outfile:
         json.dump(json_params, outfile)
     with open(folder + '/train.json', 'w') as outfile:
         json.dump(json_train, outfile)
+    dataset.save_graphs(folder)
     return gnn_model, loss, train_loader, coefs_dict, folder
 
 if __name__ == "__main__":
     params_dict = {'infeat_nodes': 7,
                    'infeat_edges': 4,
-                   'latent_size_gnn': 64,
-                   'latent_size_mlp': 64,
+                   'latent_size_gnn': 18,
+                   'latent_size_mlp': 84,
                    'out_size': 2,
-                   'process_iterations': 3,
-                   'hl_mlp': 2,
-                   'normalize': True}
-    train_params = {'learning_rate': 0.001,
-                    'weight_decay': 0.7,
+                   'process_iterations': 5,
+                   'hl_mlp': 1,
+                   'normalize': 1}
+    train_params = {'learning_rate': 0.008223127794360673,
+                    'weight_decay': 0.36984122162067234,
                     'momentum': 0.0,
-                    'batch_size': 1,
-                    'nepochs': 2}
-    dataset_params = {'rate_noise': 1e-5,
-                      'random_walks': 0,
+                    'batch_size': 359,
+                    'nepochs': 1}
+    dataset_params = {'rate_noise': 1e-1,
+                      'random_walks': 4,
                       'normalization': 'standard',
                       'resample_freq_timesteps': 1}
 
