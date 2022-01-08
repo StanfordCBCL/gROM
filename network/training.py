@@ -106,12 +106,15 @@ def train_gnn_model(gnn_model, model_name, optimizer_name, train_params,
             if epoch in chckp_epochs:
                 checkpoint_fct(global_loss/count)
 
+        if epoch >= 10:
+            dataset.sample_noise(global_mae/count * dataset_params['rate_noise'])
+
     # compute final loss
     global_loss, count, _, global_mae = evaluate_model(gnn_model, train_dataloader, mse, mae)
     print('\tFinal loss = {:.2e}\tfinal mae = {:.2e}'.format(global_loss/count,
                                                              global_mae/count))
 
-    return gnn_model, train_dataloader, global_loss / count, coefs_dict, dataset
+    return gnn_model, train_dataloader, global_loss / count, global_mae / count,coefs_dict, dataset
 
 def create_directory(path):
     try:
@@ -129,12 +132,12 @@ def launch_training(model_name, optimizer_name, params_dict,
     create_directory(folder)
     gnn_model = generate_gnn_model(params_dict)
     torch.save(gnn_model.state_dict(), folder + '/initial_gnn.pms')
-    gnn_model, train_loader, loss, coefs_dict, dataset = train_gnn_model(gnn_model,
-                                                                         model_name,
-                                                                         optimizer_name,
-                                                                         train_params,
-                                                                         checkpoint_fct,
-                                                                         dataset_params)
+    gnn_model, train_loader, loss, mae, coefs_dict, dataset = train_gnn_model(gnn_model,
+                                                                            model_name,
+                                                                            optimizer_name,
+                                                                            train_params,
+                                                                            checkpoint_fct,
+                                                                            dataset_params)
 
     torch.save(gnn_model.state_dict(), folder + '/trained_gnn.pms')
     json_params = json.dumps(params_dict, indent = 4)
@@ -143,7 +146,7 @@ def launch_training(model_name, optimizer_name, params_dict,
         json.dump(json_params, outfile)
     with open(folder + '/train.json', 'w') as outfile:
         json.dump(json_train, outfile)
-    return gnn_model, loss, train_loader, coefs_dict, folder
+    return gnn_model, loss, mae, dataset, coefs_dict, folder
 
 if __name__ == "__main__":
     params_dict = {'infeat_nodes': 7,
@@ -158,8 +161,9 @@ if __name__ == "__main__":
                     'weight_decay': 0.36984122162067234,
                     'momentum': 0.0,
                     'batch_size': 359,
-                    'nepochs': 10}
-    dataset_params = {'normalization': 'standard'}
+                    'nepochs': 100}
+    dataset_params = {'normalization': 'standard',
+                      'rate_noise': 10}
 
     start = time.time()
     gnn_model, _, train_dataloader, coefs_dict, out_fdr = launch_training(sys.argv[1],

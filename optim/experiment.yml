@@ -1,12 +1,17 @@
 name: gROM Optimization
 metrics:
-- name: error_pressure
-  strategy: store
-- name: error_flowrate
-  strategy: store
 - name: loss
   strategy: optimize
   objective: minimize
+- name: global_error
+  strategy: optimize
+  objective: minimize
+- name: error_flowrate
+  strategy: store
+- name: error_pressure
+  strategy: store
+- name: mae
+  strategy: store
 parameters:
 - name: latent_size_gnn
   bounds:
@@ -48,15 +53,10 @@ parameters:
     min: 10
     max: 1000
   type: int
-- name: random_walks
-  bounds:
-    min: 0
-    max: 10
-  type: int
 - name: rate_noise
   bounds:
-    min: 0.000001
-    max: 0.1
+    min: 0.1
+    max: 100
   type: double
 budget: 500
 parallel_bandwidth: 20

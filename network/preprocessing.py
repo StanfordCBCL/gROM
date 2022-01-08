@@ -16,7 +16,7 @@ import generate_graphs as gg
 import copy
 import random
 
-def set_state(graph, state_dict, next_state_dict = None):
+def set_state(graph, state_dict, next_state_dict = None, noise_dict = None):
     def per_node_type(node_type):
         graph.nodes[node_type].data['pressure'] = state_dict['pressure'][node_type]
         graph.nodes[node_type].data['flowrate'] = state_dict['flowrate'][node_type]
@@ -24,16 +24,32 @@ def set_state(graph, state_dict, next_state_dict = None):
         if next_state_dict != None:
             graph.nodes[node_type].data['pressure_next'] = next_state_dict['pressure'][node_type]
             graph.nodes[node_type].data['flowrate_next'] = next_state_dict['flowrate'][node_type]
-            graph.nodes[node_type].data['n_labels'] = torch.cat((graph.nodes[node_type].data['pressure_next'] -
-                                                                 graph.nodes[node_type].data['pressure'], \
-                                                                 graph.nodes[node_type].data['flowrate_next'] -
-                                                                 graph.nodes[node_type].data['flowrate']), 1)
+            if noise_dict == None  or node_type != 'inner':
+                graph.nodes[node_type].data['n_labels'] = torch.cat((graph.nodes[node_type].data['pressure_next'] - \
+                                                                     graph.nodes[node_type].data['pressure'], \
+                                                                     graph.nodes[node_type].data['flowrate_next'] - \
+                                                                     graph.nodes[node_type].data['flowrate']), 1)
+            else:
+                graph.nodes[node_type].data['n_labels'] = torch.cat((graph.nodes[node_type].data['pressure_next'] - \
+                                                                     graph.nodes[node_type].data['pressure'] - \
+                                                                     noise_dict['pressure'], \
+                                                                     graph.nodes[node_type].data['flowrate_next'] - \
+                                                                     graph.nodes[node_type].data['flowrate'] - \
+                                                                     noise_dict['flowrate']), 1)
 
         if node_type == 'inner':
-            graph.nodes[node_type].data['n_features'] = torch.cat((graph.nodes[node_type].data['pressure'], \
-                                                                   graph.nodes[node_type].data['flowrate'], \
-                                                                   graph.nodes[node_type].data['area'], \
-                                                                   graph.nodes[node_type].data['node_type']), 1)
+            if noise_dict == None:
+                graph.nodes[node_type].data['n_features'] = torch.cat((graph.nodes[node_type].data['pressure'], \
+                                                                       graph.nodes[node_type].data['flowrate'], \
+                                                                       graph.nodes[node_type].data['area'], \
+                                                                       graph.nodes[node_type].data['node_type']), 1)
+            else:
+                graph.nodes[node_type].data['n_features'] = torch.cat((graph.nodes[node_type].data['pressure'] + \
+                                                                       noise_dict['pressure'], \
+                                                                       graph.nodes[node_type].data['flowrate'] + \
+                                                                       noise_dict['flowrate'], \
+                                                                       graph.nodes[node_type].data['area'], \
+                                                                       graph.nodes[node_type].data['node_type']), 1)
         else:
             graph.nodes[node_type].data['n_features'] = torch.cat((graph.nodes[node_type].data['pressure_next'], \
                                                                    graph.nodes[node_type].data['flowrate_next'], \
@@ -63,8 +79,8 @@ def set_bcs(graph, state_dict):
 class DGL_Dataset(DGLDataset):
     def __init__(self, graphs = None):
         self.graphs = graphs
-        super().__init__(name='dgl_dataset')
         self.times = graphs[0].nodes['params'].data['times']
+        super().__init__(name='dgl_dataset')
 
     def save_graphs(self, folder):
         dgl.save_graphs(folder + '/dataset.grph', self.graphs)
@@ -75,21 +91,36 @@ class DGL_Dataset(DGLDataset):
             for data_name in graph.nodes[ntype].data:
                 if field in data_name:
                     todelete.append(data_name)
-                    
+
             for data_name in todelete:
                 del graph.nodes[ntype].data[data_name]
-                    
+
         self.lightgraphs = []
+        self.noise_pressures = []
+        self.noise_flowrates = []
 
         for graph in self.graphs:
             lightgraph = copy.deepcopy(graph)
-            
+
             for ntype in ['inner', 'inlet', 'outlet']:
                 per_node_type(lightgraph, ntype, 'pressure')
                 per_node_type(lightgraph, ntype, 'flowrate')
-                
+
             self.lightgraphs.append(lightgraph)
-            
+
+            ninner_nodes = self.graphs[0].nodes['inner'].data['pressure_0'].shape[0]
+            noise_pressure = np.zeros((ninner_nodes,self.times.shape[1]))
+            noise_flowrate = np.zeros((ninner_nodes,self.times.shape[1]))
+            self.noise_pressures.append(noise_pressure)
+            self.noise_flowrates.append(noise_flowrate)
+
+    def sample_noise(self, rate):
+        ngraphs = len(self.noise_pressures)
+        for igraph in range(ngraphs):
+            nnodes = self.noise_pressures[igraph].shape[0]
+            for index in range(1,len(self.times)-1):
+                self.noise_pressures[igraph][:,index] = np.random.normal(0, rate, (nnodes, 1)) + self.noise_pressures[igraph][:,index-1]
+                self.noise_flowrates[igraph][:,index] = np.random.normal(0, rate, (nnodes, 1)) + self.noise_flowrates[igraph][:,index-1]
 
     def get_state_dict(self, index):
         pressure_dict = {'inner': self.graphs[0].nodes['inner'].data['pressure_' + str(index)],
@@ -104,7 +135,9 @@ class DGL_Dataset(DGLDataset):
         i = i.detach().numpy()
         state_dict = self.get_state_dict(i)
         next_state_dict = self.get_state_dict(i+1)
-        set_state(self.lightgraphs[0], state_dict, next_state_dict)
+        noise_dict = {'pressure': torch.from_numpy(np.expand_dims(self.noise_pressures[0][:,i],1)),
+                      'flowrate': torch.from_numpy(np.expand_dims(self.noise_flowrates[0][:,i],1))}
+        set_state(self.lightgraphs[0], state_dict, next_state_dict, noise_dict)
         return self.lightgraphs[0]
 
     def __len__(self):

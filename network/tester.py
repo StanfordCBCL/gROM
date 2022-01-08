@@ -28,9 +28,13 @@ def test_train(gnn_model, model_name, dataset):
                                        batch_size=1,
                                        drop_last=False)
 
-    global_loss, count, elapsed = training.compute_dataset_loss(gnn_model, train_dataloader)
-    print('\tFinal loss = ' + str(global_loss / count))
-    print('\t\tcomputed in ' + str(elapsed) + 's')
+    global_loss, count, elapsed, global_mae = training.evaluate_model(gnn_model, \
+                                              train_dataloader, \
+                                              training.mse, \
+                                              training.mae)
+    print('\tloss = {:.2e}\tmae = {:.2e}\ttime = {:.2f} s'.format(global_loss/count,
+                                                                  global_mae/count,
+                                                                  elapsed))
 
     return coefs_dict
 
@@ -62,8 +66,6 @@ def test_rollout(model, model_name, graph, coefs_dict, do_plot, out_folder):
     flowrates_pred = []
     flowrates_real = []
     for t in range(len(times)-1):
-        if (t % 100 == 0 or t == (len(times)-2)):
-            print('Rollout ' + str(t) + '/' + str(len(times)-1))
         tp1 = t+1
 
         next_pressure = pp.normalize_function(true_graph.nodes['inner'].data['pressure_' + str(tp1)], 'pressure', coefs_dict)
@@ -146,12 +148,17 @@ def test_rollout(model, model_name, graph, coefs_dict, do_plot, out_folder):
         writervideo = animation.FFMpegWriter(fps=60)
         anim.save(out_folder + '/plot.mp4', writer = writervideo)
 
+
+    print('Error pressure = {:.5e}'.format(err_p))
+    print('Error flowrate = {:.5e}'.format(err_q))
+    print('Global error = {:.5e}'.format(np.sqrt(err_p**2 + err_q**2)))
+
     return err_p, err_q, np.sqrt(err_p**2 + err_q**2)
 
 if __name__ == "__main__":
     dataset_params = {'normalization': 'standard'}
 
-    path = 'models/08.01.2022_17.26.24/'
+    path = 'models/08.01.2022_21.15.53/'
     params = json.loads(json.load(open(path + 'hparams.json')))
 
     gnn_model = GraphNet(params)
@@ -161,5 +168,8 @@ if __name__ == "__main__":
     model_name = '0063_1001'
     dataset, coefs_dict = pp.generate_dataset(model_name, dataset_params)
 
-    test_train(gnn_model, model_name, dataset)
-    test_rollout(gnn_model, model_name, dataset.lightgraphs[0], coefs_dict, do_plot = True, out_folder = '.')
+    # test_train(gnn_model, model_name, dataset)
+    err_p, err_q, global_error = test_rollout(gnn_model, model_name,
+                                              dataset.lightgraphs[0],
+                                              coefs_dict, do_plot = True,
+                                              out_folder = '.')

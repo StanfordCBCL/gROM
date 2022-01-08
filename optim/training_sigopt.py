@@ -1,3 +1,4 @@
+
 import sigopt
 import sys
 
@@ -6,6 +7,7 @@ sys.path.append("../network")
 import training as tr
 import numpy as np
 import time
+import tester as test
 
 def log_checkpoint(loss):
     sigopt.log_checkpoint({'loss': loss})
@@ -21,7 +23,7 @@ if __name__ == "__main__":
         process_iterations=1,
         hl_mlp=2,
         normalize=1,
-        nepochs=30,
+        nepochs=10,
         batch_size=100,
         rate_noise=1e-4,
         random_walks=0,
@@ -46,27 +48,24 @@ if __name__ == "__main__":
                       'normalization': sigopt.params.normalization}
 
     start = time.time()
-    gnn_model, loss, train_dataloader, coefs_dict, out_fdr = tr.launch_training(sys.argv[1],
-                                                             sigopt.params.optimizer,
-                                                             network_params, train_params, True,
-                                                             log_checkpoint,
-                                                             dataset_params)
+    gnn_model, loss, mae, dataset, coefs_dict, out_fdr = tr.launch_training(sys.argv[1],
+                                                                  sigopt.params.optimizer,
+                                                                  network_params, train_params, True,
+                                                                  log_checkpoint,
+                                                                  dataset_params)
     end = time.time()
     elapsed_time = end - start
     print('Training time = ' + str(elapsed_time))
 
-    err_p, err_q, global_err = tr.evaluate_error(gnn_model, sys.argv[1],
-                                                 train_dataloader,
+    err_p, err_q, global_err = test.test_rollout(gnn_model, sys.argv[1],
+                                                 dataset.lightgraphs[0],
                                                  coefs_dict,
                                                  do_plot = True,
                                                  out_folder = out_fdr)
 
-    print('Error pressure ' + str(err_p))
-    print('Error flowrate ' + str(err_q))
-    print('Global error ' + str(global_err))
-
     sigopt.log_metadata('folder', out_fdr)
     sigopt.log_metric(name="loss", value=loss)
+    sigopt.log_metric(name="mae", value=mae)
 
     if err_p != err_p or err_p > 1e10:
         sys.exit()
