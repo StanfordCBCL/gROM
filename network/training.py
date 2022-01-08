@@ -291,8 +291,7 @@ if __name__ == "__main__":
                     'nepochs': 1}
     dataset_params = {'rate_noise': 1e-1,
                       'random_walks': 4,
-                      'normalization': 'standard',
-                      'resample_freq_timesteps': 1}
+                      'normalization': 'standard'}
 
     start = time.time()
     gnn_model, _, train_dataloader, coefs_dict, out_fdr = launch_training(sys.argv[1],

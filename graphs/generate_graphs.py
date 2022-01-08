@@ -28,13 +28,6 @@ def create_geometry(model_name, input_dir, sampling, remove_caps, points_to_keep
     soln = io.read_geo(input_dir + '/' + model_name + '.vtp').GetOutput()
     fields, _, p_array = io.get_all_arrays(soln, points_to_keep)
 
-
-    # p_array = np.zeros((20,3))
-    # p_array[:,0] = np.linspace(0,1,20)
-
-    # for field in fields:
-    #     fields[field] = np.ones((20))
-
     return ResampledGeometry(Geometry(p_array), sampling, remove_caps, doresample), fields
 
 def convert_nodes_to_heterogeneous(nodes, edges, inlet_index, outlet_indices):
@@ -93,7 +86,10 @@ def convert_nodes_to_heterogeneous(nodes, edges, inlet_index, outlet_indices):
         if edges[iedg,1] == inlet_index:
             inlet_physical_contiguous[np.where(inner_mask == edges[iedg,0])[0]] = 1
             break
-    inlet_dict = {'edges': inlet_edges.astype(int), 'distance': distances_inlet, 'mask': inlet_mask, 'physical_contiguous': inlet_physical_contiguous.astype(int)}
+    inlet_dict = {'edges': inlet_edges.astype(int),
+                  'distance': distances_inlet,
+                  'mask': inlet_mask,
+                  'physical_contiguous': inlet_physical_contiguous.astype(int)}
 
     # process outlets
     indices = np.arange(nnodes)
@@ -138,8 +134,6 @@ def convert_nodes_to_heterogeneous(nodes, edges, inlet_index, outlet_indices):
             if bcindex in edges[irow,:]:
                 rowstodelete.append(irow)
 
-
-
     edges = np.delete(edges, rowstodelete, axis = 0)
     edges_c = np.copy(edges)
     edges_c2 = np.copy(edges)
@@ -167,11 +161,6 @@ def convert_nodes_to_heterogeneous(nodes, edges, inlet_index, outlet_indices):
     inner_dict = {'edges': edges, 'position': inner_pos, 'mask': inner_mask}
 
     return inner_dict, inlet_dict, outlet_dict
-
-
-
-
-
 
 def create_fixed_graph(geometry, area):
     nodes, edges, _, inlet_index, outlet_indices = geometry.generate_nodes()
@@ -387,24 +376,19 @@ def generate_graphs(model_name, dataset_params, input_dir, save = True):
                                                    velocity,
                                                    fields['area'])
 
-    # save_animation(pressure, velocity, 'original_fields')
-
     # the period
     T = 0.7
-    npoints = 3000
+    npoints = 500
 
     pressure = augment_time(pressure, T, npoints)
     velocity = augment_time(velocity, T, npoints)
     # save_animation(pressure, velocity, 'interpolated_fields')
-
-    # pressure, velocity = generate_analytic(pressure, velocity, area)
 
     fixed_graph = create_fixed_graph(geo, area)
     graphs, noised_pressures, noised_flowrates = \
                         add_fields(fixed_graph, pressure, velocity,
                         random_walks=dataset_params['random_walks'],
                         rate_noise=dataset_params['rate_noise'])
-    # save_animation(noised_pressures[0], noised_flowrates[0], 'noised_fields')
     if save:
         dgl.save_graphs('data/' + sys.argv[2], graphs)
     return graphs

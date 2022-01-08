@@ -54,11 +54,8 @@ def set_bcs(graph, state_dict):
     per_node_type('outlet')
 
 class DGL_Dataset(DGLDataset):
-    def __init__(self, graphs = None, resample_freq_timesteps = -1):
-        if resample_freq_timesteps != -1:
-            self.graphs = graphs[::resample_freq_timesteps]
-        else:
-            self.graphs = graphs
+    def __init__(self, graphs = None):
+        self.graphs = graphs
         super().__init__(name='dgl_dataset')
         # random.shuffle(self.graphs)
 
@@ -268,12 +265,7 @@ def add_to_list(graph, field, partial_list):
 
     return partial_list
 
-def normalize(graphs, type):
-    norm_graphs = []
-    coefs_dict = {}
-    list_fields = {}
-    coefs_dict['type'] = type
-    fields = {'pressure', 'flowrate', 'area', 'position', 'dp', 'dq', 'distance'}
+def compute_statistics(graphs, fields, coefs_dict):
     for field in fields:
         cur_list = np.zeros((0,0))
         for graph in graphs:
@@ -288,16 +280,28 @@ def normalize(graphs, type):
         for i in range(ncoefs):
             if coefs_dict[field]['std'][i] < 1e-12:
                 coefs_dict[field]['std'][i] = 1
+    return coefs_dict
 
+def normalize_graphs(graphs, fields, coefs_dict):
+    norm_graphs = []
 
     for graph in graphs:
-        cgraph = graph
         if type == 'min_max':
-            min_max_normalization(cgraph, fields, coefs_dict)
+            min_max_normalization(graph, fields, coefs_dict)
         if type == 'standard':
-            standard_normalization(cgraph, fields, coefs_dict)
+            standard_normalization(graph, fields, coefs_dict)
 
-        norm_graphs.append(cgraph)
+        norm_graphs.append(graph)
+
+    return norm_graphs
+
+def normalize(graphs, type):
+    coefs_dict = {}
+    coefs_dict['type'] = type
+    fields = {'pressure', 'flowrate', 'area', 'position', 'dp', 'dq', 'distance'}
+
+    coefs_dict = compute_statistics(graphs, fields, coefs_dict)
+    norm_graphs = normalize_graphs(graphs, fields, coefs_dict)
 
     return norm_graphs, coefs_dict
 
@@ -317,8 +321,4 @@ def generate_dataset(model_name, dataset_params = None):
     graphs = create_single_timestep_graphs(graphs)
     graphs, coefs_dict = normalize(graphs, normalization_type)
 
-    if dataset_params != None:
-        return DGL_Dataset(graphs, dataset_params['resample_freq_timesteps']), \
-                           coefs_dict
-    else:
-        return DGL_Dataset(graphs), coefs_dict
+    return DGL_Dataset(graphs), coefs_dict

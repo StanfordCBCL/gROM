@@ -58,10 +58,5 @@ parameters:
     min: 0.000001
     max: 0.1
   type: double
-- name: resample_freq_timesteps
-  bounds:
-    min: 1
-    max: 2
-  type: int
 budget: 500
 parallel_bandwidth: 20
