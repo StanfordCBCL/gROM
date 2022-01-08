@@ -16,10 +16,19 @@ import generate_graphs as gg
 import copy
 import random
 
-def set_state(graph, state_dict):
+def set_state(graph, state_dict, next_state_dict = None):
     def per_node_type(node_type):
         graph.nodes[node_type].data['pressure'] = state_dict['pressure'][node_type]
         graph.nodes[node_type].data['flowrate'] = state_dict['flowrate'][node_type]
+
+        if next_state_dict != None:
+            graph.nodes[node_type].data['pressure_next'] = next_state_dict['pressure'][node_type]
+            graph.nodes[node_type].data['flowrate_next'] = next_state_dict['flowrate'][node_type]
+            graph.nodes[node_type].data['n_labels'] = torch.cat((graph.nodes[node_type].data['pressure_next'] -
+                                                                 graph.nodes[node_type].data['pressure'], \
+                                                                 graph.nodes[node_type].data['flowrate_next'] -
+                                                                 graph.nodes[node_type].data['flowrate']), 1)
+
         if node_type == 'inner':
             graph.nodes[node_type].data['n_features'] = torch.cat((graph.nodes[node_type].data['pressure'], \
                                                                    graph.nodes[node_type].data['flowrate'], \
@@ -29,8 +38,6 @@ def set_state(graph, state_dict):
             graph.nodes[node_type].data['n_features'] = torch.cat((graph.nodes[node_type].data['pressure_next'], \
                                                                    graph.nodes[node_type].data['flowrate_next'], \
                                                                    graph.nodes[node_type].data['area']), 1)
-        graph.nodes[node_type].data['n_labels'] = torch.cat((graph.nodes[node_type].data['dp'], \
-                                                             graph.nodes[node_type].data['dq']), 1)
 
     def per_edge_type(edge_type):
         if edge_type == 'inner_to_inner':
@@ -57,27 +64,52 @@ class DGL_Dataset(DGLDataset):
     def __init__(self, graphs = None):
         self.graphs = graphs
         super().__init__(name='dgl_dataset')
-        # random.shuffle(self.graphs)
+        self.times = graphs[0].nodes['params'].data['times']
 
     def save_graphs(self, folder):
         dgl.save_graphs(folder + '/dataset.grph', self.graphs)
 
     def process(self):
+        def per_node_type(graph, ntype, field):
+            todelete = []
+            for data_name in graph.nodes[ntype].data:
+                if field in data_name:
+                    todelete.append(data_name)
+                    
+            for data_name in todelete:
+                del graph.nodes[ntype].data[data_name]
+                    
+        self.lightgraphs = []
+
         for graph in self.graphs:
-            pressure_dict = {'inner': graph.nodes['inner'].data['pressure'],
-                             'inlet': graph.nodes['inlet'].data['pressure'],
-                             'outlet': graph.nodes['outlet'].data['pressure']}
-            flowrate_dict = {'inner': graph.nodes['inner'].data['flowrate'],
-                             'inlet': graph.nodes['inlet'].data['flowrate'],
-                             'outlet': graph.nodes['outlet'].data['flowrate']}
-            state_dict = {'pressure': pressure_dict, 'flowrate': flowrate_dict}
-            set_state(graph, state_dict)
+            lightgraph = copy.deepcopy(graph)
+            
+            for ntype in ['inner', 'inlet', 'outlet']:
+                per_node_type(lightgraph, ntype, 'pressure')
+                per_node_type(lightgraph, ntype, 'flowrate')
+                
+            self.lightgraphs.append(lightgraph)
+            
+
+    def get_state_dict(self, index):
+        pressure_dict = {'inner': self.graphs[0].nodes['inner'].data['pressure_' + str(index)],
+                         'inlet': self.graphs[0].nodes['inlet'].data['pressure_' + str(index)],
+                         'outlet': self.graphs[0].nodes['outlet'].data['pressure_' + str(index)]}
+        flowrate_dict = {'inner': self.graphs[0].nodes['inner'].data['flowrate_' + str(index)],
+                         'inlet': self.graphs[0].nodes['inlet'].data['flowrate_' + str(index)],
+                         'outlet': self.graphs[0].nodes['outlet'].data['flowrate_' + str(index)]}
+        return {'pressure': pressure_dict, 'flowrate': flowrate_dict}
 
     def __getitem__(self, i):
-        return self.graphs[i]
+        i = i.detach().numpy()
+        state_dict = self.get_state_dict(i)
+        next_state_dict = self.get_state_dict(i+1)
+        set_state(self.lightgraphs[0], state_dict, next_state_dict)
+        return self.lightgraphs[0]
 
     def __len__(self):
-        return len(self.graphs)
+        # remove last timestep
+        return self.times.shape[1] - 1
 
 def get_times(graph):
     times = []
@@ -125,25 +157,6 @@ def set_timestep(targetgraph, allgraph, t, tp1):
 
     # we add also current time to graph(for debugging()
     targetgraph.nodes['inlet'].data['time'] = torch.from_numpy(np.array([t]))
-
-def create_single_timestep_graphs(graphs):
-    out_graphs = []
-    for graph in graphs:
-        times = get_times(graph)
-        graph_no_fields = copy.deepcopy(graph)
-        free_fields(graph_no_fields, times)
-        ntimes = len(times)
-        for tind in range(0, ntimes-1):
-            t = times[tind]
-            tp1 = times[tind+1]
-
-            new_graph = copy.deepcopy(graph_no_fields)
-            set_timestep(new_graph, graph, t, tp1)
-
-
-            out_graphs.append(new_graph)
-
-    return out_graphs
 
 def min_max(field, bounds):
     ncomponents = bounds['min'].size
@@ -285,20 +298,22 @@ def compute_statistics(graphs, fields, coefs_dict):
 def normalize_graphs(graphs, fields, coefs_dict):
     norm_graphs = []
 
+    ntype = coefs_dict['type']
+
     for graph in graphs:
-        if type == 'min_max':
+        if ntype == 'min_max':
             min_max_normalization(graph, fields, coefs_dict)
-        if type == 'standard':
+        if ntype == 'standard':
             standard_normalization(graph, fields, coefs_dict)
 
         norm_graphs.append(graph)
 
     return norm_graphs
 
-def normalize(graphs, type):
+def normalize(graphs, ntype):
     coefs_dict = {}
-    coefs_dict['type'] = type
-    fields = {'pressure', 'flowrate', 'area', 'position', 'dp', 'dq', 'distance'}
+    coefs_dict['type'] = ntype
+    fields = {'pressure', 'flowrate', 'area', 'position', 'distance'}
 
     coefs_dict = compute_statistics(graphs, fields, coefs_dict)
     norm_graphs = normalize_graphs(graphs, fields, coefs_dict)
@@ -306,19 +321,12 @@ def normalize(graphs, type):
     return norm_graphs, coefs_dict
 
 def generate_dataset(model_name, dataset_params = None):
-    if dataset_params == None:
-        graphs = load_graphs('../graphs/data/' + model_name + '.grph')[0]
-    else:
-        graphs = gg.generate_graphs(model_name,
-                                    dataset_params,
-                                    '../graphs/vtps',
-                                    False)
+    graphs = load_graphs('../graphs/data/' + model_name + '.grph')[0]
 
     normalization_type = 'standard'
     if dataset_params != None:
         normalization_type = dataset_params['normalization']
 
-    graphs = create_single_timestep_graphs(graphs)
     graphs, coefs_dict = normalize(graphs, normalization_type)
 
     return DGL_Dataset(graphs), coefs_dict

@@ -123,9 +123,10 @@ def convert_nodes_to_heterogeneous(nodes, edges, inlet_index, outlet_indices):
         single_connection_mask.append(int(indx))
 
 
-    outlet_dict = {'edges': outlet_edges[single_connection_mask,:].astype(int), 'distance': distances_outlets[single_connection_mask], 'mask': outlet_mask, 'physical_contiguous': outlet_physical_contiguous[single_connection_mask].astype(int)}
-
-    # process inner
+    outlet_dict = {'edges': outlet_edges[single_connection_mask,:].astype(int), \
+                   'distance': distances_outlets[single_connection_mask], \
+                   'mask': outlet_mask, \
+                   'physical_contiguous': outlet_physical_contiguous[single_connection_mask].astype(int)}
 
     # renumber edges
     rowstodelete = []
@@ -157,7 +158,6 @@ def convert_nodes_to_heterogeneous(nodes, edges, inlet_index, outlet_indices):
         inner_pos[iedg,0:3] = inner_nodes[edges[iedg,1],:] - inner_nodes[edges[iedg,0],:]
         inner_pos[iedg,3] = np.linalg.norm(inner_pos[iedg,0:2])
 
-
     inner_dict = {'edges': edges, 'position': inner_pos, 'mask': inner_mask}
 
     return inner_dict, inlet_dict, outlet_dict
@@ -165,19 +165,30 @@ def convert_nodes_to_heterogeneous(nodes, edges, inlet_index, outlet_indices):
 def create_fixed_graph(geometry, area):
     nodes, edges, _, inlet_index, outlet_indices = geometry.generate_nodes()
 
-    inner_dict, inlet_dict, outlet_dict = convert_nodes_to_heterogeneous(nodes, edges, inlet_index, outlet_indices)
+    inner_dict, inlet_dict, outlet_dict = \
+        convert_nodes_to_heterogeneous(nodes, edges, inlet_index, outlet_indices)
 
-    graph_data = {('inner', 'inner_to_inner', 'inner'): (inner_dict['edges'][:,0], inner_dict['edges'][:,1]),
-                  ('inlet', 'in_to_inner', 'inner'): (inlet_dict['edges'][:,0], inlet_dict['edges'][:,1]),
-                  ('outlet', 'out_to_inner', 'inner'): (outlet_dict['edges'][:,0],outlet_dict['edges'][:,1])}
+    graph_data = {('inner', 'inner_to_inner', 'inner'): \
+                  (inner_dict['edges'][:,0], inner_dict['edges'][:,1]),
+                  ('inlet', 'in_to_inner', 'inner'): \
+                  (inlet_dict['edges'][:,0], inlet_dict['edges'][:,1]), \
+                  ('outlet', 'out_to_inner', 'inner'): \
+                  (outlet_dict['edges'][:,0],outlet_dict['edges'][:,1]), \
+                  ('params', 'dummy', 'params'): \
+                  (np.array([0]), np.array([0]))}
 
     graph = dgl.heterograph(graph_data)
 
-    graph.edges['inner_to_inner'].data['position'] = torch.from_numpy(inner_dict['position'].astype(DTYPE))
-    graph.edges['in_to_inner'].data['distance'] = torch.from_numpy(inlet_dict['distance'].astype(DTYPE))
-    graph.edges['in_to_inner'].data['physical_contiguous'] = torch.from_numpy(inlet_dict['physical_contiguous'])
-    graph.edges['out_to_inner'].data['distance'] = torch.from_numpy(outlet_dict['distance'].astype(DTYPE))
-    graph.edges['out_to_inner'].data['physical_contiguous'] = torch.from_numpy(outlet_dict['physical_contiguous'])
+    graph.edges['inner_to_inner'].data['position'] = \
+                        torch.from_numpy(inner_dict['position'].astype(DTYPE))
+    graph.edges['in_to_inner'].data['distance'] = \
+                        torch.from_numpy(inlet_dict['distance'].astype(DTYPE))
+    graph.edges['in_to_inner'].data['physical_contiguous'] = \
+                        torch.from_numpy(inlet_dict['physical_contiguous'])
+    graph.edges['out_to_inner'].data['distance'] = \
+                        torch.from_numpy(outlet_dict['distance'].astype(DTYPE))
+    graph.edges['out_to_inner'].data['physical_contiguous'] = \
+                        torch.from_numpy(outlet_dict['physical_contiguous'])
 
     # find inner node type
     edg0 = inner_dict['edges'][:,0]
@@ -226,60 +237,25 @@ def set_field(graph, name_field, field):
     set_in_node('inlet')
     set_in_node('outlet')
 
-def add_fields(graph, pressure, velocity, random_walks, rate_noise):
+def add_fields(graph, pressure, velocity):
     print('Writing fields:')
     graphs = []
     times = [t for t in pressure]
     times.sort()
     nP = pressure[times[0]].shape[0]
     nQ = velocity[times[0]].shape[0]
-
-    # compute ranges for pressure and velocity for noise
-    minp = np.infty
-    minv = np.infty
-    maxp = np.NINF
-    maxv = np.NINF
-
     print('  n. times = ' + str(len(times)))
-    noised_pressures = []
-    noised_flowrates = []
-    while len(graphs) < random_walks + 1:
-        print('  writing graph n. ' + str(len(graphs) + 1))
-        new_graph = copy.deepcopy(graph)
-        noise_p = np.zeros((nP, 1))
-        noise_q = np.zeros((nQ, 1))
-        noised_pressure = {}
-        noised_flowrate = {}
-        for t in times:
-            new_p = pressure[t]
-            if len(graphs) == 0:
-                minp = np.min(np.array([minp,np.min(new_p)]))
-                maxp = np.max(np.array([maxp,np.max(new_p)]))
-            else:
-                coeff = np.abs(maxp - minp) * (times[1] - times[0])
-                noise_p = noise_p + np.random.normal(0, rate_noise, (nP, 1)) * coeff
-                noised_pressure[t] = new_p + noise_p
 
-            set_field(new_graph, 'pressure_' + str(t), new_p)
-            set_field(new_graph, 'noise_p_' + str(t), noise_p)
+    newgraph = copy.deepcopy(graph)
 
-            new_q = velocity[t]
-            if len(graphs) == 0:
-                minv = np.min(np.array([minv,np.min(new_q)]))
-                maxv = np.max(np.array([maxv,np.max(new_q)]))
-            else:
-                coeff = np.abs(maxv - minv) * (times[1] - times[0])
-                noise_q = noise_q + np.random.normal(0, rate_noise, (nQ, 1)) * coeff
-                noised_flowrate[t] = new_q + noise_q
-            set_field(new_graph, 'flowrate_' + str(t), new_q)
-            set_field(new_graph, 'noise_q_' + str(t), noise_q)
+    for t in range(len(times)):
+        set_field(newgraph, 'pressure_' + str(t), pressure[times[t]])
+        set_field(newgraph, 'flowrate_' + str(t), velocity[times[t]])
 
-        if (len(graphs) != 0):
-            noised_pressures.append(noised_pressure)
-            noised_flowrates.append(noised_flowrate)
-        graphs.append(new_graph)
+    newgraph.nodes['params'].data['times'] = \
+                        torch.from_numpy(np.expand_dims(np.array(times),axis=0))
 
-    return graphs, noised_pressures, noised_flowrates
+    return newgraph
 
 def generate_analytic(pressure, velocity, area):
     times = [t for t in pressure]
@@ -367,8 +343,7 @@ def save_animation(pressure, velocity, filename):
     writervideo = animation.FFMpegWriter(fps=60)
     anim.save(filename + '.mp4', writer = writervideo)
 
-def generate_graphs(model_name, dataset_params, input_dir, save = True):
-    print('Generating_graphs with params ' + str(dataset_params))
+def generate_graphs(model_name, input_dir, save = True):
     geo, fields = create_geometry(model_name, input_dir, 15, remove_caps = True,
                                   points_to_keep = None, doresample = True)
     pressure, velocity = io.gather_pressures_velocities(fields)
@@ -378,23 +353,22 @@ def generate_graphs(model_name, dataset_params, input_dir, save = True):
 
     # the period
     T = 0.7
-    npoints = 500
+    npoints = 3000
 
+    print('Augmenting timesteps')
     pressure = augment_time(pressure, T, npoints)
     velocity = augment_time(velocity, T, npoints)
     # save_animation(pressure, velocity, 'interpolated_fields')
 
+    print('Generating graphs')
     fixed_graph = create_fixed_graph(geo, area)
-    graphs, noised_pressures, noised_flowrates = \
-                        add_fields(fixed_graph, pressure, velocity,
-                        random_walks=dataset_params['random_walks'],
-                        rate_noise=dataset_params['rate_noise'])
+
+    print('Adding fields')
+    graphs = add_fields(fixed_graph, pressure, velocity)
     if save:
         dgl.save_graphs('data/' + sys.argv[2], graphs)
     return graphs
 
 if __name__ == "__main__":
     input_dir = 'vtps'
-    dataset_params = {'random_walks': 1,
-                      'rate_noise': 1e-1}
-    generate_graphs(sys.argv[1], dataset_params, input_dir, True)
+    generate_graphs(sys.argv[1], input_dir, True)
