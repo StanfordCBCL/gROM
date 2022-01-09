@@ -114,7 +114,7 @@ def train_gnn_model(gnn_model, model_name, optimizer_name, train_params,
     print('\tFinal loss = {:.2e}\tfinal mae = {:.2e}'.format(global_loss/count,
                                                              global_mae/count))
 
-    return gnn_model, train_dataloader, global_loss / count, global_mae / count,coefs_dict, dataset
+    return gnn_model, train_dataloader, global_loss / count,  global_mae / count,coefs_dict, dataset
 
 def create_directory(path):
     try:
@@ -166,7 +166,7 @@ if __name__ == "__main__":
                       'rate_noise': 10}
 
     start = time.time()
-    gnn_model, _, train_dataloader, coefs_dict, out_fdr = launch_training(sys.argv[1],
+    gnn_model, _, _, train_dataloader, coefs_dict, out_fdr = launch_training(sys.argv[1],
                                                                           'adam',
                                                                            params_dict,
                                                                            train_params,

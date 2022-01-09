@@ -158,7 +158,8 @@ def test_rollout(model, model_name, graph, coefs_dict, do_plot, out_folder):
 if __name__ == "__main__":
     dataset_params = {'normalization': 'standard'}
 
-    path = 'models/08.01.2022_21.15.53/'
+    path = 'models/09.01.2022_02.28.57/'
+    path = 'models/09.01.2022_12.19.33/'
     params = json.loads(json.load(open(path + 'hparams.json')))
 
     gnn_model = GraphNet(params)
@@ -168,7 +169,7 @@ if __name__ == "__main__":
     model_name = '0063_1001'
     dataset, coefs_dict = pp.generate_dataset(model_name, dataset_params)
 
-    # test_train(gnn_model, model_name, dataset)
+    test_train(gnn_model, model_name, dataset)
     err_p, err_q, global_error = test_rollout(gnn_model, model_name,
                                               dataset.lightgraphs[0],
                                               coefs_dict, do_plot = True,

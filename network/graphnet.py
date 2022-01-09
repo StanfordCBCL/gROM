@@ -51,7 +51,7 @@ class GraphNet(Module):
         # self.encoder_inlet_edge = MLP(5, 16, out_bc_encoder, 1, True)
         # self.encoder_outlet_edge = MLP(5, 16, out_bc_encoder, 1, True)
 
-        self.encoder_nodes = MLP(params['infeat_nodes'] + 10,
+        self.encoder_nodes = MLP(params['infeat_nodes'] + 14,
                                  params['latent_size_mlp'],
                                  params['latent_size_gnn'],
                                  params['hl_mlp'],
