@@ -38,9 +38,23 @@ def test_train(gnn_model, model_name, dataset):
 
     return coefs_dict
 
-def test_rollout(model, model_name, graph, coefs_dict, do_plot, out_folder):
+def test_rollout(model, model_name, dataset, coefs_dict, do_plot, out_folder):
+    graph = dataset.lightgraphs[0]
     true_graph = load_graphs('../graphs/data/' + model_name + '.grph')[0][0]
     times = pp.get_times(true_graph)
+
+
+    label_coefs = dataset.label_coefs
+    if label_coefs != None:
+        minp = label_coefs['min'][0].detach().numpy()
+        maxp = label_coefs['max'][0].detach().numpy()
+        minq = label_coefs['min'][1].detach().numpy()
+        maxq = label_coefs['max'][1].detach().numpy()
+    else:
+        minp = 0
+        maxp = 1
+        minq = 0
+        maxq = 1
 
     pressure_dict = {'inner': pp.normalize_function(true_graph.nodes['inner'].data['pressure_0'],
                              'pressure', coefs_dict),
@@ -83,7 +97,10 @@ def test_rollout(model, model_name, graph, coefs_dict, do_plot, out_folder):
         pred = model(graph, graph.nodes['inner'].data['n_features'].float()).squeeze()
 
         dp = pred[:,0].detach().numpy()
+        dp = dp * (maxp - minp) + minp
+
         prev_p = graph.nodes['inner'].data['pressure'].detach().numpy().squeeze()
+
 
         p = dp + prev_p
 
@@ -91,6 +108,7 @@ def test_rollout(model, model_name, graph, coefs_dict, do_plot, out_folder):
         pressures_real.append(next_pressure.detach().numpy())
 
         dq = pred[:,1].detach().numpy()
+        dq = dq * (maxq - minq) +  minq
         prev_q = graph.nodes['inner'].data['flowrate'].detach().numpy().squeeze()
 
         q = dq + prev_q
@@ -156,10 +174,9 @@ def test_rollout(model, model_name, graph, coefs_dict, do_plot, out_folder):
     return err_p, err_q, np.sqrt(err_p**2 + err_q**2)
 
 if __name__ == "__main__":
-    dataset_params = {'normalization': 'standard'}
 
     path = 'models/09.01.2022_02.28.57/'
-    path = 'models/09.01.2022_12.19.33/'
+    path = 'models/10.01.2022_13.09.09/'
     params = json.loads(json.load(open(path + 'hparams.json')))
 
     gnn_model = GraphNet(params)
@@ -167,10 +184,11 @@ if __name__ == "__main__":
     gnn_model.eval()
 
     model_name = '0063_1001'
+    dataset_params = json.loads(json.load(open(path + 'dataset.json')))
     dataset, coefs_dict = pp.generate_dataset(model_name, dataset_params)
 
     test_train(gnn_model, model_name, dataset)
     err_p, err_q, global_error = test_rollout(gnn_model, model_name,
-                                              dataset.lightgraphs[0],
+                                              dataset,
                                               coefs_dict, do_plot = True,
                                               out_folder = '.')

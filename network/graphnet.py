@@ -46,12 +46,12 @@ class GraphNet(Module):
     def __init__(self, params):
         super(GraphNet, self).__init__()
 
-        # out_bc_encoder = 8
+        out_bc_encoder = 8
 
-        # self.encoder_inlet_edge = MLP(5, 16, out_bc_encoder, 1, True)
-        # self.encoder_outlet_edge = MLP(5, 16, out_bc_encoder, 1, True)
+        self.encoder_inlet_edge = MLP(7, 16, out_bc_encoder, 1, True)
+        self.encoder_outlet_edge = MLP(7, 16, out_bc_encoder, 1, True)
 
-        self.encoder_nodes = MLP(params['infeat_nodes'] + 14,
+        self.encoder_nodes = MLP(params['infeat_nodes'],
                                  params['latent_size_mlp'],
                                  params['latent_size_gnn'],
                                  params['hl_mlp'],
@@ -71,7 +71,7 @@ class GraphNet(Module):
                                         params['latent_size_gnn'],
                                         params['hl_mlp'],
                                         params['normalize']))
-            self.processor_nodes.append(MLP(params['latent_size_gnn'] * 2,
+            self.processor_nodes.append(MLP(params['latent_size_gnn'] * 2 + out_bc_encoder * 2,
                                         params['latent_size_mlp'],
                                         params['latent_size_gnn'],
                                         params['hl_mlp'],
@@ -91,21 +91,18 @@ class GraphNet(Module):
     def encode_inlet_edge(self, edges):
         f1 = edges.data['e_features']
         f2 = edges.src['n_features']
-        # enc_edge = self.encoder_inlet_edge(torch.cat((f1, f2),dim=1))
-        return {'inlet_info' : torch.cat((f1, f2),dim=1)}
+        enc_edge = self.encoder_inlet_edge(torch.cat((f1, f2),dim=1))
+        return {'inlet_info' : enc_edge}
 
     def encode_outlet_edge(self, edges):
         f1 = edges.data['e_features']
         f2 = edges.src['n_features']
-        # enc_edge = self.encoder_outlet_edge(torch.cat((f1, f2),dim=1))
-        return {'outlet_info' : torch.cat((f1, f2),dim=1)}
+        enc_edge = self.encoder_outlet_edge(torch.cat((f1, f2),dim=1))
+        return {'outlet_info' : enc_edge}
 
     def encode_nodes(self, nodes):
         f = nodes.data['features_c']
-        fin = nodes.data['inlet_info']
-        fout = nodes.data['outlet_info']
-
-        enc_features = self.encoder_nodes(torch.cat((f, fin, fout),dim=1))
+        enc_features = self.encoder_nodes(f)
         return {'proc_node': enc_features}
 
     def encode_edges(self, edges):
@@ -125,7 +122,9 @@ class GraphNet(Module):
     def process_nodes(self, nodes, layer):
         f1 = nodes.data['proc_node']
         f2 = nodes.data['pe_sum']
-        proc_node = self.processor_nodes[layer](torch.cat((f1, f2),dim=1))
+        fin = nodes.data['inlet_info']
+        fout = nodes.data['outlet_info']
+        proc_node = self.processor_nodes[layer](torch.cat((f1, f2, fin, fout),dim=1))
         # add residual connection
         proc_node = proc_node + f1
         return {'proc_node' : proc_node}
@@ -154,12 +153,13 @@ class GraphNet(Module):
 
     def forward(self, g, in_feat):
         g.nodes['inner'].data['features_c'] = in_feat
+        g.apply_nodes(self.encode_nodes, ntype='inner')
+        g.apply_edges(self.encode_edges, etype='inner_to_inner')
+
         g.apply_edges(self.encode_inlet_edge, etype='in_to_inner')
         g.update_all(fn.copy_e('inlet_info', 'm'), fn.sum('m', 'inlet_info'), etype='in_to_inner')
         g.apply_edges(self.encode_outlet_edge, etype='out_to_inner')
         g.update_all(fn.copy_e('outlet_info', 'm'), fn.sum('m', 'outlet_info'), etype='out_to_inner')
-        g.apply_nodes(self.encode_nodes, ntype='inner')
-        g.apply_edges(self.encode_edges, etype='inner_to_inner')
 
         for i in range(self.process_iters):
             def pe(edges):

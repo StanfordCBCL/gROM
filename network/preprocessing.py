@@ -16,7 +16,7 @@ import generate_graphs as gg
 import copy
 import random
 
-def set_state(graph, state_dict, next_state_dict = None, noise_dict = None):
+def set_state(graph, state_dict, next_state_dict = None, noise_dict = None, coefs_label = None):
     def per_node_type(node_type):
         graph.nodes[node_type].data['pressure'] = state_dict['pressure'][node_type]
         graph.nodes[node_type].data['flowrate'] = state_dict['flowrate'][node_type]
@@ -29,6 +29,7 @@ def set_state(graph, state_dict, next_state_dict = None, noise_dict = None):
                                                                      graph.nodes[node_type].data['pressure'], \
                                                                      graph.nodes[node_type].data['flowrate_next'] - \
                                                                      graph.nodes[node_type].data['flowrate']), 1)
+
             else:
                 graph.nodes[node_type].data['n_labels'] = torch.cat((graph.nodes[node_type].data['pressure_next'] - \
                                                                      graph.nodes[node_type].data['pressure'] - \
@@ -36,6 +37,13 @@ def set_state(graph, state_dict, next_state_dict = None, noise_dict = None):
                                                                      graph.nodes[node_type].data['flowrate_next'] - \
                                                                      graph.nodes[node_type].data['flowrate'] - \
                                                                      noise_dict['flowrate']), 1)
+
+        if node_type == 'inner' and coefs_label != None:
+            nlabels = graph.nodes[node_type].data['n_labels'].shape[1]
+            for i in range(nlabels):
+                colmn = graph.nodes[node_type].data['n_labels'][:,i]
+                # graph.nodes[node_type].data['n_labels'][:,i] = (colmn - coefs_label['mean'][i]) / coefs_label['std'][i]
+                graph.nodes[node_type].data['n_labels'][:,i] = (colmn - coefs_label['min'][i]) / (coefs_label['max'][i] - coefs_label['min'][i])
 
         if node_type == 'inner':
             if noise_dict == None:
@@ -100,7 +108,7 @@ class DGL_Dataset(DGLDataset):
         self.lightgraphs = []
         self.noise_pressures = []
         self.noise_flowrates = []
-
+        self.alllabels = None
         for graph in self.graphs:
             lightgraph = copy.deepcopy(graph)
 
@@ -115,6 +123,20 @@ class DGL_Dataset(DGLDataset):
             noise_flowrate = np.zeros((ninner_nodes,self.times.shape[1]))
             self.noise_pressures.append(noise_pressure)
             self.noise_flowrates.append(noise_flowrate)
+            for itime in range(self.times.shape[1] - 1):
+                self.prep_item(itime)
+                curlabels = self.lightgraphs[0].nodes['inner'].data['n_labels']
+                if self.alllabels == None:
+                    self.alllabels = curlabels
+                else:
+                    self.alllabels = torch.cat((self.alllabels,
+                                                curlabels), axis = 0)
+
+        self.alllabels = self.alllabels.detach().numpy()
+        self.label_coefs = {'min': torch.from_numpy(np.min(self.alllabels, axis=0)),
+                            'max': torch.from_numpy(np.max(self.alllabels, axis=0)),
+                            'mean': torch.from_numpy(np.mean(self.alllabels, axis=0)),
+                            'std': torch.from_numpy(np.std(self.alllabels, axis=0))}
 
     def sample_noise(self, rate):
         ngraphs = len(self.noise_pressures)
@@ -133,13 +155,15 @@ class DGL_Dataset(DGLDataset):
                          'outlet': self.graphs[0].nodes['outlet'].data['flowrate_' + str(index)]}
         return {'pressure': pressure_dict, 'flowrate': flowrate_dict}
 
-    def __getitem__(self, i):
-        i = i.detach().numpy()
+    def prep_item(self, i, label_coefs = None):
         state_dict = self.get_state_dict(i)
         next_state_dict = self.get_state_dict(i+1)
         noise_dict = {'pressure': torch.from_numpy(np.expand_dims(self.noise_pressures[0][:,i],1)),
                       'flowrate': torch.from_numpy(np.expand_dims(self.noise_flowrates[0][:,i],1))}
-        set_state(self.lightgraphs[0], state_dict, next_state_dict, noise_dict)
+        set_state(self.lightgraphs[0], state_dict, next_state_dict, noise_dict, label_coefs)
+
+    def __getitem__(self, i):
+        self.prep_item(i.detach().numpy(), self.label_coefs)
         return self.lightgraphs[0]
 
     def __len__(self):

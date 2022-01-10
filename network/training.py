@@ -21,8 +21,8 @@ import json
 def mse(input, target):
     return ((input - target) ** 2).mean()
 
-def mae(input, target):
-    return (torch.abs(input - target)).mean()
+def mae(input, target, weight):
+    return (weight * (torch.abs(input - target))).mean()
 
 def generate_gnn_model(params_dict):
     return GraphNet(params_dict)
@@ -61,6 +61,16 @@ def train_gnn_model(gnn_model, model_name, optimizer_name, train_params,
                     checkpoint_fct = None, dataset_params = None):
     dataset, coefs_dict = pp.generate_dataset(model_name,
                                               dataset_params)
+
+    def weighted_mae(input, target):
+        label_coefs = dataset.label_coefs
+        shapein = input.shape
+        weight = torch.ones(shapein)
+        for i in range(shapein[1]):
+            weight[:,i] = (label_coefs['max'][i] - label_coefs['min'][i])
+
+        return mae(input, target, weight)
+
     gnn_model.set_normalization_coefs(coefs_dict)
     num_examples = len(dataset)
     num_train = int(num_examples)
@@ -94,11 +104,12 @@ def train_gnn_model(gnn_model, model_name, optimizer_name, train_params,
         # 200 is the maximum number of sigopt checkpoint
         chckp_epochs = list(np.floor(np.linspace(0, nepochs, 200)))
 
+
     for epoch in range(nepochs):
-        print('ep = ' + str(epoch))
-        global_loss, count, elapsed, global_mae = evaluate_model(gnn_model, train_dataloader, mse, mae, optimizer)
+        global_loss, count, elapsed, global_mae = evaluate_model(gnn_model, train_dataloader, mse, weighted_mae, optimizer)
         scheduler.step()
-        print('\tloss = {:.2e}\tmae = {:.2e}\ttime = {:.2f} s'.format(global_loss/count,
+        print('{:.0f}\tloss = {:.4e} mae = {:.4e} time = {:.2f} s'.format(epoch,
+                                                                      global_loss/count,
                                                                       global_mae/count,
                                                                       elapsed))
 
@@ -106,7 +117,7 @@ def train_gnn_model(gnn_model, model_name, optimizer_name, train_params,
             if epoch in chckp_epochs:
                 checkpoint_fct(global_loss/count)
 
-        if epoch >= 10:
+        if epoch >= 3:
             dataset.sample_noise(global_mae/count * dataset_params['rate_noise'])
 
     # compute final loss
@@ -152,16 +163,16 @@ if __name__ == "__main__":
     params_dict = {'infeat_nodes': 7,
                    'infeat_edges': 4,
                    'latent_size_gnn': 18,
-                   'latent_size_mlp': 84,
+                   'latent_size_mlp': 64,
                    'out_size': 2,
-                   'process_iterations': 5,
+                   'process_iterations': 3,
                    'hl_mlp': 1,
                    'normalize': 1}
     train_params = {'learning_rate': 0.008223127794360673,
                     'weight_decay': 0.36984122162067234,
                     'momentum': 0.0,
                     'batch_size': 359,
-                    'nepochs': 100}
+                    'nepochs': 20}
     dataset_params = {'normalization': 'standard',
                       'rate_noise': 10}
 
