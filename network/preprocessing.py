@@ -42,8 +42,14 @@ def set_state(graph, state_dict, next_state_dict = None, noise_dict = None, coef
             nlabels = graph.nodes[node_type].data['n_labels'].shape[1]
             for i in range(nlabels):
                 colmn = graph.nodes[node_type].data['n_labels'][:,i]
-                # graph.nodes[node_type].data['n_labels'][:,i] = (colmn - coefs_label['mean'][i]) / coefs_label['std'][i]
-                graph.nodes[node_type].data['n_labels'][:,i] = (colmn - coefs_label['min'][i]) / (coefs_label['max'][i] - coefs_label['min'][i])
+                if coefs_label['normalization_type'] == 'standard':
+                    graph.nodes[node_type].data['n_labels'][:,i] = (colmn - coefs_label['mean'][i]) / coefs_label['std'][i]
+                elif coefs_label['normalization_type'] == 'min_max':
+                    graph.nodes[node_type].data['n_labels'][:,i] = (colmn - coefs_label['min'][i]) / (coefs_label['max'][i] - coefs_label['min'][i])
+                elif coefs_label['normalization_type'] == 'none':
+                    pass
+                else:
+                    print('Label normalization {} does not exist'.format(coefs_label['normalization_type']))
 
         if node_type == 'inner':
             if noise_dict == None:
@@ -87,9 +93,10 @@ def set_bcs(graph, state_dict):
     per_node_type('outlet')
 
 class DGL_Dataset(DGLDataset):
-    def __init__(self, graphs = None):
+    def __init__(self, graphs = None, label_normalization = 'none'):
         self.graphs = graphs
         self.times = graphs[0].nodes['params'].data['times']
+        self.label_normalization = label_normalization
         super().__init__(name='dgl_dataset')
 
     def save_graphs(self, folder):
@@ -136,15 +143,16 @@ class DGL_Dataset(DGLDataset):
         self.label_coefs = {'min': torch.from_numpy(np.min(self.alllabels, axis=0)),
                             'max': torch.from_numpy(np.max(self.alllabels, axis=0)),
                             'mean': torch.from_numpy(np.mean(self.alllabels, axis=0)),
-                            'std': torch.from_numpy(np.std(self.alllabels, axis=0))}
+                            'std': torch.from_numpy(np.std(self.alllabels, axis=0)),
+                            'normalization_type': self.label_normalization}
 
     def sample_noise(self, rate):
         ngraphs = len(self.noise_pressures)
         for igraph in range(ngraphs):
             nnodes = self.noise_pressures[igraph].shape[0]
-            for index in range(1,len(self.times)-1):
-                self.noise_pressures[igraph][:,index] = np.random.normal(0, rate, (nnodes, 1)) + self.noise_pressures[igraph][:,index-1]
-                self.noise_flowrates[igraph][:,index] = np.random.normal(0, rate, (nnodes, 1)) + self.noise_flowrates[igraph][:,index-1]
+            for index in range(1,self.times.shape[1]-1):
+                self.noise_pressures[igraph][:,index] = np.random.normal(0, rate, (nnodes)) + self.noise_pressures[igraph][:,index-1]
+                self.noise_flowrates[igraph][:,index] = np.random.normal(0, rate, (nnodes)) + self.noise_flowrates[igraph][:,index-1]
 
     def get_state_dict(self, index):
         pressure_dict = {'inner': self.graphs[0].nodes['inner'].data['pressure_' + str(index)],
@@ -386,6 +394,10 @@ def generate_dataset(model_name, dataset_params = None):
     if dataset_params != None:
         normalization_type = dataset_params['normalization']
 
+    label_normalization = 'none'
+    if dataset_params != None:
+        label_normalization = dataset_params['label_normalization']
+
     graphs, coefs_dict = normalize(graphs, normalization_type)
 
-    return DGL_Dataset(graphs), coefs_dict
+    return DGL_Dataset(graphs, label_normalization), coefs_dict

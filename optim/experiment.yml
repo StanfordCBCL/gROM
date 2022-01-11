@@ -1,8 +1,7 @@
 name: gROM Optimization
 metrics:
 - name: loss
-  strategy: optimize
-  objective: minimize
+  strategy: store
 - name: global_error
   strategy: optimize
   objective: minimize
@@ -11,7 +10,8 @@ metrics:
 - name: error_pressure
   strategy: store
 - name: mae
-  strategy: store
+  strategy: optimize
+  objective: minimize
 parameters:
 - name: latent_size_gnn
   bounds:
@@ -55,8 +55,14 @@ parameters:
   type: int
 - name: rate_noise
   bounds:
-    min: 0.1
-    max: 100
+    min: 0.01
+    max: 1
   type: double
+- name: label_normalization
+  categorical_values:
+    - "none"
+    - "min_max"
+    - "standard"
+  type: categorical
 budget: 500
 parallel_bandwidth: 20

@@ -21,7 +21,9 @@ import json
 def mse(input, target):
     return ((input - target) ** 2).mean()
 
-def mae(input, target, weight):
+def mae(input, target, weight = None):
+    if weight == None:
+        return (torch.abs(input - target)).mean()
     return (weight * (torch.abs(input - target))).mean()
 
 def generate_gnn_model(params_dict):
@@ -62,14 +64,27 @@ def train_gnn_model(gnn_model, model_name, optimizer_name, train_params,
     dataset, coefs_dict = pp.generate_dataset(model_name,
                                               dataset_params)
 
-    def weighted_mae(input, target):
-        label_coefs = dataset.label_coefs
-        shapein = input.shape
-        weight = torch.ones(shapein)
-        for i in range(shapein[1]):
-            weight[:,i] = (label_coefs['max'][i] - label_coefs['min'][i])
+    if dataset_params['label_normalization'] == 'min_max':
+        def weighted_mae(input, target):
+            label_coefs = dataset.label_coefs
+            shapein = input.shape
+            weight = torch.ones(shapein)
+            for i in range(shapein[1]):
+                weight[:,i] = (label_coefs['max'][i] - label_coefs['min'][i])
 
-        return mae(input, target, weight)
+            return mae(input, target, weight)
+    elif dataset_params['label_normalization'] == 'standard':
+        def weighted_mae(input, target):
+            label_coefs = dataset.label_coefs
+            shapein = input.shape
+            weight = torch.ones(shapein)
+            for i in range(shapein[1]):
+                weight[:,i] = label_coefs['std'][i]
+
+            return mae(input, target, weight)
+    else:
+        def weighted_mae(input, target):
+            return mae(input, target)
 
     gnn_model.set_normalization_coefs(coefs_dict)
     num_examples = len(dataset)
@@ -121,7 +136,7 @@ def train_gnn_model(gnn_model, model_name, optimizer_name, train_params,
             dataset.sample_noise(global_mae/count * dataset_params['rate_noise'])
 
     # compute final loss
-    global_loss, count, _, global_mae = evaluate_model(gnn_model, train_dataloader, mse, mae)
+    global_loss, count, _, global_mae = evaluate_model(gnn_model, train_dataloader, mse, weighted_mae)
     print('\tFinal loss = {:.2e}\tfinal mae = {:.2e}'.format(global_loss/count,
                                                              global_mae/count))
 
@@ -153,10 +168,13 @@ def launch_training(model_name, optimizer_name, params_dict,
     torch.save(gnn_model.state_dict(), folder + '/trained_gnn.pms')
     json_params = json.dumps(params_dict, indent = 4)
     json_train = json.dumps(train_params, indent = 4)
+    json_dataset = json.dumps(dataset_params, indent = 4)
     with open(folder + '/hparams.json', 'w') as outfile:
         json.dump(json_params, outfile)
     with open(folder + '/train.json', 'w') as outfile:
         json.dump(json_train, outfile)
+    with open(folder + '/dataset.json', 'w') as outfile:
+        json.dump(json_dataset, outfile)
     return gnn_model, loss, mae, dataset, coefs_dict, folder
 
 if __name__ == "__main__":
@@ -174,7 +192,8 @@ if __name__ == "__main__":
                     'batch_size': 359,
                     'nepochs': 20}
     dataset_params = {'normalization': 'standard',
-                      'rate_noise': 10}
+                      'rate_noise': 0.01,
+                      'label_normalization': 'min_max'}
 
     start = time.time()
     gnn_model, _, _, train_dataloader, coefs_dict, out_fdr = launch_training(sys.argv[1],

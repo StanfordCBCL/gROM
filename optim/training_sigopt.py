@@ -25,10 +25,11 @@ if __name__ == "__main__":
         normalize=1,
         nepochs=10,
         batch_size=100,
-        rate_noise=1e-4,
+        rate_noise=0.1,
         random_walks=0,
         normalization='standard',
-        optimizer='adam'
+        optimizer='adam',
+        label_normalization='none'
     )
     network_params = {'infeat_nodes': 7,
                     'infeat_edges': 4,
@@ -43,9 +44,9 @@ if __name__ == "__main__":
                     'momentum': sigopt.params.momentum,
                     'nepochs': sigopt.params.nepochs,
                     'batch_size': sigopt.params.batch_size}
-    dataset_params = {'rate_noise': sigopt.params.rate_noise,
-                      'random_walks': sigopt.params.random_walks,
-                      'normalization': sigopt.params.normalization}
+    dataset_params = {'normalization': sigopt.params.normalization,
+                      'rate_noise': sigopt.params.rate_noise,
+                      'label_normalization': sigopt.params.label_normalization}
 
     start = time.time()
     gnn_model, loss, mae, dataset, coefs_dict, out_fdr = tr.launch_training(sys.argv[1],
@@ -53,12 +54,13 @@ if __name__ == "__main__":
                                                                   network_params, train_params, True,
                                                                   log_checkpoint,
                                                                   dataset_params)
+
     end = time.time()
     elapsed_time = end - start
     print('Training time = ' + str(elapsed_time))
 
     err_p, err_q, global_err = test.test_rollout(gnn_model, sys.argv[1],
-                                                 dataset.lightgraphs[0],
+                                                 dataset,
                                                  coefs_dict,
                                                  do_plot = True,
                                                  out_folder = out_fdr)
