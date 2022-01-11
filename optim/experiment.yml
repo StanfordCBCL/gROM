@@ -44,8 +44,8 @@ parameters:
   type: int
 - name: nepochs
   bounds:
-    min: 100
-    max: 1500
+    min: 30
+    max: 300
   type: int
 - name: batch_size
   bounds:
@@ -55,13 +55,12 @@ parameters:
 - name: rate_noise
   bounds:
     min: 0.05
-    max: 0.5
+    max: 100
   type: double
 - name: label_normalization
   categorical_values:
     - "none"
     - "min_max"
-    - "standard"
   type: categorical
 budget: 500
 parallel_bandwidth: 20
