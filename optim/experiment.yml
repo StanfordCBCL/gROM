@@ -10,8 +10,7 @@ metrics:
 - name: error_pressure
   strategy: store
 - name: mae
-  strategy: optimize
-  objective: minimize
+  strategy: store
 parameters:
 - name: latent_size_gnn
   bounds:
@@ -55,8 +54,8 @@ parameters:
   type: int
 - name: rate_noise
   bounds:
-    min: 0.01
-    max: 1
+    min: 0.05
+    max: 0.5
   type: double
 - name: label_normalization
   categorical_values:
