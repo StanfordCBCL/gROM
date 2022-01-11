@@ -128,12 +128,9 @@ def test_rollout(model, model_name, dataset, coefs_dict, do_plot, out_folder):
         flowrates_pred.append(q)
         flowrates_real.append(next_flowrate.detach().numpy())
 
-        print('------')
         err_p = err_p + np.linalg.norm(p - next_pressure.detach().numpy().squeeze())**2
-        print(err_p)
         norm_p = norm_p + np.linalg.norm(next_pressure.detach().numpy().squeeze())**2
         err_q = err_q + np.linalg.norm(q - next_flowrate.detach().numpy().squeeze())**2
-        print(err_q)
         norm_q = norm_q + np.linalg.norm(next_flowrate.detach().numpy().squeeze())**2
 
         pressure_dict = {'inner': torch.from_numpy(np.expand_dims(p,axis=1)),

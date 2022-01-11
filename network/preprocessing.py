@@ -147,12 +147,17 @@ class DGL_Dataset(DGLDataset):
                             'normalization_type': self.label_normalization}
 
     def sample_noise(self, rate):
+        # cap rate to arbitrary value to avoid diverging
+        if (rate > 0.1):
+            rate = 0.1
         ngraphs = len(self.noise_pressures)
         for igraph in range(ngraphs):
             nnodes = self.noise_pressures[igraph].shape[0]
-            for index in range(1,self.times.shape[1]-1):
-                self.noise_pressures[igraph][:,index] = np.random.normal(0, rate, (nnodes)) + self.noise_pressures[igraph][:,index-1]
-                self.noise_flowrates[igraph][:,index] = np.random.normal(0, rate, (nnodes)) + self.noise_flowrates[igraph][:,index-1]
+            self.noise_pressures[igraph][:,1:] = np.random.normal(0, rate, (nnodes,self.times.shape[1]-1))
+            self.noise_flowrates[igraph][:,1:] = np.random.normal(0, rate, (nnodes,self.times.shape[1]-1))
+            # for index in range(1,self.times.shape[1]-1):
+            #     self.noise_pressures[igraph][:,index] = np.random.normal(0, rate, (nnodes)) + self.noise_pressures[igraph][:,index-1]
+            #     self.noise_flowrates[igraph][:,index] = np.random.normal(0, rate, (nnodes)) + self.noise_flowrates[igraph][:,index-1]
 
     def get_state_dict(self, index):
         pressure_dict = {'inner': self.graphs[0].nodes['inner'].data['pressure_' + str(index)],
