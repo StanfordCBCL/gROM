@@ -12,7 +12,7 @@ class ResampledGeometry:
             self.removed_nodes = 3
             self.remove_caps()
 
-        if remove_caps:
+        if doresample:
             self.construct_interpolation_matrices()
 
     def assign_area(self, area):
@@ -322,7 +322,7 @@ class ResampledGeometry:
 
         inlet = 0
         outlets = []
-        for jpor in range(connectivity.shape[0]):
+        for jpor in range(connectivity.shape[1]):
             if np.sum(connectivity[:,jpor]) == -1:
                 inlet = jpor
             if np.sum(connectivity[:,jpor]) == 1:
