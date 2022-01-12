@@ -45,7 +45,7 @@ parameters:
 - name: nepochs
   bounds:
     min: 30
-    max: 300
+    max: 500
   type: int
 - name: batch_size
   bounds:
@@ -54,8 +54,8 @@ parameters:
   type: int
 - name: rate_noise
   bounds:
-    min: 0.05
-    max: 100
+    min: 0.01
+    max: 0.5
   type: double
 - name: label_normalization
   categorical_values:
