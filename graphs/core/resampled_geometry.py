@@ -285,37 +285,35 @@ class ResampledGeometry:
                 inlet_node = self.offsets[i]
 
         edges = edges.astype(np.int)
-
         return nodes.astype(np.float64), edges, lengths, inlet_node, outlet_nodes
-
-    def generate_fields(self, pressures, velocities, areas):
+    
+    def compute_graph_field(self, field):
         if not hasattr(self, 'isoutlets'):
             self.generate_nodes()
+
+        newfield = np.zeros((0,1))
+        selectors = []
+        for ipor in range(0, len(self.p_portions)):
+            f = self.compute_proj_field(ipor, field)
+
+            if self.isoutlets[ipor]:
+                newfield = np.vstack((newfield, np.expand_dims(f[1:], axis = 1)))
+            else:
+                newfield = np.vstack((newfield, np.expand_dims(f, axis = 1)))
+
+        return newfield.astype(np.float64)    
+
+    def generate_fields(self, pressures, velocities, areas):
 
         g_pressures = {}
         g_velocities = {}
 
-        def compute_g_field(field):
-            newfield = np.zeros((0,1))
-
-            for ipor in range(0, len(self.p_portions)):
-                f = self.compute_proj_field(ipor, field)
-
-                from scipy.signal import savgol_filter
-                # f = savgol_filter(f, int(np.min((11, 2*np.floor(f.size/2)-1))), 3)
-
-                if self.isoutlets[ipor]:
-                    newfield = np.vstack((newfield, np.expand_dims(f[1:], axis = 1)))
-                else:
-                    newfield = np.vstack((newfield, np.expand_dims(f, axis = 1)))
-                newfield
-            return newfield.astype(np.float64)
 
         for t in pressures:
-            g_pressures[t] = compute_g_field(pressures[t])
-            g_velocities[t] = compute_g_field(velocities[t])
+            g_pressures[t] = self.compute_graph_field(pressures[t])
+            g_velocities[t] = self.compute_graph_field(velocities[t])
 
-        return g_pressures, g_velocities, compute_g_field(areas)
+        return g_pressures, g_velocities, self.compute_graph_field(areas)
 
     def remove_caps(self):
         connectivity = self.geometry.connectivity

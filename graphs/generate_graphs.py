@@ -86,9 +86,10 @@ def convert_nodes_to_heterogeneous(nodes, edges, inlet_index, outlet_indices):
         if edges[iedg,1] == inlet_index:
             inlet_physical_contiguous[np.where(inner_mask == edges[iedg,0])[0]] = 1
             break
-    inlet_dict = {'edges': inlet_edges.astype(int),
-                  'distance': distances_inlet,
-                  'mask': inlet_mask,
+    inlet_dict = {'edges': inlet_edges.astype(int), \
+                  'distance': distances_inlet, \
+                  'x': np.expand_dims(nodes[inlet_index,:],axis=0), \
+                  'mask': inlet_mask, \
                   'physical_contiguous': inlet_physical_contiguous.astype(int)}
 
     # process outlets
@@ -125,6 +126,7 @@ def convert_nodes_to_heterogeneous(nodes, edges, inlet_index, outlet_indices):
 
     outlet_dict = {'edges': outlet_edges[single_connection_mask,:].astype(int), \
                    'distance': distances_outlets[single_connection_mask], \
+                   'x': nodes[outlet_indices,:], \
                    'mask': outlet_mask, \
                    'physical_contiguous': outlet_physical_contiguous[single_connection_mask].astype(int)}
 
@@ -153,12 +155,11 @@ def convert_nodes_to_heterogeneous(nodes, edges, inlet_index, outlet_indices):
 
     nedges = edges.shape[0]
     inner_pos = np.zeros((nedges, 4))
-
     for iedg in range(nedges):
         inner_pos[iedg,0:3] = inner_nodes[edges[iedg,1],:] - inner_nodes[edges[iedg,0],:]
         inner_pos[iedg,3] = np.linalg.norm(inner_pos[iedg,0:2])
 
-    inner_dict = {'edges': edges, 'position': inner_pos, 'mask': inner_mask}
+    inner_dict = {'edges': edges, 'position': inner_pos, 'x': inner_nodes, 'mask': inner_mask}
 
     return inner_dict, inlet_dict, outlet_dict
 
@@ -181,14 +182,20 @@ def create_fixed_graph(geometry, area):
 
     graph.edges['inner_to_inner'].data['position'] = \
                         torch.from_numpy(inner_dict['position'].astype(DTYPE))
+    graph.edges['inner_to_inner'].data['edges'] = \
+                        torch.from_numpy(inner_dict['edges'])
     graph.edges['in_to_inner'].data['distance'] = \
                         torch.from_numpy(inlet_dict['distance'].astype(DTYPE))
     graph.edges['in_to_inner'].data['physical_contiguous'] = \
                         torch.from_numpy(inlet_dict['physical_contiguous'])
+    graph.edges['in_to_inner'].data['edges'] = \
+                        torch.from_numpy(inlet_dict['edges'])
     graph.edges['out_to_inner'].data['distance'] = \
                         torch.from_numpy(outlet_dict['distance'].astype(DTYPE))
     graph.edges['out_to_inner'].data['physical_contiguous'] = \
                         torch.from_numpy(outlet_dict['physical_contiguous'])
+    graph.edges['out_to_inner'].data['edges'] = \
+                        torch.from_numpy(outlet_dict['edges'])
 
     # find inner node type
     edg0 = inner_dict['edges'][:,0]
@@ -210,15 +217,18 @@ def create_fixed_graph(geometry, area):
         node_type[j,int(node_degree[j] / 2) - 1] = 1
 
     graph.nodes['inner'].data['node_type'] = torch.from_numpy(node_type.astype(int))
-
+    graph.nodes['inner'].data['x'] = torch.from_numpy(inner_dict['x'])
     graph.nodes['inner'].data['global_mask'] = torch.from_numpy(inner_dict['mask'])
     graph.nodes['inner'].data['area'] = torch.from_numpy(area[inner_dict['mask']].astype(DTYPE))
 
     graph.nodes['inlet'].data['global_mask'] = torch.from_numpy(inlet_dict['mask'])
     graph.nodes['inlet'].data['area'] = torch.from_numpy(area[inlet_dict['mask']].astype(DTYPE))
+    graph.nodes['inlet'].data['x'] = torch.from_numpy(inlet_dict['x'])
 
     graph.nodes['outlet'].data['global_mask'] = torch.from_numpy(outlet_dict['mask'])
     graph.nodes['outlet'].data['area'] = torch.from_numpy(area[outlet_dict['mask']].astype(DTYPE))
+    print(outlet_dict['x'].shape)
+    graph.nodes['outlet'].data['x'] = torch.from_numpy(outlet_dict['x'])
 
     print('Graph generated:')
     print(' n. nodes = ' + str(nodes.shape[0]))

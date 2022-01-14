@@ -4,6 +4,8 @@ import os
 # this fixes a problem with openmp https://github.com/dmlc/xgboost/issues/1715
 os.environ['KMP_DUPLICATE_LIB_OK']='True'
 
+sys.path.append("../tools")
+
 import dgl
 import torch
 import preprocessing as pp
@@ -12,13 +14,13 @@ from dgl.dataloading import GraphDataLoader
 from torch.utils.data.sampler import SubsetRandomSampler
 from dgl.data.utils import load_graphs
 import matplotlib.pyplot as plt
-from matplotlib import animation
 import numpy as np
 from datetime import datetime
 import time
 import preprocessing as pp
 import json
 import training
+import plot_tools as ptools
 
 def test_train(gnn_model, model_name, dataset):
     num_examples = len(dataset)
@@ -37,6 +39,25 @@ def test_train(gnn_model, model_name, dataset):
                                                                   elapsed))
 
     return coefs_dict
+
+def get_solution_all_nodes(state, graph):
+    def get_mask(node_type):
+        return np.squeeze(graph.nodes[node_type].data['global_mask'].detach().numpy())
+    nnodes = state['pressure']['inner'].shape[0] + \
+             state['pressure']['inlet'].shape[0] + \
+             state['pressure']['outlet'].shape[0]
+
+    pressure = np.zeros((nnodes,1))
+    pressure[get_mask('inlet')] = state['pressure']['inlet']
+    pressure[get_mask('inner')] = state['pressure']['inner']
+    pressure[get_mask('outlet')] = state['pressure']['outlet']
+
+    flowrate = np.zeros((nnodes,1))
+    flowrate[get_mask('inlet')] = state['flowrate']['inlet']
+    flowrate[get_mask('inner')] = state['flowrate']['inner']
+    flowrate[get_mask('outlet')] = state['flowrate']['outlet']
+
+    return pressure, flowrate
 
 def test_rollout(model, model_name, dataset, coefs_dict, do_plot, out_folder):
     graph = dataset.lightgraphs[0]
@@ -84,14 +105,19 @@ def test_rollout(model, model_name, dataset, coefs_dict, do_plot, out_folder):
 
     new_state = {'pressure': pressure_dict, 'flowrate': flowrate_dict}
 
+    pressure_exact, flowrate_exact = get_solution_all_nodes(new_state, graph)
+    pressure_pred, flowrate_pred = get_solution_all_nodes(new_state, graph)
+
     err_p = 0
     err_q = 0
     norm_p = 0
     norm_q = 0
-    pressures_pred = []
-    pressures_real = []
-    flowrates_pred = []
-    flowrates_real = []
+    pred_states = [new_state]
+    real_states = [new_state]
+    pressures_pred = [pressure_pred]
+    pressures_real = [pressure_exact]
+    flowrates_pred = [flowrate_pred]
+    flowrates_real = [flowrate_exact]
     for t in range(len(times)-1):
         tp1 = t+1
 
@@ -113,11 +139,8 @@ def test_rollout(model, model_name, dataset, coefs_dict, do_plot, out_folder):
 
         prev_p = graph.nodes['inner'].data['pressure'].detach().numpy().squeeze()
 
-
         p = dp + prev_p
 
-        pressures_pred.append(p)
-        pressures_real.append(next_pressure.detach().numpy())
 
         dq = bring_to_range_q(pred[:,1].detach().numpy())
 
@@ -125,13 +148,24 @@ def test_rollout(model, model_name, dataset, coefs_dict, do_plot, out_folder):
 
         q = dq + prev_q
 
-        flowrates_pred.append(q)
-        flowrates_real.append(next_flowrate.detach().numpy())
-
         err_p = err_p + np.linalg.norm(p - next_pressure.detach().numpy().squeeze())**2
         norm_p = norm_p + np.linalg.norm(next_pressure.detach().numpy().squeeze())**2
         err_q = err_q + np.linalg.norm(q - next_flowrate.detach().numpy().squeeze())**2
         norm_q = norm_q + np.linalg.norm(next_flowrate.detach().numpy().squeeze())**2
+
+        pressure_dict_exact = {'inner': next_pressure,
+                               'inlet': graph.nodes['inlet'].data['pressure_next'],
+                               'outlet': graph.nodes['outlet'].data['pressure_next'],}
+        flowrate_dict_exact = {'inner': next_flowrate,
+                               'inlet': graph.nodes['inlet'].data['flowrate_next'],
+                               'outlet': graph.nodes['outlet'].data['flowrate_next']}
+
+        exact_state = {'pressure': pressure_dict_exact, 'flowrate': flowrate_dict_exact}
+
+        pressure_exact, flowrate_exact = get_solution_all_nodes(exact_state, graph)
+
+        pressures_real.append(pressure_exact)
+        flowrates_real.append(flowrate_exact)
 
         pressure_dict = {'inner': torch.from_numpy(np.expand_dims(p,axis=1)),
                          'inlet': graph.nodes['inlet'].data['pressure_next'],
@@ -141,43 +175,47 @@ def test_rollout(model, model_name, dataset, coefs_dict, do_plot, out_folder):
                          'outlet': graph.nodes['outlet'].data['flowrate_next']}
 
         new_state = {'pressure': pressure_dict, 'flowrate': flowrate_dict}
+        pressure, flowrate = get_solution_all_nodes(new_state, graph)
+
+        pressures_pred.append(pressure)
+        flowrates_pred.append(flowrate)
+
+        pred_states.append(new_state)
+        real_states.append(exact_state)
 
     err_p = np.sqrt(err_p / norm_p)
     err_q = np.sqrt(err_q / norm_q)
 
-    if do_plot:
-        pressures_pred = pressures_pred[0::10]
-        pressures_real = pressures_real[0::10]
-        flowrates_pred = flowrates_pred[0::10]
-        flowrates_real = flowrates_real[0::10]
+    # ptools.plot_3D(model_name, pred_states, graph.nodes['params'].data['times'].detach().numpy(),
+    #                 coefs_dict, 'pressure', outfile_name=out_folder + '/3d_pressure_pred.mp4',
+    #                 time = 5)
+    #
+    # ptools.plot_3D(model_name, real_states, graph.nodes['params'].data['times'].detach().numpy(),
+    #                 coefs_dict, 'pressure', outfile_name=out_folder + '/3d_pressure_real.mp4',
+    #                 time = 5)
+    #
+    # ptools.plot_3D(model_name, pred_states, graph.nodes['params'].data['times'].detach().numpy(),
+    #                 coefs_dict, 'flowrate', outfile_name=out_folder + '/3d_flowrate_pred.mp4',
+    #                 time = 5)
+    #
+    # ptools.plot_3D(model_name, real_states, graph.nodes['params'].data['times'].detach().numpy(),
+    #                 coefs_dict, 'flowrate', outfile_name=out_folder + '/3d_flowrate_real.mp4',
+    #                 time = 5)
 
-        fig, ax = plt.subplots(2)
-        line_pred_p, = ax[0].plot([],[],'r')
-        line_real_p, = ax[0].plot([],[],'--b')
-        line_pred_q, = ax[1].plot([],[],'r')
-        line_real_q, = ax[1].plot([],[],'--b')
+    ptools.plot_inlet(model_name, pred_states, real_states, graph.nodes['params'].data['times'].detach().numpy(),
+                      coefs_dict, 'pressure', outfile_name=out_folder + '/inlet_pressure.mp4', time = 5)
 
-        def animation_frame(i):
-            line_pred_p.set_xdata(range(0,len(pressures_pred[i])))
-            line_pred_p.set_ydata(pp.invert_normalize_function(pressures_pred[i],'pressure',coefs_dict))
-            line_real_p.set_xdata(range(0,len(pressures_pred[i])))
-            line_real_p.set_ydata(pp.invert_normalize_function(pressures_real[i],'pressure',coefs_dict))
-            line_pred_q.set_xdata(range(0,len(flowrates_pred[i])))
-            line_pred_q.set_ydata(pp.invert_normalize_function(flowrates_pred[i],'flowrate',coefs_dict))
-            line_real_q.set_xdata(range(0,len(flowrates_pred[i])))
-            line_real_q.set_ydata(pp.invert_normalize_function(flowrates_real[i],'flowrate',coefs_dict))
-            ax[0].set_xlim(0,len(pressures_pred[i]))
-            ax[0].set_ylim(coefs_dict['pressure']['min']-np.abs(coefs_dict['pressure']['min'])*0.1,coefs_dict['pressure']['max']+np.abs(coefs_dict['pressure']['max'])*0.1)
-            ax[1].set_xlim(0,len(flowrates_pred[i]))
-            ax[1].set_ylim(coefs_dict['flowrate']['min']-np.abs(coefs_dict['flowrate']['min'])*0.1,coefs_dict['flowrate']['max']+np.abs(coefs_dict['flowrate']['max'])*0.1)
-            return line_pred_p, line_real_p, line_pred_q, line_real_q
+    ptools.plot_inlet(model_name, pred_states, real_states, graph.nodes['params'].data['times'].detach().numpy(),
+                      coefs_dict, 'flowrate', outfile_name=out_folder + '/inlet_flowrate.mp4', time = 5)
 
-        anim = animation.FuncAnimation(fig, animation_frame,
-                                       frames=len(pressures_pred),
-                                       interval=20)
-        writervideo = animation.FFMpegWriter(fps=60)
-        anim.save(out_folder + '/plot.mp4', writer = writervideo)
-
+    # nout = graph.nodes['outlet'].data['pressure_next'].shape[0]
+    #
+    # for iout in range(nout):
+    #     ptools.plot_inlet(model_name, pred_states, real_states, graph.nodes['params'].data['times'].detach().numpy(),
+    #                       coefs_dict, 'pressure', outfile_name=out_folder + '/outlet_pressure' + str(iout) + '.mp4', iout, time = 5)
+    #
+    #     ptools.plot_inlet(model_name, pred_states, real_states, graph.nodes['params'].data['times'].detach().numpy(),
+    #                       coefs_dict, 'flowrate', outfile_name=out_folder + '/outlet_flowrate' + str(iout) + '.mp4', iout, time = 5)
 
     print('Error pressure = {:.5e}'.format(err_p))
     print('Error flowrate = {:.5e}'.format(err_q))
@@ -188,7 +226,7 @@ def test_rollout(model, model_name, dataset, coefs_dict, do_plot, out_folder):
 if __name__ == "__main__":
 
     path = 'models/09.01.2022_02.28.57/'
-    path = 'models/10.01.2022_23.13.13/'
+    path = 'models/13.01.2022_01.00.41/'
     params = json.loads(json.load(open(path + 'hparams.json')))
 
     gnn_model = GraphNet(params)

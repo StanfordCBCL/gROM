@@ -1,6 +1,7 @@
 import sys
 
 sys.path.append("../graphs/core")
+sys.path.append("../network/")
 
 import io_utils as io
 from geometry import Geometry
@@ -13,6 +14,8 @@ import geomdl.fitting
 from geomdl.visualization import VisMPL
 import matplotlib.cm as cm
 from matplotlib.colors import Normalize
+from matplotlib import animation
+import preprocessing as pp
 
 def circle3D(center, normal, radius, npoints):
     theta = np.linspace(0, 2 * np.pi, npoints)
@@ -95,143 +98,368 @@ def test_circle_intersect_circle():
 
     circle_intersect_circle(circle1, circle2)
 
-def plot3Dgeo(geometry, area, downsampling_ratio):
+def plot_3D_graph(graph, state = None, coefs = None, field_name = None, cmap = cm.get_cmap("viridis")):
     fig = plt.figure()
     ax = plt.axes(projection='3d')
     ax._axis3don = False
 
-    nportions = len(geometry.p_portions)
+    scatterpts = None
+    if state == None:
+        # plot inlet
+        xin = graph.nodes['inlet'].data['x'].detach().numpy()
+        ax.scatter(xin[:,0], xin[:,1], xin[:,2], color='red', depthshade=0)
 
-    minarea = np.min(area)
-    maxarea = np.max(area)
+        # plot outlet
+        xout = graph.nodes['outlet'].data['x'].detach().numpy()
+        ax.scatter(xout[:,0], xout[:,1], xout[:,2], color='blue', depthshade=0)
 
-    minx = np.infty
-    maxx = np.NINF
-    miny = np.infty
-    maxy = np.NINF
-    minz = np.infty
-    maxz = np.NINF
+        # plot inner
+        xinner = graph.nodes['inner'].data['x'].detach().numpy()
+        ax.scatter(xinner[:,0], xinner[:,1], xinner[:,2], color='black', depthshade=0)
 
-    allcircles = []
-    allareas = []
-    for ipor in range(nportions):
-        points = geometry.p_portions[ipor]
-        npoints = points.shape[0]
+        x = np.concatenate((xin,xout,xinner),axis=0)
 
-        area = geo.compute_proj_field(ipor, fields['area'])
+    else:
+        xin = graph.nodes['inlet'].data['x'].detach().numpy()
+        xout = graph.nodes['outlet'].data['x'].detach().numpy()
+        xinner = graph.nodes['inner'].data['x'].detach().numpy()
+        x = np.concatenate((xin,xout,xinner),axis=0)
 
-        # compute normals
-        normals = np.zeros(points.shape)
+        fin = state[field_name]['inlet']
+        fout = state[field_name]['outlet']
+        finner = state[field_name]['inner']
+        field = np.concatenate((fin,fout,finner),axis=0)
 
-        tck, u = scipy.interpolate.splprep([points[:,0],
-                                            points[:,1],
-                                            points[:,2]], s=0, k = 3)
+        field = pp.invert_normalize_function(field, field_name, coefs)
 
-        spline_normals = scipy.interpolate.splev(u, tck, der=1)
+        C = (field - coefs[field_name]['min']) / \
+            (coefs[field_name]['max'] - coefs[field_name]['min'])
 
-        for i in range(npoints):
-            curnormal = np.array([spline_normals[0][i],spline_normals[1][i],spline_normals[2][i]])
-            normals[i,:] = curnormal / np.linalg.norm(curnormal)
+        scatterpts = ax.scatter(x[:,0], x[:,1], x[:,2],
+                                color=cmap(C), depthshade=0)
 
-        plt.plot(points[:,0], points[:,1], points[:,2])
+    minx = np.min(x, axis=0)
+    maxx = np.max(x, axis=0)
 
-        n = np.max((2, int(npoints/downsampling_ratio)))
-        actualidxs = np.floor(np.linspace(0,npoints-1,n)).astype(int)
-        circles = []
-        areas = []
-        ncircle_points = 60
-        for i in actualidxs:
-            circle = circle3D(points[i,:], normals[i,:], np.sqrt(area[i]/np.pi), ncircle_points)
-            # plt.plot(circle[:,0], circle[:,1], circle[:,2], c = 'blue')
-            circles.append(circle)
-            areas.append(area[i])
-
-        allcircles.append(circles)
-        allareas.append(areas)
-
-        minx = np.min([minx,np.min(points[:,0])])
-        maxx = np.max([maxx,np.max(points[:,0])])
-        miny = np.min([miny,np.min(points[:,1])])
-        maxy = np.max([maxy,np.max(points[:,1])])
-        minz = np.min([minz,np.min(points[:,2])])
-        maxz = np.max([maxz,np.max(points[:,2])])
-
-    # test_circle_intersect_circle()
-
-    delete_circles = [set() for i in range(nportions)]
-    for ipor in range(nportions):
-        icircles = allcircles[ipor]
-        for icircle in range(len(icircles)):
-            for jpor in range(nportions):
-                jcircles = allcircles[jpor]
-                for jcircle in range(len(jcircles)):
-                    if ipor != jpor or icircle != jcircle:
-                        inters = circle_intersect_circle(icircles[icircle],
-                                                         jcircles[jcircle])
-                        if inters:
-                            delete_circles[ipor].add(icircle)
-                            delete_circles[jpor].add(jcircle)
-
-    for ipor in range(nportions):
-        curset = delete_circles[ipor]
-        offset = 0
-        for icircle in curset:
-            del allcircles[ipor][icircle-offset]
-            offset = offset+1
-
-    for ipor in range(nportions):
-        circles = allcircles[ipor]
-        if len(circles) > 0:
-            areas = allareas[ipor]
-            ncircles = len(circles)
-            nsubs = 20
-            X = np.zeros((ncircle_points,(ncircles - 1) * nsubs + 1))
-            Y = np.zeros((ncircle_points,(ncircles - 1) * nsubs + 1))
-            Z = np.zeros((ncircle_points,(ncircles - 1) * nsubs + 1))
-            C = np.zeros((ncircle_points,(ncircles - 1) * nsubs + 1))
-            coefs = np.linspace(0,1,nsubs+1)
-            for i in range(ncircles-1):
-                for j in range(nsubs):
-                    X[:,i * nsubs + j] = circles[i][:,0] * (1 - coefs[j]) + circles[i+1][:,0] * coefs[j]
-                    Y[:,i * nsubs + j] = circles[i][:,1] * (1 - coefs[j]) + circles[i+1][:,1] * coefs[j]
-                    Z[:,i * nsubs + j] = circles[i][:,2] * (1 - coefs[j]) + circles[i+1][:,2] * coefs[j]
-                    C[:,i * nsubs + j] = areas[i] * (1 - coefs[j]) + areas[i+1] * coefs[j]
-
-            X[:,-1] = circles[-1][:,0]
-            Y[:,-1] = circles[-1][:,1]
-            Z[:,-1] = circles[-1][:,2]
-            C[:,-1] = areas[-1]
-
-            colors = (C - minarea) / (maxarea - minarea)
-
-            cmap = cm.get_cmap("coolwarm")
-            ax.plot_surface(X,Y,Z, facecolors=cmap(colors), shade=True, alpha=0.8)
-
-    m = np.min([minx,miny,minz])
-    M = np.max([maxx,maxy,maxz])
+    m = np.min(minx)
+    M = np.max(maxx)
 
     padding = np.max([np.abs(m),np.abs(M)]) * 0.1
 
     minx = minx - padding
     maxx = maxx + padding
-    miny = miny - padding
-    maxy = maxy + padding
-    minz = minz - padding
-    maxz = maxz + padding
 
-    ax.set_box_aspect((maxx-minx, maxy-miny, maxz-minz))
+    ax.set_box_aspect((maxx[0]-minx[0], maxx[1]-minx[1], maxx[2]-minx[2]))
 
-    ax.set_xlim((minx,maxx))
-    ax.set_ylim((miny,maxy))
-    ax.set_zlim((minz,maxz))
+    ax.set_xlim((minx[0],maxx[0]))
+    ax.set_ylim((minx[1],maxx[1]))
+    ax.set_zlim((minx[2],maxx[2]))
 
-    plt.show()
+    return fig, ax, scatterpts
 
-model_name = '0063_1001'
-print('Create geometry: ' + model_name)
-soln = io.read_geo('../graphs/vtps/' + model_name + '.vtp').GetOutput()
-fields, _, p_array = io.get_all_arrays(soln)
+# def plot3Dgeo(geometry, area, downsampling_ratio, field, minvalue, maxvalue,
+#               nsubs = 20, cmap = cm.get_cmap("coolwarm")):
+#     fig = plt.figure()
+#     ax = plt.axes(projection='3d')
+#     ax._axis3don = False
+#
+#     geoarea = area
+#
+#     nportions = len(geometry.p_portions)
+#
+#     minarea = np.min(area)
+#     maxarea = np.max(area)
+#
+#     minx = np.infty
+#     maxx = np.NINF
+#     miny = np.infty
+#     maxy = np.NINF
+#     minz = np.infty
+#     maxz = np.NINF
+#
+#     allactualidxs = []
+#     allcircles = []
+#     allareas = []
+#     for ipor in range(nportions):
+#         points = geometry.p_portions[ipor]
+#         npoints = points.shape[0]
+#
+#         area = geometry.compute_proj_field(ipor, geoarea)
+#
+#         # compute normals
+#         normals = np.zeros(points.shape)
+#
+#         tck, u = scipy.interpolate.splprep([points[:,0],
+#                                             points[:,1],
+#                                             points[:,2]], s=0, k = 3)
+#
+#         spline_normals = scipy.interpolate.splev(u, tck, der=1)
+#
+#         for i in range(npoints):
+#             curnormal = np.array([spline_normals[0][i],spline_normals[1][i],spline_normals[2][i]])
+#             normals[i,:] = curnormal / np.linalg.norm(curnormal)
+#
+#         plt.scatter(points[:,0], points[:,1], points[:,2], color = 'black')
+#
+#         n = np.max((2, int(npoints/downsampling_ratio)))
+#         actualidxs = np.floor(np.linspace(0,npoints-1,n)).astype(int)
+#         allactualidxs.append(actualidxs)
+#         circles = []
+#         areas = []
+#         ncircle_points = 60
+#         for i in actualidxs:
+#             circle = circle3D(points[i,:], normals[i,:], np.sqrt(area[i]/np.pi), ncircle_points)
+#             # plt.plot(circle[:,0], circle[:,1], circle[:,2], c = 'blue')
+#             circles.append(circle)
+#             areas.append(area[i])
+#
+#         allcircles.append(circles)
+#         allareas.append(areas)
+#
+#         minx = np.min([minx,np.min(points[:,0])])
+#         maxx = np.max([maxx,np.max(points[:,0])])
+#         miny = np.min([miny,np.min(points[:,1])])
+#         maxy = np.max([maxy,np.max(points[:,1])])
+#         minz = np.min([minz,np.min(points[:,2])])
+#         maxz = np.max([maxz,np.max(points[:,2])])
 
-geo = ResampledGeometry(Geometry(p_array), 5, remove_caps = True, doresample = True)
+    # test_circle_intersect_circle()
 
-plot3Dgeo(geo, fields['area'], downsampling_ratio = 5)
+    # delete_circles = [set() for i in range(nportions)]
+    # for ipor in range(nportions):
+    #     icircles = allcircles[ipor]
+    #     for icircle in range(len(icircles)):
+    #         for jpor in range(nportions):
+    #             jcircles = allcircles[jpor]
+    #             for jcircle in range(len(jcircles)):
+    #                 if ipor != jpor or icircle != jcircle:
+    #                     inters = circle_intersect_circle(icircles[icircle],
+    #                                                      jcircles[jcircle])
+    #                     if inters:
+    #                         delete_circles[ipor].add(icircle)
+    #                         delete_circles[jpor].add(jcircle)
+
+    # for ipor in range(nportions):
+    #     curset = delete_circles[ipor]
+    #     offset = 0
+    #     for icircle in curset:
+    #         del allcircles[ipor][icircle-offset]
+    #         allactualidxs[ipor][icircle-offset]
+    #         offset = offset+1
+
+    # allsurfs = []
+    # allcolors = []
+    # for ipor in range(nportions):
+    #     circles = allcircles[ipor]
+    #     if len(circles) > 0:
+    #         pfield = field[geometry.portion_node_selector[ipor]][allactualidxs[ipor]]
+    #         ncircles = len(circles)
+    #         X = np.zeros((ncircle_points,(ncircles - 1) * nsubs + 1))
+    #         Y = np.zeros((ncircle_points,(ncircles - 1) * nsubs + 1))
+    #         Z = np.zeros((ncircle_points,(ncircles - 1) * nsubs + 1))
+    #         C = np.zeros((ncircle_points,(ncircles - 1) * nsubs + 1))
+    #         coefs = np.linspace(0,1,nsubs+1)
+    #         for i in range(ncircles-1):
+    #             for j in range(nsubs):
+    #                 X[:,i * nsubs + j] = circles[i][:,0] * (1 - coefs[j]) + circles[i+1][:,0] * coefs[j]
+    #                 Y[:,i * nsubs + j] = circles[i][:,1] * (1 - coefs[j]) + circles[i+1][:,1] * coefs[j]
+    #                 Z[:,i * nsubs + j] = circles[i][:,2] * (1 - coefs[j]) + circles[i+1][:,2] * coefs[j]
+    #                 C[:,i * nsubs + j] = pfield[i] * (1 - coefs[j]) + pfield[i+1] * coefs[j]
+
+    #         X[:,-1] = circles[-1][:,0]
+    #         Y[:,-1] = circles[-1][:,1]
+    #         Z[:,-1] = circles[-1][:,2]
+    #         C[:,-1] = areas[-1]
+
+    #         colors = (C - minvalue) / (maxvalue - minvalue)
+    #         allcolors.append(colors)
+
+    #         surf = ax.plot_surface(X,Y,Z, facecolors=cmap(colors), shade=True, alpha=0.8)
+    #         allsurfs.append(surf)
+
+    # m = np.min([minx,miny,minz])
+    # M = np.max([maxx,maxy,maxz])
+
+    # padding = np.max([np.abs(m),np.abs(M)]) * 0.1
+
+    # minx = minx - padding
+    # maxx = maxx + padding
+    # miny = miny - padding
+    # maxy = maxy + padding
+    # minz = minz - padding
+    # maxz = maxz + padding
+
+    # ax.set_box_aspect((maxx-minx, maxy-miny, maxz-minz))
+
+    # ax.set_xlim((minx,maxx))
+    # ax.set_ylim((miny,maxy))
+    # ax.set_zlim((minz,maxz))
+
+    #return allsurfs, allcolors, allactualidxs
+
+def plot_linear(pressures_pred, flowrates_pred, pressures_real, flowrates_real,
+                coefs_dict, outfile_name, resample):
+    pressures_pred = pressures_pred[0::resample]
+    pressures_real = pressures_real[0::resample]
+    flowrates_pred = flowrates_pred[0::resample]
+    flowrates_real = flowrates_real[0::resample]
+
+    fig, ax = plt.subplots(2)
+    line_pred_p, = ax[0].plot([],[],'r')
+    line_real_p, = ax[0].plot([],[],'--b')
+    line_pred_q, = ax[1].plot([],[],'r')
+    line_real_q, = ax[1].plot([],[],'--b')
+
+    def animation_frame(i):
+        line_pred_p.set_xdata(range(0,len(pressures_pred[i])))
+        line_pred_p.set_ydata(pp.invert_normalize_function(pressures_pred[i],'pressure',coefs_dict))
+        line_real_p.set_xdata(range(0,len(pressures_pred[i])))
+        line_real_p.set_ydata(pp.invert_normalize_function(pressures_real[i],'pressure',coefs_dict))
+        line_pred_q.set_xdata(range(0,len(flowrates_pred[i])))
+        line_pred_q.set_ydata(pp.invert_normalize_function(flowrates_pred[i],'flowrate',coefs_dict))
+        line_real_q.set_xdata(range(0,len(flowrates_pred[i])))
+        line_real_q.set_ydata(pp.invert_normalize_function(flowrates_real[i],'flowrate',coefs_dict))
+        ax[0].set_xlim(0,len(pressures_pred[i]))
+        ax[0].set_ylim(coefs_dict['pressure']['min']-np.abs(coefs_dict['pressure']['min'])*0.1,coefs_dict['pressure']['max']+np.abs(coefs_dict['pressure']['max'])*0.1)
+        ax[1].set_xlim(0,len(flowrates_pred[i]))
+        ax[1].set_ylim(coefs_dict['flowrate']['min']-np.abs(coefs_dict['flowrate']['min'])*0.1,coefs_dict['flowrate']['max']+np.abs(coefs_dict['flowrate']['max'])*0.1)
+        return line_pred_p, line_real_p, line_pred_q, line_real_q
+
+    anim = animation.FuncAnimation(fig, animation_frame,
+                                   frames=len(pressures_pred),
+                                   interval=20)
+    writervideo = animation.FFMpegWriter(fps=60)
+    anim.save(outfile_name, writer = writervideo)
+
+def plot_linear_inlet(graph, pred_states, real_states, coefs_dict, field_name):
+
+    fig, ax = plt.subplots(1)
+
+    physical_contiguous = graph.edges['in_to_inner'].data['physical_contiguous']
+    indnext = np.where(physical_contiguous == 1)[0]
+
+    edges = graph.edges['inner_to_inner'].data['edges'].detach().numpy()
+    ntype = graph.nodes['inner'].data['node_type'].detach().numpy()
+    nodes = graph.nodes['inner'].data['x'].detach().numpy()
+
+    node_selector = [indnext[0]]
+    dists = [0, np.linalg.norm(nodes[indnext,:] - graph.nodes['inlet'].data['x'].detach().numpy())]
+    stop = False
+    while not stop:
+        next = edges[np.where(edges[:,0] == node_selector[-1])[0],1].tolist()
+        for ns in node_selector:
+            if ns in next:
+                next.remove(ns)
+        if len(next) > 1:
+            stop = True
+            break
+        node_selector.append(next[0])
+        dists.append(dists[-1] + np.linalg.norm(nodes[next,:] - nodes[node_selector[-1],:]))
+
+    pred_field = np.concatenate((np.reshape(pred_states[field_name]['inlet'].detach().numpy(),(1)),
+                                 pred_states[field_name]['inner'].detach().numpy()[node_selector,0]),axis=0)
+    real_field = np.concatenate((np.reshape(real_states[field_name]['inlet'].detach().numpy(),(1)),
+                                 real_states[field_name]['inner'].detach().numpy()[node_selector,0]),axis=0)
+
+    pred_field = pp.invert_normalize_function(pred_field, field_name, coefs_dict)
+    real_field = pp.invert_normalize_function(real_field, field_name, coefs_dict)
+
+    line_pred, = ax.plot(dists,pred_field,'r')
+    line_real, = ax.plot(dists,real_field,'--b')
+
+    ax.set_xlim(0,dists[-1])
+    ax.set_ylim(coefs_dict[field_name]['min'],coefs_dict[field_name]['max'])
+
+    return fig, ax, line_pred, line_real, node_selector
+
+def plot_inlet(model_name, pred_states, real_states, times,
+               coefs_dict, field_name, outfile_name, time, framerate = 60):
+
+    nframes = time * framerate
+    indices = np.floor(np.linspace(0,len(pred_states)-1,nframes)).astype(int)
+
+    selected_times = []
+    selected_pred_states = []
+    selected_real_states = []
+    for ind in indices:
+        selected_pred_states.append(pred_states[ind])
+        selected_real_states.append(real_states[ind])
+        selected_times.append(times[0,ind])
+
+    pred_states = selected_pred_states
+    real_stated = selected_real_states
+    times = selected_times
+
+    graph = pp.load_graphs('../graphs/data/' + model_name + '.grph')[0][0]
+
+    fig, ax, line_pred, line_real, node_selector = plot_linear_inlet(graph,
+                                                pred_states[0], real_states[0],
+                                                coefs_dict, field_name)
+
+    def animation_frame(i):
+        pred_state = pred_states[i]
+        real_state = real_states[i]
+
+        pred_field = np.concatenate((np.reshape(pred_state[field_name]['inlet'].detach().numpy(),(1)),
+                                     pred_state[field_name]['inner'].detach().numpy()[node_selector,0]),axis=0)
+        real_field = np.concatenate((np.reshape(real_state[field_name]['inlet'].detach().numpy(),(1)),
+                                     real_state[field_name]['inner'].detach().numpy()[node_selector,0]),axis=0)
+
+        pred_field = pp.invert_normalize_function(pred_field, field_name, coefs_dict)
+        real_field = pp.invert_normalize_function(real_field, field_name, coefs_dict)
+
+        line_pred.set_ydata(pred_field)
+        line_real.set_ydata(real_field)
+
+        ax.set_title('{:.2f} s'.format(float(times[i])))
+        return
+
+    anim = animation.FuncAnimation(fig, animation_frame,
+                                   frames=len(pred_states),
+                                   interval=20)
+    writervideo = animation.FFMpegWriter(fps=framerate)
+    anim.save(outfile_name, writer = writervideo)
+
+def plot_3D(model_name, states, times,
+            coefs_dict, field_name, outfile_name, time, framerate = 60):
+
+    nframes = time * framerate
+    indices = np.floor(np.linspace(0,len(states)-1,nframes)).astype(int)
+
+    selected_times = []
+    selected_states = []
+    for ind in indices:
+        selected_states.append(states[ind])
+        selected_times.append(times[0,ind])
+
+    states = selected_states
+    times = selected_times
+
+    graph = pp.load_graphs('../graphs/data/' + model_name + '.grph')[0][0]
+
+    cmap = cm.get_cmap("viridis")
+    fig, ax, points = plot_3D_graph(graph, states[0], coefs_dict, field_name, cmap)
+
+    angles = np.floor(np.linspace(0,360,len(states))).astype(int)
+
+    def animation_frame(i):
+        ax.view_init(elev=10., azim=angles[i])
+        state = states[i]
+        fin = state[field_name]['inlet']
+        fout = state[field_name]['outlet']
+        finner = state[field_name]['inner']
+        field = np.concatenate((fin,fout,finner),axis=0)
+        field = pp.invert_normalize_function(field, field_name, coefs_dict)
+
+        C = (field - coefs_dict[field_name]['min']) / \
+            (coefs_dict[field_name]['max'] - coefs_dict[field_name]['min'])
+
+        points.set_color(cmap(C))
+        ax.set_title('{:.2f} s'.format(float(times[i])))
+        return
+
+    anim = animation.FuncAnimation(fig, animation_frame,
+                                   frames=len(states),
+                                   interval=20)
+    writervideo = animation.FFMpegWriter(fps=framerate)
+    anim.save(outfile_name, writer = writervideo)
