@@ -23,13 +23,13 @@ if __name__ == "__main__":
         process_iterations=1,
         hl_mlp=2,
         normalize=1,
-        nepochs=10,
+        nepochs=1,
         batch_size=100,
         rate_noise=0.1,
         random_walks=0,
         normalization='standard',
         optimizer='adam',
-        label_normalization='none'
+        label_normalization='min_max'
     )
     network_params = {'infeat_nodes': 7,
                     'infeat_edges': 4,

@@ -132,8 +132,8 @@ def train_gnn_model(gnn_model, model_name, optimizer_name, train_params,
             if epoch in chckp_epochs:
                 checkpoint_fct(global_loss/count)
 
-        if epoch >= 3:
-            dataset.sample_noise(global_mae/count * dataset_params['rate_noise'])
+        if epoch >= 6:
+            dataset.sample_noise(dataset_params['rate_noise'])
 
     # compute final loss
     global_loss, count, _, global_mae = evaluate_model(gnn_model, train_dataloader, mse, weighted_mae)
@@ -192,7 +192,7 @@ if __name__ == "__main__":
                     'batch_size': 359,
                     'nepochs': 3}
     dataset_params = {'normalization': 'standard',
-                      'rate_noise': 0.01,
+                      'rate_noise': 0.006,
                       'label_normalization': 'min_max'}
 
     start = time.time()

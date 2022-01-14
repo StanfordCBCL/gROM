@@ -149,9 +149,9 @@ class DGL_Dataset(DGLDataset):
     def sample_noise(self, rate):
         initial_rate = rate
         # cap rate to arbitrary value to avoid diverging
-        if (rate > 0.1):
-            rate = 0.1
-        print('\tsampling noise: input rate {:2f}, using {:2f}'.format(initial_rate, rate))
+        # if (rate > 0.1):
+        #     rate = 0.1
+        # print('\tsampling noise: input rate {:2f}, using {:2f}'.format(initial_rate, rate))
         ngraphs = len(self.noise_pressures)
         for igraph in range(ngraphs):
             nnodes = self.noise_pressures[igraph].shape[0]

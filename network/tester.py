@@ -186,21 +186,21 @@ def test_rollout(model, model_name, dataset, coefs_dict, do_plot, out_folder):
     err_p = np.sqrt(err_p / norm_p)
     err_q = np.sqrt(err_q / norm_q)
 
-    # ptools.plot_3D(model_name, pred_states, graph.nodes['params'].data['times'].detach().numpy(),
-    #                 coefs_dict, 'pressure', outfile_name=out_folder + '/3d_pressure_pred.mp4',
-    #                 time = 5)
-    #
-    # ptools.plot_3D(model_name, real_states, graph.nodes['params'].data['times'].detach().numpy(),
-    #                 coefs_dict, 'pressure', outfile_name=out_folder + '/3d_pressure_real.mp4',
-    #                 time = 5)
-    #
-    # ptools.plot_3D(model_name, pred_states, graph.nodes['params'].data['times'].detach().numpy(),
-    #                 coefs_dict, 'flowrate', outfile_name=out_folder + '/3d_flowrate_pred.mp4',
-    #                 time = 5)
-    #
-    # ptools.plot_3D(model_name, real_states, graph.nodes['params'].data['times'].detach().numpy(),
-    #                 coefs_dict, 'flowrate', outfile_name=out_folder + '/3d_flowrate_real.mp4',
-    #                 time = 5)
+    ptools.plot_3D(model_name, pred_states, graph.nodes['params'].data['times'].detach().numpy(),
+                    coefs_dict, 'pressure', outfile_name=out_folder + '/3d_pressure_pred.mp4',
+                    time = 5)
+
+    ptools.plot_3D(model_name, real_states, graph.nodes['params'].data['times'].detach().numpy(),
+                    coefs_dict, 'pressure', outfile_name=out_folder + '/3d_pressure_real.mp4',
+                    time = 5)
+
+    ptools.plot_3D(model_name, pred_states, graph.nodes['params'].data['times'].detach().numpy(),
+                    coefs_dict, 'flowrate', outfile_name=out_folder + '/3d_flowrate_pred.mp4',
+                    time = 5)
+
+    ptools.plot_3D(model_name, real_states, graph.nodes['params'].data['times'].detach().numpy(),
+                    coefs_dict, 'flowrate', outfile_name=out_folder + '/3d_flowrate_real.mp4',
+                    time = 5)
 
     ptools.plot_inlet(model_name, pred_states, real_states, graph.nodes['params'].data['times'].detach().numpy(),
                       coefs_dict, 'pressure', outfile_name=out_folder + '/inlet_pressure.mp4', time = 5)
