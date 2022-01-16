@@ -100,6 +100,7 @@ def test_circle_intersect_circle():
 
 def plot_3D_graph(graph, state = None, coefs = None, field_name = None, cmap = cm.get_cmap("viridis")):
     fig = plt.figure()
+    # fig.subplots_adjust(left=0, bottom=0, right=1, top=1, wspace=None, hspace=None)
     ax = plt.axes(projection='3d')
     ax._axis3don = False
 
@@ -154,6 +155,18 @@ def plot_3D_graph(graph, state = None, coefs = None, field_name = None, cmap = c
     ax.set_xlim((minx[0],maxx[0]))
     ax.set_ylim((minx[1],maxx[1]))
     ax.set_zlim((minx[2],maxx[2]))
+
+    cbar = fig.colorbar(scatterpts)
+
+    cbar.set_ticks([0, 1])
+    if field_name == 'pressure':
+        minv = str('{:.0f}'.format(float(coefs[field_name]['min']/1333.2)))
+        maxv = str('{:.0f}'.format(float(coefs[field_name]['max']/1333.2)))
+    else:
+        minv = str('{:.0f}'.format(float(coefs[field_name]['min'])))
+        maxv = str('{:.0f}'.format(float(coefs[field_name]['max'])))
+
+    cbar.set_ticklabels([minv, maxv])
 
     return fig, ax, scatterpts
 
@@ -297,30 +310,58 @@ def plot_3D_graph(graph, state = None, coefs = None, field_name = None, cmap = c
 
     #return allsurfs, allcolors, allactualidxs
 
-def plot_linear(pressures_pred, flowrates_pred, pressures_real, flowrates_real,
-                coefs_dict, outfile_name, resample):
-    pressures_pred = pressures_pred[0::resample]
-    pressures_real = pressures_real[0::resample]
-    flowrates_pred = flowrates_pred[0::resample]
-    flowrates_real = flowrates_real[0::resample]
+def plot_linear(pressures_pred, flowrates_pred, pressures_real, flowrates_real, times,
+                coefs_dict, outfile_name, time, framerate = 60):
+
+    nframes = time * framerate
+    indices = np.floor(np.linspace(0,len(pressures_pred)-1,nframes)).astype(int)
+
+    selected_times = []
+    selected_pred_pressure = []
+    selected_real_pressure = []
+    selected_pred_flowrate = []
+    selected_real_flowrate = []
+    for ind in indices:
+        selected_pred_pressure.append(pressures_pred[ind])
+        selected_real_pressure.append(pressures_real[ind])
+        selected_pred_flowrate.append(flowrates_pred[ind])
+        selected_real_flowrate.append(flowrates_real[ind])
+        selected_times.append(times[0,ind])
+
+    pressures_pred = selected_pred_pressure
+    pressures_real = selected_real_pressure
+    flowrates_pred = selected_pred_flowrate
+    flowrates_real = selected_real_flowrate
+    times = selected_times
 
     fig, ax = plt.subplots(2)
     line_pred_p, = ax[0].plot([],[],'r')
+    line_pred_p.set_label('GNN')
     line_real_p, = ax[0].plot([],[],'--b')
+    line_real_p.set_label('Ground truth')
     line_pred_q, = ax[1].plot([],[],'r')
+    line_pred_q.set_label('GNN')
     line_real_q, = ax[1].plot([],[],'--b')
+    line_real_q.set_label('Ground truth')
+    ax[0].legend(loc='upper right')
+    ax[1].legend(loc='upper right')
+
+    ax[1].set_xlabel('graph node index')
+    ax[0].set_ylabel('pressure [mmHg]')
+    ax[1].set_ylabel('flowrate [cc^3/s]')
 
     def animation_frame(i):
         line_pred_p.set_xdata(range(0,len(pressures_pred[i])))
-        line_pred_p.set_ydata(pp.invert_normalize_function(pressures_pred[i],'pressure',coefs_dict))
+        line_pred_p.set_ydata(pp.invert_normalize_function(pressures_pred[i],'pressure',coefs_dict) / 1333.2)
         line_real_p.set_xdata(range(0,len(pressures_pred[i])))
-        line_real_p.set_ydata(pp.invert_normalize_function(pressures_real[i],'pressure',coefs_dict))
+        line_real_p.set_ydata(pp.invert_normalize_function(pressures_real[i],'pressure',coefs_dict) / 1333.2)
         line_pred_q.set_xdata(range(0,len(flowrates_pred[i])))
         line_pred_q.set_ydata(pp.invert_normalize_function(flowrates_pred[i],'flowrate',coefs_dict))
         line_real_q.set_xdata(range(0,len(flowrates_pred[i])))
         line_real_q.set_ydata(pp.invert_normalize_function(flowrates_real[i],'flowrate',coefs_dict))
+        ax[0].set_title('{:.2f} s'.format(float(times[i])))
         ax[0].set_xlim(0,len(pressures_pred[i]))
-        ax[0].set_ylim(coefs_dict['pressure']['min']-np.abs(coefs_dict['pressure']['min'])*0.1,coefs_dict['pressure']['max']+np.abs(coefs_dict['pressure']['max'])*0.1)
+        ax[0].set_ylim((coefs_dict['pressure']['min']-np.abs(coefs_dict['pressure']['min'])*0.1)/1333.2,(coefs_dict['pressure']['max']+np.abs(coefs_dict['pressure']['max'])*0.1) / 1333.2)
         ax[1].set_xlim(0,len(flowrates_pred[i]))
         ax[1].set_ylim(coefs_dict['flowrate']['min']-np.abs(coefs_dict['flowrate']['min'])*0.1,coefs_dict['flowrate']['max']+np.abs(coefs_dict['flowrate']['max'])*0.1)
         return line_pred_p, line_real_p, line_pred_q, line_real_q
@@ -328,7 +369,7 @@ def plot_linear(pressures_pred, flowrates_pred, pressures_real, flowrates_real,
     anim = animation.FuncAnimation(fig, animation_frame,
                                    frames=len(pressures_pred),
                                    interval=20)
-    writervideo = animation.FFMpegWriter(fps=60)
+    writervideo = animation.FFMpegWriter(fps=framerate)
     anim.save(outfile_name, writer = writervideo)
 
 def plot_linear_inlet(graph, pred_states, real_states, coefs_dict, field_name):
@@ -372,6 +413,62 @@ def plot_linear_inlet(graph, pred_states, real_states, coefs_dict, field_name):
 
     return fig, ax, line_pred, line_real, node_selector
 
+def plot_linear_outlet(graph, pred_states, real_states, coefs_dict, field_name, out_index):
+
+    fig, ax = plt.subplots(1)
+
+    outedges = graph.edges['out_to_inner'].data['edges']
+    outedgesind = np.where(outedges[:,0] == out_index)[0]
+
+    B = np.expand_dims(graph.edges['out_to_inner'].data['physical_contiguous'],axis=1)
+    aggr = np.concatenate((graph.edges['out_to_inner'].data['edges'],B),axis=1)
+
+    physical_contiguous = aggr[outedgesind]
+    indnext = physical_contiguous[np.where(physical_contiguous[:,2] == 1)[0],1]
+
+    edges = graph.edges['inner_to_inner'].data['edges'].detach().numpy()
+    ntype = graph.nodes['inner'].data['node_type'].detach().numpy()
+    nodes = graph.nodes['inner'].data['x'].detach().numpy()
+
+    node_selector = [indnext[0]]
+    stop = False
+    while not stop:
+        next = edges[np.where(edges[:,0] == node_selector[-1])[0],1].tolist()
+        for ns in node_selector:
+            if ns in next:
+                next.remove(ns)
+        if len(next) > 1:
+            stop = True
+            break
+        if len(next) == 0:
+            print('hello')
+        node_selector.append(next[0])
+
+    node_selector.reverse()
+
+    dists = np.zeros((len(node_selector) + 1))
+
+    for i in range(1,len(node_selector)):
+        dists[i] = dists[i-1] + np.linalg.norm(nodes[node_selector[i],:]-nodes[node_selector[i-1],:])
+
+    dists[-1] = dists[-2] + np.linalg.norm(nodes[node_selector[-1],:]-graph.nodes['outlet'].data['x'][out_index].detach().numpy())
+
+    pred_field = np.concatenate((pred_states[field_name]['inner'].detach().numpy()[node_selector,0],
+                                 np.reshape(pred_states[field_name]['outlet'][out_index].detach().numpy(),(1))),axis=0)
+    real_field = np.concatenate((real_states[field_name]['inner'].detach().numpy()[node_selector,0],
+                                 np.reshape(pred_states[field_name]['outlet'][out_index].detach().numpy(),(1))),axis=0)
+
+    pred_field = pp.invert_normalize_function(pred_field, field_name, coefs_dict)
+    real_field = pp.invert_normalize_function(real_field, field_name, coefs_dict)
+
+    line_pred, = ax.plot(dists,pred_field,'r')
+    line_real, = ax.plot(dists,real_field,'--b')
+
+    ax.set_xlim(0,dists[-1])
+    ax.set_ylim(coefs_dict[field_name]['min'],coefs_dict[field_name]['max'])
+
+    return fig, ax, line_pred, line_real, node_selector
+
 def plot_inlet(model_name, pred_states, real_states, times,
                coefs_dict, field_name, outfile_name, time, framerate = 60):
 
@@ -387,7 +484,7 @@ def plot_inlet(model_name, pred_states, real_states, times,
         selected_times.append(times[0,ind])
 
     pred_states = selected_pred_states
-    real_stated = selected_real_states
+    real_states = selected_real_states
     times = selected_times
 
     graph = pp.load_graphs('../graphs/data/' + model_name + '.grph')[0][0]
@@ -395,6 +492,54 @@ def plot_inlet(model_name, pred_states, real_states, times,
     fig, ax, line_pred, line_real, node_selector = plot_linear_inlet(graph,
                                                 pred_states[0], real_states[0],
                                                 coefs_dict, field_name)
+
+    def animation_frame(i):
+        pred_state = pred_states[i]
+        real_state = real_states[i]
+
+        pred_field = np.concatenate((np.reshape(pred_state[field_name]['inlet'].detach().numpy(),(1)),
+                                     pred_state[field_name]['inner'].detach().numpy()[node_selector,0]),axis=0)
+        real_field = np.concatenate((np.reshape(real_state[field_name]['inlet'].detach().numpy(),(1)),
+                                     real_state[field_name]['inner'].detach().numpy()[node_selector,0]),axis=0)
+
+        pred_field = pp.invert_normalize_function(pred_field, field_name, coefs_dict)
+        real_field = pp.invert_normalize_function(real_field, field_name, coefs_dict)
+
+        line_pred.set_ydata(pred_field)
+        line_real.set_ydata(real_field)
+
+        ax.set_title('{:.2f} s'.format(float(times[i])))
+        return
+
+    anim = animation.FuncAnimation(fig, animation_frame,
+                                   frames=len(pred_states),
+                                   interval=20)
+    writervideo = animation.FFMpegWriter(fps=framerate)
+    anim.save(outfile_name, writer = writervideo)
+
+def plot_outlet(model_name, pred_states, real_states, times,
+               coefs_dict, field_name, outfile_name, out_index, time, framerate = 60):
+
+    nframes = time * framerate
+    indices = np.floor(np.linspace(0,len(pred_states)-1,nframes)).astype(int)
+
+    selected_times = []
+    selected_pred_states = []
+    selected_real_states = []
+    for ind in indices:
+        selected_pred_states.append(pred_states[ind])
+        selected_real_states.append(real_states[ind])
+        selected_times.append(times[0,ind])
+
+    pred_states = selected_pred_states
+    real_states = selected_real_states
+    times = selected_times
+
+    graph = pp.load_graphs('../graphs/data/' + model_name + '.grph')[0][0]
+
+    fig, ax, line_pred, line_real, node_selector = plot_linear_outlet(graph,
+                                                pred_states[0], real_states[0],
+                                                coefs_dict, field_name, out_index)
 
     def animation_frame(i):
         pred_state = pred_states[i]

@@ -202,20 +202,25 @@ def test_rollout(model, model_name, dataset, coefs_dict, do_plot, out_folder):
                     coefs_dict, 'flowrate', outfile_name=out_folder + '/3d_flowrate_real.mp4',
                     time = 5)
 
-    ptools.plot_inlet(model_name, pred_states, real_states, graph.nodes['params'].data['times'].detach().numpy(),
-                      coefs_dict, 'pressure', outfile_name=out_folder + '/inlet_pressure.mp4', time = 5)
 
-    ptools.plot_inlet(model_name, pred_states, real_states, graph.nodes['params'].data['times'].detach().numpy(),
-                      coefs_dict, 'flowrate', outfile_name=out_folder + '/inlet_flowrate.mp4', time = 5)
+    ptools.plot_linear(pressures_pred, flowrates_pred, pressures_real, flowrates_real,
+                       graph.nodes['params'].data['times'].detach().numpy(),
+                       coefs_dict, out_folder + '/linear.mp4', time = 5)
 
+    # ptools.plot_inlet(model_name, pred_states, real_states, graph.nodes['params'].data['times'].detach().numpy(),
+    #                   coefs_dict, 'pressure', out_folder + '/inlet_pressure.mp4', time = 5)
+    #
+    # ptools.plot_inlet(model_name, pred_states, real_states, graph.nodes['params'].data['times'].detach().numpy(),
+    #                   coefs_dict, 'flowrate', out_folder + '/inlet_flowrate.mp4', time = 5)
+    #
     # nout = graph.nodes['outlet'].data['pressure_next'].shape[0]
     #
     # for iout in range(nout):
-    #     ptools.plot_inlet(model_name, pred_states, real_states, graph.nodes['params'].data['times'].detach().numpy(),
-    #                       coefs_dict, 'pressure', outfile_name=out_folder + '/outlet_pressure' + str(iout) + '.mp4', iout, time = 5)
+    #     ptools.plot_outlet(model_name, pred_states, real_states, graph.nodes['params'].data['times'].detach().numpy(),
+    #                       coefs_dict, 'pressure', out_folder + '/outlet_pressure' + str(iout) + '.mp4', iout, time = 5)
     #
-    #     ptools.plot_inlet(model_name, pred_states, real_states, graph.nodes['params'].data['times'].detach().numpy(),
-    #                       coefs_dict, 'flowrate', outfile_name=out_folder + '/outlet_flowrate' + str(iout) + '.mp4', iout, time = 5)
+    #     ptools.plot_outlet(model_name, pred_states, real_states, graph.nodes['params'].data['times'].detach().numpy(),
+    #                       coefs_dict, 'flowrate', out_folder + '/outlet_flowrate' + str(iout) + '.mp4', iout, time = 5)
 
     print('Error pressure = {:.5e}'.format(err_p))
     print('Error flowrate = {:.5e}'.format(err_q))
@@ -227,6 +232,7 @@ if __name__ == "__main__":
 
     path = 'models/09.01.2022_02.28.57/'
     path = 'models/13.01.2022_01.00.41/'
+    path = '/Users/luca/Desktop/14.01.2022_00.57.02/'
     params = json.loads(json.load(open(path + 'hparams.json')))
 
     gnn_model = GraphNet(params)

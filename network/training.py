@@ -190,7 +190,7 @@ if __name__ == "__main__":
                     'weight_decay': 0.36984122162067234,
                     'momentum': 0.0,
                     'batch_size': 359,
-                    'nepochs': 3}
+                    'nepochs': 1}
     dataset_params = {'normalization': 'standard',
                       'rate_noise': 0.006,
                       'label_normalization': 'min_max'}
