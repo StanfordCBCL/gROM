@@ -31,7 +31,7 @@ if __name__ == "__main__":
         optimizer='adam',
         label_normalization='min_max'
     )
-    network_params = {'infeat_nodes': 7,
+    network_params = {'infeat_nodes': 10,
                     'infeat_edges': 4,
                     'latent_size_gnn': sigopt.params.latent_size_gnn,
                     'latent_size_mlp': sigopt.params.latent_size_mlp,
