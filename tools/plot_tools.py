@@ -170,145 +170,163 @@ def plot_3D_graph(graph, state = None, coefs = None, field_name = None, cmap = c
 
     return fig, ax, scatterpts
 
-# def plot3Dgeo(geometry, area, downsampling_ratio, field, minvalue, maxvalue,
-#               nsubs = 20, cmap = cm.get_cmap("coolwarm")):
-#     fig = plt.figure()
-#     ax = plt.axes(projection='3d')
-#     ax._axis3don = False
-#
-#     geoarea = area
-#
-#     nportions = len(geometry.p_portions)
-#
-#     minarea = np.min(area)
-#     maxarea = np.max(area)
-#
-#     minx = np.infty
-#     maxx = np.NINF
-#     miny = np.infty
-#     maxy = np.NINF
-#     minz = np.infty
-#     maxz = np.NINF
-#
-#     allactualidxs = []
-#     allcircles = []
-#     allareas = []
-#     for ipor in range(nportions):
-#         points = geometry.p_portions[ipor]
-#         npoints = points.shape[0]
-#
-#         area = geometry.compute_proj_field(ipor, geoarea)
-#
-#         # compute normals
-#         normals = np.zeros(points.shape)
-#
-#         tck, u = scipy.interpolate.splprep([points[:,0],
-#                                             points[:,1],
-#                                             points[:,2]], s=0, k = 3)
-#
-#         spline_normals = scipy.interpolate.splev(u, tck, der=1)
-#
-#         for i in range(npoints):
-#             curnormal = np.array([spline_normals[0][i],spline_normals[1][i],spline_normals[2][i]])
-#             normals[i,:] = curnormal / np.linalg.norm(curnormal)
-#
-#         plt.scatter(points[:,0], points[:,1], points[:,2], color = 'black')
-#
-#         n = np.max((2, int(npoints/downsampling_ratio)))
-#         actualidxs = np.floor(np.linspace(0,npoints-1,n)).astype(int)
-#         allactualidxs.append(actualidxs)
-#         circles = []
-#         areas = []
-#         ncircle_points = 60
-#         for i in actualidxs:
-#             circle = circle3D(points[i,:], normals[i,:], np.sqrt(area[i]/np.pi), ncircle_points)
-#             # plt.plot(circle[:,0], circle[:,1], circle[:,2], c = 'blue')
-#             circles.append(circle)
-#             areas.append(area[i])
-#
-#         allcircles.append(circles)
-#         allareas.append(areas)
-#
-#         minx = np.min([minx,np.min(points[:,0])])
-#         maxx = np.max([maxx,np.max(points[:,0])])
-#         miny = np.min([miny,np.min(points[:,1])])
-#         maxy = np.max([maxy,np.max(points[:,1])])
-#         minz = np.min([minz,np.min(points[:,2])])
-#         maxz = np.max([maxz,np.max(points[:,2])])
+def plot3Dgeo(geometry, area, downsampling_ratio, field, minvalue, maxvalue,
+              nsubs = 20, cmap = cm.get_cmap("coolwarm")):
+    fig = plt.figure()
+    ax = plt.axes(projection='3d')
+    # ax._axis3don = False
 
-    # test_circle_intersect_circle()
+    geoarea = area
 
-    # delete_circles = [set() for i in range(nportions)]
-    # for ipor in range(nportions):
-    #     icircles = allcircles[ipor]
-    #     for icircle in range(len(icircles)):
-    #         for jpor in range(nportions):
-    #             jcircles = allcircles[jpor]
-    #             for jcircle in range(len(jcircles)):
-    #                 if ipor != jpor or icircle != jcircle:
-    #                     inters = circle_intersect_circle(icircles[icircle],
-    #                                                      jcircles[jcircle])
-    #                     if inters:
-    #                         delete_circles[ipor].add(icircle)
-    #                         delete_circles[jpor].add(jcircle)
+    nportions = len(geometry.p_portions)
 
-    # for ipor in range(nportions):
-    #     curset = delete_circles[ipor]
-    #     offset = 0
-    #     for icircle in curset:
-    #         del allcircles[ipor][icircle-offset]
-    #         allactualidxs[ipor][icircle-offset]
-    #         offset = offset+1
+    minarea = np.min(area)
+    maxarea = np.max(area)
 
-    # allsurfs = []
-    # allcolors = []
-    # for ipor in range(nportions):
-    #     circles = allcircles[ipor]
-    #     if len(circles) > 0:
-    #         pfield = field[geometry.portion_node_selector[ipor]][allactualidxs[ipor]]
-    #         ncircles = len(circles)
-    #         X = np.zeros((ncircle_points,(ncircles - 1) * nsubs + 1))
-    #         Y = np.zeros((ncircle_points,(ncircles - 1) * nsubs + 1))
-    #         Z = np.zeros((ncircle_points,(ncircles - 1) * nsubs + 1))
-    #         C = np.zeros((ncircle_points,(ncircles - 1) * nsubs + 1))
-    #         coefs = np.linspace(0,1,nsubs+1)
-    #         for i in range(ncircles-1):
-    #             for j in range(nsubs):
-    #                 X[:,i * nsubs + j] = circles[i][:,0] * (1 - coefs[j]) + circles[i+1][:,0] * coefs[j]
-    #                 Y[:,i * nsubs + j] = circles[i][:,1] * (1 - coefs[j]) + circles[i+1][:,1] * coefs[j]
-    #                 Z[:,i * nsubs + j] = circles[i][:,2] * (1 - coefs[j]) + circles[i+1][:,2] * coefs[j]
-    #                 C[:,i * nsubs + j] = pfield[i] * (1 - coefs[j]) + pfield[i+1] * coefs[j]
+    minx = np.infty
+    maxx = np.NINF
+    miny = np.infty
+    maxy = np.NINF
+    minz = np.infty
+    maxz = np.NINF
 
-    #         X[:,-1] = circles[-1][:,0]
-    #         Y[:,-1] = circles[-1][:,1]
-    #         Z[:,-1] = circles[-1][:,2]
-    #         C[:,-1] = areas[-1]
+    allactualidxs = []
+    allcircles = []
+    allareas = []
+    for ipor in range(nportions):
+        points = geometry.p_portions[ipor]
+        npoints = points.shape[0]
 
-    #         colors = (C - minvalue) / (maxvalue - minvalue)
-    #         allcolors.append(colors)
+        area = geometry.compute_proj_field(ipor, geoarea)
 
-    #         surf = ax.plot_surface(X,Y,Z, facecolors=cmap(colors), shade=True, alpha=0.8)
-    #         allsurfs.append(surf)
+        # compute normals
+        normals = np.zeros(points.shape)
 
-    # m = np.min([minx,miny,minz])
-    # M = np.max([maxx,maxy,maxz])
+        tck, u = scipy.interpolate.splprep([points[:,0],
+                                            points[:,1],
+                                            points[:,2]], s=0, k = 3)
 
-    # padding = np.max([np.abs(m),np.abs(M)]) * 0.1
+        spline_normals = scipy.interpolate.splev(u, tck, der=1)
 
-    # minx = minx - padding
-    # maxx = maxx + padding
-    # miny = miny - padding
-    # maxy = maxy + padding
-    # minz = minz - padding
-    # maxz = maxz + padding
+        for i in range(npoints):
+            curnormal = np.array([spline_normals[0][i],spline_normals[1][i],spline_normals[2][i]])
+            normals[i,:] = curnormal / np.linalg.norm(curnormal)
 
-    # ax.set_box_aspect((maxx-minx, maxy-miny, maxz-minz))
+        n = np.max((2, int(npoints/downsampling_ratio)))
+        actualidxs = np.floor(np.linspace(0,npoints-1,n)).astype(int)
+        allactualidxs.append(actualidxs)
+        circles = []
+        areas = []
+        ncircle_points = 60
+        for i in actualidxs:
+            circle = circle3D(points[i,:], normals[i,:], np.sqrt(area[i]/np.pi), ncircle_points)
+            # plt.plot(circle[:,0], circle[:,1], circle[:,2], c = 'blue')
+            circles.append(circle)
+            areas.append(area[i])
 
-    # ax.set_xlim((minx,maxx))
-    # ax.set_ylim((miny,maxy))
-    # ax.set_zlim((minz,maxz))
+        allcircles.append(circles)
+        allareas.append(areas)
 
-    #return allsurfs, allcolors, allactualidxs
+        minx = np.min([minx,np.min(points[:,0])])
+        maxx = np.max([maxx,np.max(points[:,0])])
+        miny = np.min([miny,np.min(points[:,1])])
+        maxy = np.max([maxy,np.max(points[:,1])])
+        minz = np.min([minz,np.min(points[:,2])])
+        maxz = np.max([maxz,np.max(points[:,2])])
+
+    node_types = []
+    for ipor in range(nportions):
+        node_types.append(np.zeros((geometry.p_portions[ipor].shape[0])))
+
+    delete_circles = [set() for i in range(nportions)]
+    redpoints = np.zeros((0,3))
+    for ipor in range(nportions):
+        icircles = allcircles[ipor]
+        for icircle in range(len(icircles)):
+            for jpor in range(nportions):
+                jcircles = allcircles[jpor]
+                for jcircle in range(len(jcircles)):
+                    if ipor != jpor or icircle != jcircle:
+                        inters = circle_intersect_circle(icircles[icircle],
+                                                         jcircles[jcircle])
+                        if inters:
+                            node_types[ipor][icircle] = 1
+                            node_types[jpor][jcircle] = 1
+
+    absorbed_portions = np.ones((nportions)) * -1
+    # see if we can merge bifurcations (if one portion is entirely in bif)
+    connectivity = np.copy(geometry.geometry.connectivity)
+    for ipor in range(nportions):
+        if np.min(node_types[ipor]) == 1:
+            bif1 = np.where(connectivity[:,ipor] == 1)[0]
+            bif2 = np.where(connectivity[:,ipor] == -1)[0]
+            if bif1.size == 0 or bif2.size == 0:
+                print('Warning: portion entirely in junction but it is not inlet and outlet')
+            connectivity[bif1,:] = connectivity[bif1,:] + connectivity[bif2,:]
+            connectivity = np.delete(connectivity, bif2, axis = 0)
+            absorbed_portions[ipor] = bif1
+
+    degrees = np.sum(np.abs(connectivity),axis = 1).astype(int)
+    print(absorbed_portions)
+    for ipor in range(nportions):
+        points = geometry.p_portions[ipor]
+
+        # find low extremum
+        low_extr = 0
+        if absorbed_portions[ipor] == -1:
+            degree = degrees[np.where(connectivity[:,ipor] == 1)[0]]
+            print(connectivity)
+        else:
+            # this could fail if more than one bif is merged because their numbering
+            # changes
+            print(absorbed_portions[ipor])
+            degree = degrees[int(absorbed_portions[ipor])]
+        while low_extr < node_types[ipor].shape[0] and \
+              node_types[ipor][low_extr]== 1:
+            node_types[ipor][low_extr] = degree
+            low_extr = low_extr + 1
+
+        # find high extremum
+        high_extr = node_types[ipor].shape[0] - 1
+        if absorbed_portions[ipor] == -1:
+            degree = degrees[np.where(connectivity[:,ipor] == -1)[0]]
+        else:
+            degree = degrees[int(absorbed_portions[ipor])]
+        while high_extr >= 0 and node_types[ipor][high_extr] == 1:
+            node_types[ipor][high_extr] = degree
+            high_extr = high_extr - 1
+
+        node_types[ipor][low_extr:high_extr+1] = 0
+
+        colors = np.zeros((geometry.p_portions[ipor].shape[0],3))
+
+        for i in range(node_types[ipor].shape[0]):
+            if node_types[ipor][i] == 3:
+                colors[i] = np.array([1,0,0])
+            if node_types[ipor][i] == 5:
+                colors[i] = np.array([0,1,0])
+
+        ax.scatter(points[:,0], points[:,1], points[:,2], color = colors, s = 2)
+
+    m = np.min([minx,miny,minz])
+    M = np.max([maxx,maxy,maxz])
+
+    padding = np.max([np.abs(m),np.abs(M)]) * 0.1
+
+    minx = minx - padding
+    maxx = maxx + padding
+    miny = miny - padding
+    maxy = maxy + padding
+    minz = minz - padding
+    maxz = maxz + padding
+
+    ax.set_box_aspect((maxx-minx, maxy-miny, maxz-minz))
+
+    ax.set_xlim((minx,maxx))
+    ax.set_ylim((miny,maxy))
+    ax.set_zlim((minz,maxz))
+
+    plt.show()
 
 def plot_linear(pressures_pred, flowrates_pred, pressures_real, flowrates_real, times,
                 coefs_dict, outfile_name, time, framerate = 60):
@@ -608,3 +626,13 @@ def plot_3D(model_name, states, times,
                                    interval=20)
     writervideo = animation.FFMpegWriter(fps=framerate)
     anim.save(outfile_name, writer = writervideo)
+
+
+model_name = '0063_1001'
+print('Create geometry: ' + model_name)
+soln = io.read_geo('../graphs/vtps/' + model_name + '.vtp').GetOutput()
+fields, _, p_array = io.get_all_arrays(soln, None)
+
+geometry = ResampledGeometry(Geometry(p_array), 5, remove_caps = True, doresample = True)
+
+plot3Dgeo(geometry, fields['area'], 1, fields['area'], 0, 1)

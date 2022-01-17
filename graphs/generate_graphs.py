@@ -30,7 +30,8 @@ def create_geometry(model_name, input_dir, sampling, remove_caps, points_to_keep
 
     return ResampledGeometry(Geometry(p_array), sampling, remove_caps, doresample), fields
 
-def convert_nodes_to_heterogeneous(nodes, edges, inlet_index, outlet_indices):
+def convert_nodes_to_heterogeneous(nodes, edges, inlet_index, outlet_indices, node_types,
+                                   tangents):
     # Dijkstra's algorithm
     def dijkstra_algorithm(nodes, edges, index):
         # make edges bidirectional for simplicity
@@ -123,7 +124,6 @@ def convert_nodes_to_heterogeneous(nodes, edges, inlet_index, outlet_indices):
         indx = np.where(np.abs(distances_outlets - mindist) < 1e-14)[0]
         single_connection_mask.append(int(indx))
 
-
     outlet_dict = {'edges': outlet_edges[single_connection_mask,:].astype(int), \
                    'distance': distances_outlets[single_connection_mask], \
                    'x': nodes[outlet_indices,:], \
@@ -152,22 +152,34 @@ def convert_nodes_to_heterogeneous(nodes, edges, inlet_index, outlet_indices):
     edges = np.concatenate((edges,np.array([edges[:,1],edges[:,0]]).transpose()),axis = 0)
 
     inner_nodes = np.delete(nodes, [inlet_index] + outlet_indices, axis = 0)
-
+    inner_node_types = np.delete(node_types, [inlet_index] + outlet_indices, axis = 0)
+    inner_tangents = np.delete(tangents, [inlet_index] + outlet_indices, axis = 0)
     nedges = edges.shape[0]
     inner_pos = np.zeros((nedges, 4))
     for iedg in range(nedges):
         inner_pos[iedg,0:3] = inner_nodes[edges[iedg,1],:] - inner_nodes[edges[iedg,0],:]
         inner_pos[iedg,3] = np.linalg.norm(inner_pos[iedg,0:2])
 
-    inner_dict = {'edges': edges, 'position': inner_pos, 'x': inner_nodes, 'mask': inner_mask}
+    inner_dict = {'edges': edges, 'position': inner_pos, 'x': inner_nodes,
+                  'mask': inner_mask, 'node_type': inner_node_types,
+                  'tangent': inner_tangents}
 
     return inner_dict, inlet_dict, outlet_dict
 
+def one_hot_encoding(vector):
+    catvalues = set()
+
+    for value in vector:
+        catvalues.add(value)
+
+
+
 def create_fixed_graph(geometry, area):
-    nodes, edges, _, inlet_index, outlet_indices = geometry.generate_nodes()
+    nodes, edges, _, inlet_index, outlet_indices, node_types, tangents = geometry.generate_nodes()
 
     inner_dict, inlet_dict, outlet_dict = \
-        convert_nodes_to_heterogeneous(nodes, edges, inlet_index, outlet_indices)
+        convert_nodes_to_heterogeneous(nodes, edges, inlet_index, outlet_indices,
+                                       node_types, tangents)
 
     graph_data = {('inner', 'inner_to_inner', 'inner'): \
                   (inner_dict['edges'][:,0], inner_dict['edges'][:,1]),
@@ -197,29 +209,14 @@ def create_fixed_graph(geometry, area):
     graph.edges['out_to_inner'].data['edges'] = \
                         torch.from_numpy(outlet_dict['edges'])
 
-    # find inner node type
-    edg0 = inner_dict['edges'][:,0]
-    edg1 = inner_dict['edges'][:,1]
-    # inner edges are bidirectional => /2
-    nnodes = np.max(inner_dict['edges']) + 1
-    node_degree = np.zeros((nnodes))
-    for j in range(0, nnodes):
-        node_degree[j] = (np.count_nonzero(edg0 == j) + \
-                          np.count_nonzero(edg1 == j))
-
-    node_degree = np.array(node_degree)
-    degrees = set()
-    for j in range(0, nnodes):
-        degrees.add(node_degree[j])
-
-    node_type = np.zeros((nnodes,len(degrees)))
-    for j in range(0, nnodes):
-        node_type[j,int(node_degree[j] / 2) - 1] = 1
-
-    graph.nodes['inner'].data['node_type'] = torch.from_numpy(node_type.astype(int))
     graph.nodes['inner'].data['x'] = torch.from_numpy(inner_dict['x'])
     graph.nodes['inner'].data['global_mask'] = torch.from_numpy(inner_dict['mask'])
     graph.nodes['inner'].data['area'] = torch.from_numpy(area[inner_dict['mask']].astype(DTYPE))
+    graph.nodes['inner'].data['node_type'] = torch.nn.functional.one_hot(
+                                             torch.from_numpy(
+                                             np.squeeze(
+                                             inner_dict['node_type'].astype(int))))
+    graph.nodes['inner'].data['tangent'] = torch.from_numpy(inner_dict['tangent'])
 
     graph.nodes['inlet'].data['global_mask'] = torch.from_numpy(inlet_dict['mask'])
     graph.nodes['inlet'].data['area'] = torch.from_numpy(area[inlet_dict['mask']].astype(DTYPE))
@@ -227,7 +224,6 @@ def create_fixed_graph(geometry, area):
 
     graph.nodes['outlet'].data['global_mask'] = torch.from_numpy(outlet_dict['mask'])
     graph.nodes['outlet'].data['area'] = torch.from_numpy(area[outlet_dict['mask']].astype(DTYPE))
-    print(outlet_dict['x'].shape)
     graph.nodes['outlet'].data['x'] = torch.from_numpy(outlet_dict['x'])
 
     print('Graph generated:')
@@ -354,9 +350,10 @@ def save_animation(pressure, velocity, filename):
     anim.save(filename + '.mp4', writer = writervideo)
 
 def generate_graphs(model_name, input_dir, save = True):
-    geo, fields = create_geometry(model_name, input_dir, 15, remove_caps = True,
+    geo, fields = create_geometry(model_name, input_dir, 10, remove_caps = True,
                                   points_to_keep = None, doresample = True)
     pressure, velocity = io.gather_pressures_velocities(fields)
+    geo.find_points_type(fields['area'])
     pressure, velocity, area = geo.generate_fields(pressure,
                                                    velocity,
                                                    fields['area'])

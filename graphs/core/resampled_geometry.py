@@ -30,7 +30,6 @@ class ResampledGeometry:
             if not doresample:
                 self.p_portions.append(p_portion)
             else:
-
                 # compute h of the portion
                 alength = 0
                 for i in range(0, p_portion.shape[0] - 1):
@@ -46,6 +45,9 @@ class ResampledGeometry:
                 x, y, z = interpolate.splev(u_fine, tck)
                 p_portion = np.vstack((x,y,z)).transpose()
                 self.p_portions.append(p_portion)
+
+                if p_portion.shape[0] < 2:
+                    raise ValueError("Too few points in portion, decrease resample frequency.")
 
     def construct_interpolation_matrices(self):
         p_matrices = []
@@ -214,9 +216,152 @@ class ResampledGeometry:
         ax.plot(xsf, gf, 'k--')
         ax.plot(xsp, gp, 'r-')
 
+    def find_points_type(self, geoarea):
+        def circle_intersect_circle(center1, normal1, radius1,
+                                    center2, normal2, radius2):
+
+            # then the planes are parallel
+            if (np.linalg.norm(center1 - center2) > 1e-12 and
+                np.abs(np.dot(normal1, normal2) - 1) < 1e-12):
+                return False
+
+            # we find an intersection point between the two planes (we fix x to 0)
+            mat = np.zeros((3,3))
+            mat[0,:] = normal1
+            mat[1,:] = normal2
+            mat[2,0] = 1
+
+            b = np.zeros((3))
+            b[0] = np.dot(normal1,center1)
+            b[1] = np.dot(normal2,center2)
+
+            x = np.linalg.solve(mat, b)
+
+            # line vector of the intersection
+            line = np.cross(normal1, normal2)
+            line = line / np.linalg.norm(line)
+
+            # find closest point to center1 laying on the line
+            t = np.dot(center1 - x, line)
+            cp = x + line * t
+
+            # then the point belongs to circle1
+            if np.linalg.norm(center1-cp) <= radius1:
+                # then the point belongs to circle2
+                if np.linalg.norm(center2-cp) <= radius2:
+                    return True
+
+            # we do the same for circle 2
+            t = np.dot(center2 - x, line)
+            cp = x + line * t
+
+            # then the point belongs to circle1
+            if np.linalg.norm(center2-cp) <= radius2:
+                # then the point belongs to circle2
+                if np.linalg.norm(center1-cp) <= radius1:
+                    return True
+
+            return False
+
+        nportions = len(self.p_portions)
+
+        allnormals = []
+        allradii = []
+        for ipor in range(nportions):
+            points = self.p_portions[ipor]
+            npoints = points.shape[0]
+
+            p_area = self.compute_proj_field(ipor, geoarea)
+
+            # compute normals
+            normals = np.zeros(points.shape)
+
+            k = np.min((3, points.shape[0]-1))
+            tck, u = scipy.interpolate.splprep([points[:,0],
+                                                points[:,1],
+                                                points[:,2]], s=0, k = k)
+
+            spline_tangents = scipy.interpolate.splev(u, tck, der=1)
+
+            for i in range(npoints):
+                curnormal = np.array([spline_tangents[0][i],
+                                      spline_tangents[1][i],
+                                      spline_tangents[2][i]])
+                normals[i,:] = curnormal / np.linalg.norm(curnormal)
+
+            allnormals.append(normals)
+            allradii.append(np.sqrt(p_area/np.pi))
+
+        node_types = []
+        for ipor in range(nportions):
+            node_types.append(np.zeros((self.p_portions[ipor].shape[0])))
+
+        for ipor in range(nportions):
+            for icircle in range(allnormals[ipor].shape[0]):
+                for jpor in range(nportions):
+                    for jcircle in range(allnormals[jpor].shape[0]):
+                        if ipor != jpor or icircle != jcircle:
+                            inters = circle_intersect_circle(self.p_portions[ipor][icircle,:],
+                                                             allnormals[ipor][icircle,:],
+                                                             allradii[ipor][icircle],
+                                                             self.p_portions[jpor][jcircle,:],
+                                                             allnormals[jpor][jcircle,:],
+                                                             allradii[jpor][jcircle])
+                            if inters:
+                                node_types[ipor][icircle] = 1
+                                node_types[jpor][jcircle] = 1
+
+        absorbed_portions = np.ones((nportions)) * -1
+        # see if we can merge bifurcations (if one portion is entirely in bif)
+        connectivity = np.copy(self.geometry.connectivity)
+        for ipor in range(nportions):
+            if np.min(node_types[ipor]) == 1:
+                bif1 = np.where(connectivity[:,ipor] == 1)[0]
+                bif2 = np.where(connectivity[:,ipor] == -1)[0]
+                if bif1.size == 0 or bif2.size == 0:
+                    print('Warning: portion entirely in junction but it is not inlet and outlet')
+                connectivity[bif1,:] = connectivity[bif1,:] + connectivity[bif2,:]
+                connectivity = np.delete(connectivity, bif2, axis = 0)
+                absorbed_portions[ipor] = bif1
+
+        # we want node_type = 1 for standard 3-way junctions
+        degrees = np.sum(np.abs(connectivity),axis = 1).astype(int) - 2
+        for ipor in range(nportions):
+            points = self.p_portions[ipor]
+
+            # find low extremum
+            low_extr = 0
+            if absorbed_portions[ipor] == -1:
+                degree = degrees[np.where(connectivity[:,ipor] == 1)[0]]
+            else:
+                # this could fail if more than one bif is merged because their numbering
+                # changes
+                degree = degrees[int(absorbed_portions[ipor])]
+            while low_extr < node_types[ipor].shape[0] and \
+                  node_types[ipor][low_extr]== 1:
+                node_types[ipor][low_extr] = degree
+                low_extr = low_extr + 1
+
+            # find high extremum
+            high_extr = node_types[ipor].shape[0] - 1
+            if absorbed_portions[ipor] == -1:
+                degree = degrees[np.where(connectivity[:,ipor] == -1)[0]]
+            else:
+                degree = degrees[int(absorbed_portions[ipor])]
+            while high_extr >= 0 and node_types[ipor][high_extr] == 1:
+                node_types[ipor][high_extr] = degree
+                high_extr = high_extr - 1
+
+            node_types[ipor][low_extr:high_extr+1] = 0
+
+        self.node_types = node_types
+        self.tangents = allnormals
+
     def generate_nodes(self):
         nodes = np.zeros((0,3))
         edges = np.zeros((0,2))
+        node_type = np.zeros((0,1))
+        tangent = np.zeros((0,3))
 
         inlets = []
         outlets = []
@@ -239,9 +384,13 @@ class ResampledGeometry:
             isoutlets.append(isOutlet)
             if isOutlet:
                 nodes = np.vstack((nodes, self.p_portions[ipor][1:,:]))
+                node_type = np.vstack((node_type, np.expand_dims(self.node_types[ipor][1:],axis=1)))
+                tangent = np.vstack((tangent, self.tangents[ipor][1:,:]))
                 npoints = self.p_portions[ipor].shape[0] - 1
             else:
                 nodes = np.vstack((nodes, self.p_portions[ipor]))
+                node_type = np.vstack((node_type, np.expand_dims(self.node_types[ipor],axis=1)))
+                tangent = np.vstack((tangent, self.tangents[ipor]))
                 npoints = self.p_portions[ipor].shape[0]
 
             for i in range(0, npoints - 1):
@@ -285,8 +434,8 @@ class ResampledGeometry:
                 inlet_node = self.offsets[i]
 
         edges = edges.astype(np.int)
-        return nodes.astype(np.float64), edges, lengths, inlet_node, outlet_nodes
-    
+        return nodes, edges, lengths, inlet_node, outlet_nodes, node_type, tangent
+
     def compute_graph_field(self, field):
         if not hasattr(self, 'isoutlets'):
             self.generate_nodes()
@@ -301,7 +450,7 @@ class ResampledGeometry:
             else:
                 newfield = np.vstack((newfield, np.expand_dims(f, axis = 1)))
 
-        return newfield.astype(np.float64)    
+        return newfield.astype(np.float64)
 
     def generate_fields(self, pressures, velocities, areas):
 
