@@ -170,163 +170,53 @@ def plot_3D_graph(graph, state = None, coefs = None, field_name = None, cmap = c
 
     return fig, ax, scatterpts
 
-def plot3Dgeo(geometry, area, downsampling_ratio, field, minvalue, maxvalue,
-              nsubs = 20, cmap = cm.get_cmap("coolwarm")):
+def plot_node_types(graph):
+    cmap = cm.get_cmap("viridis")
     fig = plt.figure()
+    # fig.subplots_adjust(left=0, bottom=0, right=1, top=1, wspace=None, hspace=None)
     ax = plt.axes(projection='3d')
-    # ax._axis3don = False
+    ax._axis3don = False
 
-    geoarea = area
+    node_types = graph.nodes['inner'].data['node_type'].detach().numpy()
 
-    nportions = len(geometry.p_portions)
+    colors = np.zeros((node_types.shape[0]))
 
-    minarea = np.min(area)
-    maxarea = np.max(area)
+    for i in range(node_types.shape[0]):
+        colors[i] = np.where(node_types[i,:] == 1)[0]
 
-    minx = np.infty
-    maxx = np.NINF
-    miny = np.infty
-    maxy = np.NINF
-    minz = np.infty
-    maxz = np.NINF
+    colors = colors / np.max(colors)
 
-    allactualidxs = []
-    allcircles = []
-    allareas = []
-    for ipor in range(nportions):
-        points = geometry.p_portions[ipor]
-        npoints = points.shape[0]
+    scatterpts = None
+    # plot inlet
+    xin = graph.nodes['inlet'].data['x'].detach().numpy()
+    ax.scatter(xin[:,0], xin[:,1], xin[:,2], color='red', depthshade=0)
 
-        area = geometry.compute_proj_field(ipor, geoarea)
+    # plot outlet
+    xout = graph.nodes['outlet'].data['x'].detach().numpy()
+    ax.scatter(xout[:,0], xout[:,1], xout[:,2], color='green', depthshade=0)
 
-        # compute normals
-        normals = np.zeros(points.shape)
+    # plot inner
+    xinner = graph.nodes['inner'].data['x'].detach().numpy()
+    ax.scatter(xinner[:,0], xinner[:,1], xinner[:,2], color=cmap(colors), depthshade=0)
 
-        tck, u = scipy.interpolate.splprep([points[:,0],
-                                            points[:,1],
-                                            points[:,2]], s=0, k = 3)
+    x = np.concatenate((xin,xout,xinner),axis=0)
 
-        spline_normals = scipy.interpolate.splev(u, tck, der=1)
+    minx = np.min(x, axis=0)
+    maxx = np.max(x, axis=0)
 
-        for i in range(npoints):
-            curnormal = np.array([spline_normals[0][i],spline_normals[1][i],spline_normals[2][i]])
-            normals[i,:] = curnormal / np.linalg.norm(curnormal)
-
-        n = np.max((2, int(npoints/downsampling_ratio)))
-        actualidxs = np.floor(np.linspace(0,npoints-1,n)).astype(int)
-        allactualidxs.append(actualidxs)
-        circles = []
-        areas = []
-        ncircle_points = 60
-        for i in actualidxs:
-            circle = circle3D(points[i,:], normals[i,:], np.sqrt(area[i]/np.pi), ncircle_points)
-            # plt.plot(circle[:,0], circle[:,1], circle[:,2], c = 'blue')
-            circles.append(circle)
-            areas.append(area[i])
-
-        allcircles.append(circles)
-        allareas.append(areas)
-
-        minx = np.min([minx,np.min(points[:,0])])
-        maxx = np.max([maxx,np.max(points[:,0])])
-        miny = np.min([miny,np.min(points[:,1])])
-        maxy = np.max([maxy,np.max(points[:,1])])
-        minz = np.min([minz,np.min(points[:,2])])
-        maxz = np.max([maxz,np.max(points[:,2])])
-
-    node_types = []
-    for ipor in range(nportions):
-        node_types.append(np.zeros((geometry.p_portions[ipor].shape[0])))
-
-    delete_circles = [set() for i in range(nportions)]
-    redpoints = np.zeros((0,3))
-    for ipor in range(nportions):
-        icircles = allcircles[ipor]
-        for icircle in range(len(icircles)):
-            for jpor in range(nportions):
-                jcircles = allcircles[jpor]
-                for jcircle in range(len(jcircles)):
-                    if ipor != jpor or icircle != jcircle:
-                        inters = circle_intersect_circle(icircles[icircle],
-                                                         jcircles[jcircle])
-                        if inters:
-                            node_types[ipor][icircle] = 1
-                            node_types[jpor][jcircle] = 1
-
-    absorbed_portions = np.ones((nportions)) * -1
-    # see if we can merge bifurcations (if one portion is entirely in bif)
-    connectivity = np.copy(geometry.geometry.connectivity)
-    for ipor in range(nportions):
-        if np.min(node_types[ipor]) == 1:
-            bif1 = np.where(connectivity[:,ipor] == 1)[0]
-            bif2 = np.where(connectivity[:,ipor] == -1)[0]
-            if bif1.size == 0 or bif2.size == 0:
-                print('Warning: portion entirely in junction but it is not inlet and outlet')
-            connectivity[bif1,:] = connectivity[bif1,:] + connectivity[bif2,:]
-            connectivity = np.delete(connectivity, bif2, axis = 0)
-            absorbed_portions[ipor] = bif1
-
-    degrees = np.sum(np.abs(connectivity),axis = 1).astype(int)
-    print(absorbed_portions)
-    for ipor in range(nportions):
-        points = geometry.p_portions[ipor]
-
-        # find low extremum
-        low_extr = 0
-        if absorbed_portions[ipor] == -1:
-            degree = degrees[np.where(connectivity[:,ipor] == 1)[0]]
-            print(connectivity)
-        else:
-            # this could fail if more than one bif is merged because their numbering
-            # changes
-            print(absorbed_portions[ipor])
-            degree = degrees[int(absorbed_portions[ipor])]
-        while low_extr < node_types[ipor].shape[0] and \
-              node_types[ipor][low_extr]== 1:
-            node_types[ipor][low_extr] = degree
-            low_extr = low_extr + 1
-
-        # find high extremum
-        high_extr = node_types[ipor].shape[0] - 1
-        if absorbed_portions[ipor] == -1:
-            degree = degrees[np.where(connectivity[:,ipor] == -1)[0]]
-        else:
-            degree = degrees[int(absorbed_portions[ipor])]
-        while high_extr >= 0 and node_types[ipor][high_extr] == 1:
-            node_types[ipor][high_extr] = degree
-            high_extr = high_extr - 1
-
-        node_types[ipor][low_extr:high_extr+1] = 0
-
-        colors = np.zeros((geometry.p_portions[ipor].shape[0],3))
-
-        for i in range(node_types[ipor].shape[0]):
-            if node_types[ipor][i] == 3:
-                colors[i] = np.array([1,0,0])
-            if node_types[ipor][i] == 5:
-                colors[i] = np.array([0,1,0])
-
-        ax.scatter(points[:,0], points[:,1], points[:,2], color = colors, s = 2)
-
-    m = np.min([minx,miny,minz])
-    M = np.max([maxx,maxy,maxz])
+    m = np.min(minx)
+    M = np.max(maxx)
 
     padding = np.max([np.abs(m),np.abs(M)]) * 0.1
 
     minx = minx - padding
     maxx = maxx + padding
-    miny = miny - padding
-    maxy = maxy + padding
-    minz = minz - padding
-    maxz = maxz + padding
 
-    ax.set_box_aspect((maxx-minx, maxy-miny, maxz-minz))
+    ax.set_box_aspect((maxx[0]-minx[0], maxx[1]-minx[1], maxx[2]-minx[2]))
 
-    ax.set_xlim((minx,maxx))
-    ax.set_ylim((miny,maxy))
-    ax.set_zlim((minz,maxz))
-
-    plt.show()
+    ax.set_xlim((minx[0],maxx[0]))
+    ax.set_ylim((minx[1],maxx[1]))
+    ax.set_zlim((minx[2],maxx[2]))
 
 def plot_linear(pressures_pred, flowrates_pred, pressures_real, flowrates_real, times,
                 coefs_dict, outfile_name, time, framerate = 60):
@@ -627,12 +517,9 @@ def plot_3D(model_name, states, times,
     writervideo = animation.FFMpegWriter(fps=framerate)
     anim.save(outfile_name, writer = writervideo)
 
-
-model_name = '0063_1001'
-print('Create geometry: ' + model_name)
-soln = io.read_geo('../graphs/vtps/' + model_name + '.vtp').GetOutput()
-fields, _, p_array = io.get_all_arrays(soln, None)
-
-geometry = ResampledGeometry(Geometry(p_array), 5, remove_caps = True, doresample = True)
-
-plot3Dgeo(geometry, fields['area'], 1, fields['area'], 0, 1)
+if __name__ == "__main__":
+    model_name = '0063_1001'
+    print('Create geometry: ' + model_name)
+    graphs = pp.load_graphs('../graphs/data/' + model_name + '.grph')[0]
+    plot_node_types(graphs[0])
+    plt.show()

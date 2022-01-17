@@ -56,14 +56,16 @@ def set_state(graph, state_dict, next_state_dict = None, noise_dict = None, coef
                 graph.nodes[node_type].data['n_features'] = torch.cat((graph.nodes[node_type].data['pressure'], \
                                                                        graph.nodes[node_type].data['flowrate'], \
                                                                        graph.nodes[node_type].data['area'], \
-                                                                       graph.nodes[node_type].data['node_type']), 1)
+                                                                       graph.nodes[node_type].data['node_type'],
+                                                                       graph.nodes[node_type].data['tangent']), 1)
             else:
                 graph.nodes[node_type].data['n_features'] = torch.cat((graph.nodes[node_type].data['pressure'] + \
                                                                        noise_dict['pressure'], \
                                                                        graph.nodes[node_type].data['flowrate'] + \
                                                                        noise_dict['flowrate'], \
                                                                        graph.nodes[node_type].data['area'], \
-                                                                       graph.nodes[node_type].data['node_type']), 1)
+                                                                       graph.nodes[node_type].data['node_type'],
+                                                                       graph.nodes[node_type].data['tangent']), 1)
         else:
             graph.nodes[node_type].data['n_features'] = torch.cat((graph.nodes[node_type].data['pressure'], \
                                                                    graph.nodes[node_type].data['pressure_next'], \

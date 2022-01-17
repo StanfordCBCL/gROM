@@ -178,7 +178,7 @@ def launch_training(model_name, optimizer_name, params_dict,
     return gnn_model, loss, mae, dataset, coefs_dict, folder
 
 if __name__ == "__main__":
-    params_dict = {'infeat_nodes': 7,
+    params_dict = {'infeat_nodes': 10,
                    'infeat_edges': 4,
                    'latent_size_gnn': 18,
                    'latent_size_mlp': 64,
