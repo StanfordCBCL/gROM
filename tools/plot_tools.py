@@ -10,8 +10,6 @@ import matplotlib.pyplot as plt
 import numpy as np
 import scipy
 from scipy import interpolate
-import geomdl.fitting
-from geomdl.visualization import VisMPL
 import matplotlib.cm as cm
 from matplotlib.colors import Normalize
 from matplotlib import animation

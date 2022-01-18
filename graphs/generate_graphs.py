@@ -359,8 +359,8 @@ def generate_graphs(model_name, input_dir, save = True):
                                                    fields['area'])
 
     # the period
-    T = 0.7
-    npoints = 15000
+    T = 6.6670000000e-1
+    npoints = 10000
 
     print('Augmenting timesteps')
     pressure = augment_time(pressure, T, npoints)
