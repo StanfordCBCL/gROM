@@ -21,6 +21,7 @@ import preprocessing as pp
 import json
 import training
 import plot_tools as ptools
+import matplotlib.cm as cm
 
 def test_train(gnn_model, model_name, dataset):
     num_examples = len(dataset)
@@ -40,22 +41,45 @@ def test_train(gnn_model, model_name, dataset):
 
     return coefs_dict
 
+def get_mask(graph,node_type):
+    return np.squeeze(graph.nodes[node_type].data['global_mask'].detach().numpy())
+
+def get_color_nodes(graph, cmap = cm.get_cmap("plasma")):
+    nnodes = graph.nodes['inner'].data['global_mask'].shape[0] + \
+             graph.nodes['inlet'].data['global_mask'].shape[0] + \
+             graph.nodes['outlet'].data['global_mask'].shape[0]
+
+    color_node = np.zeros((nnodes,4))
+    node_type = graph.nodes['inner'].data['node_type'].detach().numpy()
+
+    colors = np.zeros((node_type.shape[0]))
+
+    for i in range(node_type.shape[0]):
+        colors[i] = np.where(node_type[i,:] == 1)[0]
+
+    colors = colors / np.max(colors)
+
+    color_node[get_mask(graph,'inner')] = cmap(colors)
+    color_node[get_mask(graph,'inlet')] = np.array([1,0,0,1])
+    color_node[get_mask(graph,'outlet')] = np.array([0,1,0,1])
+
+    return color_node
+
 def get_solution_all_nodes(state, graph):
-    def get_mask(node_type):
-        return np.squeeze(graph.nodes[node_type].data['global_mask'].detach().numpy())
+
     nnodes = state['pressure']['inner'].shape[0] + \
              state['pressure']['inlet'].shape[0] + \
              state['pressure']['outlet'].shape[0]
 
     pressure = np.zeros((nnodes,1))
-    pressure[get_mask('inlet')] = state['pressure']['inlet']
-    pressure[get_mask('inner')] = state['pressure']['inner']
-    pressure[get_mask('outlet')] = state['pressure']['outlet']
+    pressure[get_mask(graph,'inlet')] = state['pressure']['inlet']
+    pressure[get_mask(graph,'inner')] = state['pressure']['inner']
+    pressure[get_mask(graph,'outlet')] = state['pressure']['outlet']
 
     flowrate = np.zeros((nnodes,1))
-    flowrate[get_mask('inlet')] = state['flowrate']['inlet']
-    flowrate[get_mask('inner')] = state['flowrate']['inner']
-    flowrate[get_mask('outlet')] = state['flowrate']['outlet']
+    flowrate[get_mask(graph,'inlet')] = state['flowrate']['inlet']
+    flowrate[get_mask(graph,'inner')] = state['flowrate']['inner']
+    flowrate[get_mask(graph,'outlet')] = state['flowrate']['outlet']
 
     return pressure, flowrate
 
@@ -118,6 +142,7 @@ def test_rollout(model, model_name, dataset, coefs_dict, do_plot, out_folder):
     pressures_real = [pressure_exact]
     flowrates_pred = [flowrate_pred]
     flowrates_real = [flowrate_exact]
+    start = time.time()
     for t in range(len(times)-1):
         tp1 = t+1
 
@@ -140,7 +165,6 @@ def test_rollout(model, model_name, dataset, coefs_dict, do_plot, out_folder):
         prev_p = graph.nodes['inner'].data['pressure'].detach().numpy().squeeze()
 
         p = dp + prev_p
-
 
         dq = bring_to_range_q(pred[:,1].detach().numpy())
 
@@ -183,6 +207,11 @@ def test_rollout(model, model_name, dataset, coefs_dict, do_plot, out_folder):
         pred_states.append(new_state)
         real_states.append(exact_state)
 
+    end = time.time()
+
+    print('Rollout time = {:.2f} s for {:.0f} timesteps'.format(end - start,
+                                                                len(times)))
+
     err_p = np.sqrt(err_p / norm_p)
     err_q = np.sqrt(err_q / norm_q)
 
@@ -202,25 +231,13 @@ def test_rollout(model, model_name, dataset, coefs_dict, do_plot, out_folder):
                     coefs_dict, 'flowrate', outfile_name=out_folder + '/3d_flowrate_real.mp4',
                     time = 5)
 
-
     ptools.plot_linear(pressures_pred, flowrates_pred, pressures_real, flowrates_real,
+                       get_color_nodes(graph, cmap = cm.get_cmap("plasma")),
                        graph.nodes['params'].data['times'].detach().numpy(),
                        coefs_dict, out_folder + '/linear.mp4', time = 5)
 
-    # ptools.plot_inlet(model_name, pred_states, real_states, graph.nodes['params'].data['times'].detach().numpy(),
-    #                   coefs_dict, 'pressure', out_folder + '/inlet_pressure.mp4', time = 5)
-    #
-    # ptools.plot_inlet(model_name, pred_states, real_states, graph.nodes['params'].data['times'].detach().numpy(),
-    #                   coefs_dict, 'flowrate', out_folder + '/inlet_flowrate.mp4', time = 5)
-    #
-    # nout = graph.nodes['outlet'].data['pressure_next'].shape[0]
-    #
-    # for iout in range(nout):
-    #     ptools.plot_outlet(model_name, pred_states, real_states, graph.nodes['params'].data['times'].detach().numpy(),
-    #                       coefs_dict, 'pressure', out_folder + '/outlet_pressure' + str(iout) + '.mp4', iout, time = 5)
-    #
-    #     ptools.plot_outlet(model_name, pred_states, real_states, graph.nodes['params'].data['times'].detach().numpy(),
-    #                       coefs_dict, 'flowrate', out_folder + '/outlet_flowrate' + str(iout) + '.mp4', iout, time = 5)
+    ptools.plot_node_types(graph, out_folder + '/node_types.mp4', time = 5,
+                           cmap = cm.get_cmap("plasma"))
 
     print('Error pressure = {:.5e}'.format(err_p))
     print('Error flowrate = {:.5e}'.format(err_q))
@@ -230,9 +247,7 @@ def test_rollout(model, model_name, dataset, coefs_dict, do_plot, out_folder):
 
 if __name__ == "__main__":
 
-    path = 'models/09.01.2022_02.28.57/'
-    path = 'models/13.01.2022_01.00.41/'
-    path = '/Users/luca/Desktop/14.01.2022_00.57.02/'
+    path = '/Users/luca/Desktop/17.01.2022_20.24.40/'
     params = json.loads(json.load(open(path + 'hparams.json')))
 
     gnn_model = GraphNet(params)

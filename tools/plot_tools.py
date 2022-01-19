@@ -10,10 +10,10 @@ import matplotlib.pyplot as plt
 import numpy as np
 import scipy
 from scipy import interpolate
-import matplotlib.cm as cm
 from matplotlib.colors import Normalize
 from matplotlib import animation
 import preprocessing as pp
+import matplotlib.cm as cm
 
 def circle3D(center, normal, radius, npoints):
     theta = np.linspace(0, 2 * np.pi, npoints)
@@ -168,8 +168,9 @@ def plot_3D_graph(graph, state = None, coefs = None, field_name = None, cmap = c
 
     return fig, ax, scatterpts
 
-def plot_node_types(graph):
-    cmap = cm.get_cmap("viridis")
+def plot_node_types(graph, outfile_name, time = 5, cmap = cm.get_cmap("viridis")):
+    framerate = 60
+    nframes = time * framerate
     fig = plt.figure()
     # fig.subplots_adjust(left=0, bottom=0, right=1, top=1, wspace=None, hspace=None)
     ax = plt.axes(projection='3d')
@@ -216,8 +217,19 @@ def plot_node_types(graph):
     ax.set_ylim((minx[1],maxx[1]))
     ax.set_zlim((minx[2],maxx[2]))
 
-def plot_linear(pressures_pred, flowrates_pred, pressures_real, flowrates_real, times,
-                coefs_dict, outfile_name, time, framerate = 60):
+    angles = np.floor(np.linspace(0,360,nframes)).astype(int)
+    def animation_frame(i):
+        ax.view_init(elev=10., azim=angles[i])
+        return
+
+    anim = animation.FuncAnimation(fig, animation_frame,
+                                   frames=nframes,
+                                   interval=20)
+    writervideo = animation.FFMpegWriter(fps=framerate)
+    anim.save(outfile_name, writer = writervideo)
+
+def plot_linear(pressures_pred, flowrates_pred, pressures_real, flowrates_real,
+                colors, times, coefs_dict, outfile_name, time, framerate = 60):
 
     nframes = time * framerate
     indices = np.floor(np.linspace(0,len(pressures_pred)-1,nframes)).astype(int)
@@ -240,37 +252,41 @@ def plot_linear(pressures_pred, flowrates_pred, pressures_real, flowrates_real, 
     flowrates_real = selected_real_flowrate
     times = selected_times
 
+    nnodes = len(pressures_pred[0])
     fig, ax = plt.subplots(2)
-    line_pred_p, = ax[0].plot([],[],'r')
-    line_pred_p.set_label('GNN')
-    line_real_p, = ax[0].plot([],[],'--b')
-    line_real_p.set_label('Ground truth')
-    line_pred_q, = ax[1].plot([],[],'r')
-    line_pred_q.set_label('GNN')
-    line_real_q, = ax[1].plot([],[],'--b')
-    line_real_q.set_label('Ground truth')
-    ax[0].legend(loc='upper right')
-    ax[1].legend(loc='upper right')
 
+    scatter_real_p = ax[0].scatter(range(0,nnodes), \
+                                   pp.invert_normalize_function(pressures_real[0],'pressure',coefs_dict) / 1333.2, color='black', s = 1.5, alpha = 0.3)
+    scatter_pred_p = ax[0].scatter(range(0,nnodes), \
+                                   pp.invert_normalize_function(pressures_pred[0],'pressure',coefs_dict) / 1333.2, color=colors, s = 1)
+    scatter_real_q = ax[1].scatter(range(0,nnodes), \
+                                   pp.invert_normalize_function(flowrates_real[0],'flowrate',coefs_dict), color='black', s = 1.5, alpha = 0.3)
+    scatter_pred_q = ax[1].scatter(range(0,nnodes), \
+                                   pp.invert_normalize_function(flowrates_pred[0],'flowrate',coefs_dict), color=colors, s = 1)
+
+    nodesidxs = np.expand_dims(np.arange(nnodes),axis=1)
     ax[1].set_xlabel('graph node index')
     ax[0].set_ylabel('pressure [mmHg]')
     ax[1].set_ylabel('flowrate [cc^3/s]')
-
     def animation_frame(i):
-        line_pred_p.set_xdata(range(0,len(pressures_pred[i])))
-        line_pred_p.set_ydata(pp.invert_normalize_function(pressures_pred[i],'pressure',coefs_dict) / 1333.2)
-        line_real_p.set_xdata(range(0,len(pressures_pred[i])))
-        line_real_p.set_ydata(pp.invert_normalize_function(pressures_real[i],'pressure',coefs_dict) / 1333.2)
-        line_pred_q.set_xdata(range(0,len(flowrates_pred[i])))
-        line_pred_q.set_ydata(pp.invert_normalize_function(flowrates_pred[i],'flowrate',coefs_dict))
-        line_real_q.set_xdata(range(0,len(flowrates_pred[i])))
-        line_real_q.set_ydata(pp.invert_normalize_function(flowrates_real[i],'flowrate',coefs_dict))
+        dp = pp.invert_normalize_function(pressures_pred[i],'pressure',coefs_dict) / 1333.2
+        dp = np.concatenate((nodesidxs, dp),axis = 1)
+        scatter_pred_p.set_offsets(dp)
+        dp = pp.invert_normalize_function(pressures_real[i],'pressure',coefs_dict) / 1333.2
+        dp = np.concatenate((nodesidxs, dp),axis = 1)
+        scatter_real_p.set_offsets(dp)
+        dq = pp.invert_normalize_function(flowrates_pred[i],'flowrate',coefs_dict)
+        dq = np.concatenate((nodesidxs, dq),axis = 1)
+        scatter_pred_q.set_offsets(dq)
+        dq = pp.invert_normalize_function(flowrates_real[i],'flowrate',coefs_dict)
+        dq = np.concatenate((nodesidxs, dq),axis = 1)
+        scatter_real_q.set_offsets(dq)
         ax[0].set_title('{:.2f} s'.format(float(times[i])))
         ax[0].set_xlim(0,len(pressures_pred[i]))
         ax[0].set_ylim((coefs_dict['pressure']['min']-np.abs(coefs_dict['pressure']['min'])*0.1)/1333.2,(coefs_dict['pressure']['max']+np.abs(coefs_dict['pressure']['max'])*0.1) / 1333.2)
         ax[1].set_xlim(0,len(flowrates_pred[i]))
         ax[1].set_ylim(coefs_dict['flowrate']['min']-np.abs(coefs_dict['flowrate']['min'])*0.1,coefs_dict['flowrate']['max']+np.abs(coefs_dict['flowrate']['max'])*0.1)
-        return line_pred_p, line_real_p, line_pred_q, line_real_q
+        return scatter_pred_p,
 
     anim = animation.FuncAnimation(fig, animation_frame,
                                    frames=len(pressures_pred),
