@@ -255,9 +255,9 @@ class ResampledGeometry:
             t = np.dot(center2 - x, line)
             cp = x + line * t
 
-            # then the point belongs to circle1
+            # then the point belongs to circle2
             if np.linalg.norm(center2-cp) <= radius2:
-                # then the point belongs to circle2
+                # then the point belongs to circle1
                 if np.linalg.norm(center1-cp) <= radius1:
                     return True
 
@@ -310,6 +310,16 @@ class ResampledGeometry:
                             if inters:
                                 node_types[ipor][icircle] = 1
                                 node_types[jpor][jcircle] = 1
+
+        for ipor in range(nportions):
+            if node_types[ipor].shape[0] > 2:
+                extr1 = node_types[ipor][0]
+                extr2 = node_types[ipor][-1]
+                # we apply moving average with window = 3 to avoid situations like 1,0,1,1,1,1
+                node_types[ipor] = np.around(np.convolve(node_types[ipor],
+                                             np.array([1,1,1]),'same') / 3)
+                node_types[ipor][0] = extr1
+                node_types[ipor][-1] = extr2
 
         absorbed_portions = np.ones((nportions)) * -1
         # see if we can merge bifurcations (if one portion is entirely in bif)

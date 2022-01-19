@@ -35,67 +35,6 @@ def circle3D(center, normal, radius, npoints):
 
     return circle
 
-def circle_intersect_circle(circle1, circle2):
-    center1 = np.mean(circle1, axis=0)
-
-    normal1 = np.cross((circle1[0,:]-center1),(circle1[1,:]-center1))
-    normal1 = normal1 / np.linalg.norm(normal1)
-
-    center2 = np.mean(circle2, axis=0)
-
-    normal2 = np.cross((circle2[0,:]-center2),(circle2[1,:]-center2))
-    normal2 = normal2 / np.linalg.norm(normal2)
-
-    radius1 = np.linalg.norm((circle1[0,:]-center1))
-    radius2 = np.linalg.norm((circle2[0,:]-center2))
-
-    # we find an intersection point between the two planes (we fix x to 0)
-    mat = np.zeros((3,3))
-    mat[0,:] = normal1
-    mat[1,:] = normal2
-    mat[2,0] = 1
-
-    b = np.zeros((3))
-    b[0] = np.dot(normal1,center1)
-    b[1] = np.dot(normal2,center2)
-
-    x = np.linalg.solve(mat, b)
-
-    # line vector of the intersection
-    line = np.cross(normal1, normal2)
-    line = line / np.linalg.norm(line)
-
-    # find closest point to center1 laying on the line
-    t = np.dot(center1 - x, line)
-    cp = x + line * t
-
-    # then the point belongs to circle1
-    if np.linalg.norm(center1-cp) <= radius1:
-        # then the point belongs to circle2
-        if np.linalg.norm(center2-cp) <= radius2:
-            return True
-
-    # we do the same for circle 2
-    t = np.dot(center2 - x, line)
-    cp = x + line * t
-
-    # then the point belongs to circle1
-    if np.linalg.norm(center2-cp) <= radius2:
-        # then the point belongs to circle2
-        if np.linalg.norm(center1-cp) <= radius1:
-            return True
-
-    return False
-
-def test_circle_intersect_circle():
-    theta = np.linspace(0, 2 * np.pi, 100)
-    theta = theta[:-1]
-
-    circle1 = np.array([np.sin(theta),np.cos(theta),theta * 0]).transpose()
-    circle2 = np.array([0 * theta,np.sin(theta),np.cos(theta)]).transpose()
-
-    circle_intersect_circle(circle1, circle2)
-
 def plot_3D_graph(graph, state = None, coefs = None, field_name = None, cmap = cm.get_cmap("viridis")):
     fig = plt.figure()
     # fig.subplots_adjust(left=0, bottom=0, right=1, top=1, wspace=None, hspace=None)
@@ -168,7 +107,7 @@ def plot_3D_graph(graph, state = None, coefs = None, field_name = None, cmap = c
 
     return fig, ax, scatterpts
 
-def plot_node_types(graph, outfile_name, time = 5, cmap = cm.get_cmap("viridis")):
+def plot_node_types(graph, outfile_name = None, time = 5, cmap = cm.get_cmap("viridis")):
     framerate = 60
     nframes = time * framerate
     fig = plt.figure()
@@ -217,16 +156,72 @@ def plot_node_types(graph, outfile_name, time = 5, cmap = cm.get_cmap("viridis")
     ax.set_ylim((minx[1],maxx[1]))
     ax.set_zlim((minx[2],maxx[2]))
 
-    angles = np.floor(np.linspace(0,360,nframes)).astype(int)
-    def animation_frame(i):
-        ax.view_init(elev=10., azim=angles[i])
-        return
+    if outfile_name != None:
+        angles = np.floor(np.linspace(0,360,nframes)).astype(int)
+        def animation_frame(i):
+            ax.view_init(elev=10., azim=angles[i])
+            return
 
-    anim = animation.FuncAnimation(fig, animation_frame,
-                                   frames=nframes,
-                                   interval=20)
-    writervideo = animation.FFMpegWriter(fps=framerate)
-    anim.save(outfile_name, writer = writervideo)
+        anim = animation.FuncAnimation(fig, animation_frame,
+                                       frames=nframes,
+                                       interval=20)
+        writervideo = animation.FFMpegWriter(fps=framerate)
+        anim.save(outfile_name, writer = writervideo)
+
+def plot_geo_with_circles(graph,cmap = cm.get_cmap("viridis")):
+    fig = plt.figure()
+    # fig.subplots_adjust(left=0, bottom=0, right=1, top=1, wspace=None, hspace=None)
+    ax = plt.axes(projection='3d')
+    ax._axis3don = False
+
+    node_types = graph.nodes['inner'].data['node_type'].detach().numpy()
+
+    colors = np.zeros((node_types.shape[0]))
+
+    for i in range(node_types.shape[0]):
+        colors[i] = np.where(node_types[i,:] == 1)[0]
+
+    colors = colors / np.max(colors)
+
+    scatterpts = None
+    # plot inlet
+    xin = graph.nodes['inlet'].data['x'].detach().numpy()
+    ax.scatter(xin[:,0], xin[:,1], xin[:,2], color='red', depthshade=0)
+
+    # plot outlet
+    xout = graph.nodes['outlet'].data['x'].detach().numpy()
+    ax.scatter(xout[:,0], xout[:,1], xout[:,2], color='green', depthshade=0)
+
+    # plot inner
+    xinner = graph.nodes['inner'].data['x'].detach().numpy()
+    tangent = graph.nodes['inner'].data['tangent'].detach().numpy()
+    area = graph.nodes['inner'].data['area'].detach().numpy()
+    ax.scatter(xinner[:,0], xinner[:,1], xinner[:,2], color=cmap(colors), depthshade=0)
+
+    for i in range(xinner.shape[0]):
+        radius = np.sqrt(area[i] / np.pi)
+        if colors[i] == 0:
+            circle = circle3D(xinner[i,:], tangent[i,:], radius, 60)
+            ax.plot(circle[:,0], circle[:,1], circle[:,2], color='red')
+
+    x = np.concatenate((xin,xout,xinner),axis=0)
+
+    minx = np.min(x, axis=0)
+    maxx = np.max(x, axis=0)
+
+    m = np.min(minx)
+    M = np.max(maxx)
+
+    padding = np.max([np.abs(m),np.abs(M)]) * 0.1
+
+    minx = minx - padding
+    maxx = maxx + padding
+
+    ax.set_box_aspect((maxx[0]-minx[0], maxx[1]-minx[1], maxx[2]-minx[2]))
+
+    ax.set_xlim((minx[0],maxx[0]))
+    ax.set_ylim((minx[1],maxx[1]))
+    ax.set_zlim((minx[2],maxx[2]))
 
 def plot_linear(pressures_pred, flowrates_pred, pressures_real, flowrates_real,
                 colors, times, coefs_dict, outfile_name, time, framerate = 60):
@@ -532,8 +527,8 @@ def plot_3D(model_name, states, times,
     anim.save(outfile_name, writer = writervideo)
 
 if __name__ == "__main__":
-    model_name = '0063_1001'
+    model_name = '0091_0001'
     print('Create geometry: ' + model_name)
     graphs = pp.load_graphs('../graphs/data/' + model_name + '.grph')[0]
-    plot_node_types(graphs[0])
+    plot_geo_with_circles(graphs[0])
     plt.show()

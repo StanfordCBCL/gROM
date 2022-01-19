@@ -246,6 +246,7 @@ def test_rollout(model, model_name, dataset, coefs_dict, do_plot, out_folder):
     return err_p, err_q, np.sqrt(err_p**2 + err_q**2)
 
 if __name__ == "__main__":
+    model_name = sys.argv[1]
 
     path = '/Users/luca/Desktop/17.01.2022_20.24.40/'
     params = json.loads(json.load(open(path + 'hparams.json')))
@@ -254,11 +255,9 @@ if __name__ == "__main__":
     gnn_model.load_state_dict(torch.load(path + 'trained_gnn.pms'))
     gnn_model.eval()
 
-    model_name = '0063_1001'
     dataset_params = json.loads(json.load(open(path + 'dataset.json')))
     dataset, coefs_dict = pp.generate_dataset(model_name, dataset_params)
 
-    # test_train(gnn_model, model_name, dataset)
     err_p, err_q, global_error = test_rollout(gnn_model, model_name,
                                               dataset,
                                               coefs_dict, do_plot = True,

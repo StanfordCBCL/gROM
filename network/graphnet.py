@@ -135,22 +135,6 @@ class GraphNet(Module):
         h = self.output(f)
         return {'h' : h}
 
-    # def forward(self, g, in_feat):
-    #     g.ndata['features_c'] = in_feat
-    #     g.apply_nodes(self.encode_nodes)
-    #     g.apply_edges(self.encode_edges)
-    #     for i in range(self.process_iters):
-    #         def pe(edges):
-    #             return self.process_edges(edges, i)
-    #         def pn(nodes):
-    #             return self.process_nodes(nodes, i)
-    #         g.apply_edges(pe)
-    #         # aggregate new edge features in nodes
-    #         g.update_all(fn.copy_e('proc_edge', 'm'), fn.sum('m', 'pe_sum'))
-    #         g.apply_nodes(pn)
-    #     g.apply_nodes(self.decode)
-    #     return g.ndata['h']
-
     def forward(self, g, in_feat):
         g.nodes['inner'].data['features_c'] = in_feat
         g.apply_nodes(self.encode_nodes, ntype='inner')
@@ -172,9 +156,3 @@ class GraphNet(Module):
             g.apply_nodes(pn, ntype='inner')
         g.apply_nodes(self.decode, ntype='inner')
         return g.nodes['inner'].data['h']
-
-    # def forward(self, g, in_feat):
-    #     g.nodes['inner'].data['features_c'] = in_feat
-    #     g.apply_edges(self.encode_inlet_edge, etype='in_to_inner')
-    #     g.update_all(fn.copy_e('inlet_info', 'm'), fn.sum('m', 'inlet_info'), etype='in_to_inner')
-    #     return g.nodes['inner'].data['inlet_info'][:,2:4]
