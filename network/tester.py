@@ -247,8 +247,8 @@ def test_rollout(model, model_name, dataset, coefs_dict, do_plot, out_folder):
 
 if __name__ == "__main__":
     model_name = sys.argv[1]
+    path = sys.argv[2]
 
-    path = '/Users/luca/Desktop/17.01.2022_20.24.40/'
     params = json.loads(json.load(open(path + 'hparams.json')))
 
     gnn_model = GraphNet(params)

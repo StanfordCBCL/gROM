@@ -50,10 +50,11 @@ The parameters of the trained model and hyperparameters will be saved in `networ
 
 Within the directory `graphs`, type
 
-    python tester.py $MODELNAME
+    python tester.py $MODELNAME $NETWORKPATH
 
 For example,
 
-    python tester.py 0063_1001
+    python tester.py 0063_1001 models/01.01.1990_00.00.00
 
 This will save comparative plots in the same directory.
+In the example, `models/01.01.1990_00.00.00` is a model generated after training (see Train a GNN).
