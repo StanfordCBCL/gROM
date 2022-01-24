@@ -5,12 +5,10 @@ import os
 os.environ['KMP_DUPLICATE_LIB_OK']='True'
 
 # add path to core
-sys.path.append("core/")
+sys.path.append("../tools/")
 
 import matplotlib.pyplot as plt
 import io_utils as io
-from geometry import Geometry
-from resampled_geometry import ResampledGeometry
 import dgl
 import numpy as np
 import torch
@@ -20,166 +18,13 @@ from torch.utils.data.sampler import SubsetRandomSampler
 import copy
 from scipy import interpolate
 from matplotlib import animation
+import json
+from raw_graph import RawGraph
 
 DTYPE = np.float32
 
-def create_geometry(model_name, input_dir, sampling, remove_caps, points_to_keep = None, doresample = True):
-    print('Create geometry: ' + model_name)
-    soln = io.read_geo(input_dir + '/' + model_name + '.vtp').GetOutput()
-    fields, _, p_array = io.get_all_arrays(soln, points_to_keep)
-
-    return ResampledGeometry(Geometry(p_array), sampling, remove_caps, doresample), fields
-
-def convert_nodes_to_heterogeneous(nodes, edges, inlet_index, outlet_indices, node_types,
-                                   tangents):
-    # Dijkstra's algorithm
-    def dijkstra_algorithm(nodes, edges, index):
-        # make edges bidirectional for simplicity
-        nnodes = nodes.shape[0]
-        tovisit = np.arange(0,nnodes)
-        dists = np.ones((nnodes)) * np.infty
-        prevs = np.ones((nnodes)) * (-1)
-        b_edges = np.concatenate((edges, np.array([edges[:,1],edges[:,0]]).transpose()), axis = 0)
-
-        dists[index] = 0
-        while len(tovisit) != 0:
-
-            minindex = -1
-            minlen = np.infty
-            for iinde in range(len(tovisit)):
-                if dists[tovisit[iinde]] < minlen:
-                    minindex = iinde
-                    minlen = dists[tovisit[iinde]]
-
-            curindex = tovisit[minindex]
-            tovisit = np.delete(tovisit, minindex)
-
-            # find neighbors of curindex
-            inb = b_edges[np.where(b_edges[:,0] == curindex)[0],1]
-
-            for neib in inb:
-                if np.where(tovisit == neib)[0].size != 0:
-                    alt = dists[curindex] + np.linalg.norm(nodes[curindex,:] - nodes[neib,:])
-                    if alt < dists[neib]:
-                        dists[neib] = alt
-                        prevs[neib] = curindex
-        return dists, prevs
-
-    nnodes = nodes.shape[0]
-    nninner_nodes = nnodes - len([inlet_index] + outlet_indices)
-
-    # create inner mask from local to global
-    indices = np.arange(nnodes)
-    inner_mask = np.delete(indices, [inlet_index] + outlet_indices)
-
-    # process inlet
-    indices = np.arange(nnodes)
-    inlet_mask = np.array([indices[inlet_index]])
-    inlet_edges = np.zeros((nninner_nodes,2))
-    inlet_edges[:,1] = np.arange(nninner_nodes)
-    distances_inlet, _ = dijkstra_algorithm(nodes, edges, inlet_index)
-    distances_inlet = np.delete(distances_inlet, [inlet_index] + outlet_indices)
-    inlet_physical_contiguous = np.zeros(nninner_nodes)
-    for iedg in range(edges.shape[0]):
-        if edges[iedg,0] == inlet_index:
-            inlet_physical_contiguous[np.where(inner_mask == edges[iedg,1])[0]] = 1
-            break
-        if edges[iedg,1] == inlet_index:
-            inlet_physical_contiguous[np.where(inner_mask == edges[iedg,0])[0]] = 1
-            break
-    inlet_dict = {'edges': inlet_edges.astype(int), \
-                  'distance': distances_inlet, \
-                  'x': np.expand_dims(nodes[inlet_index,:],axis=0), \
-                  'mask': inlet_mask, \
-                  'physical_contiguous': inlet_physical_contiguous.astype(int)}
-
-    # process outlets
-    indices = np.arange(nnodes)
-    outlet_mask = indices[outlet_indices]
-    outlet_edges = np.zeros((0,2))
-    distances_outlets = np.zeros((0))
-    outlet_physical_contiguous = np.zeros((0))
-    for out_index in range(len(outlet_indices)):
-        curoutedge = np.copy(inlet_edges)
-        curoutedge[:,0] = out_index
-        outlet_edges = np.concatenate((outlet_edges, curoutedge), axis = 0)
-        curdistances, _ = dijkstra_algorithm(nodes, edges, outlet_indices[out_index])
-        curdistances = np.delete(curdistances, [inlet_index] + outlet_indices)
-        distances_outlets = np.concatenate((distances_outlets, curdistances))
-        cur_opc = np.zeros(nninner_nodes).astype(int)
-        for iedg in range(edges.shape[0]):
-            if edges[iedg,0] == outlet_indices[out_index]:
-                cur_opc[np.where(inner_mask == edges[iedg,1])[0]] = 1
-                break
-            if edges[iedg,1] == outlet_indices[out_index]:
-                cur_opc[np.where(inner_mask == edges[iedg,0])[0]] = 1
-                break
-        outlet_physical_contiguous = np.concatenate((outlet_physical_contiguous, cur_opc))
-
-    # we select the edges and properties such that each inner node is only connected to one outlet
-    # (based on smaller distance)
-    single_connection_mask = []
-    for inod in range(nninner_nodes):
-        mindist = np.amin(distances_outlets[inod::nninner_nodes])
-        indx = np.where(np.abs(distances_outlets - mindist) < 1e-14)[0]
-        single_connection_mask.append(int(indx))
-
-    outlet_dict = {'edges': outlet_edges[single_connection_mask,:].astype(int), \
-                   'distance': distances_outlets[single_connection_mask], \
-                   'x': nodes[outlet_indices,:], \
-                   'mask': outlet_mask, \
-                   'physical_contiguous': outlet_physical_contiguous[single_connection_mask].astype(int)}
-
-    # renumber edges
-    rowstodelete = []
-    for irow in range(edges.shape[0]):
-        for bcindex in [inlet_index] + outlet_indices:
-            if bcindex in edges[irow,:]:
-                rowstodelete.append(irow)
-
-    edges = np.delete(edges, rowstodelete, axis = 0)
-    edges_c = np.copy(edges)
-    edges_c2 = np.copy(edges)
-    for nodein in range(nninner_nodes):
-        minind = np.amin(edges_c)
-        indices = np.where(edges == minind)
-
-        for idx in range(indices[0].shape[0]):
-            edges[indices[0][idx],indices[1][idx]] = nodein
-            edges_c[indices[0][idx],indices[1][idx]] = 1e9
-
-    # make it bidirectional
-    edges = np.concatenate((edges,np.array([edges[:,1],edges[:,0]]).transpose()),axis = 0)
-
-    inner_nodes = np.delete(nodes, [inlet_index] + outlet_indices, axis = 0)
-    inner_node_types = np.delete(node_types, [inlet_index] + outlet_indices, axis = 0)
-    inner_tangents = np.delete(tangents, [inlet_index] + outlet_indices, axis = 0)
-    nedges = edges.shape[0]
-    inner_pos = np.zeros((nedges, 4))
-    for iedg in range(nedges):
-        inner_pos[iedg,0:3] = inner_nodes[edges[iedg,1],:] - inner_nodes[edges[iedg,0],:]
-        inner_pos[iedg,3] = np.linalg.norm(inner_pos[iedg,0:2])
-
-    inner_dict = {'edges': edges, 'position': inner_pos, 'x': inner_nodes,
-                  'mask': inner_mask, 'node_type': inner_node_types,
-                  'tangent': inner_tangents}
-
-    return inner_dict, inlet_dict, outlet_dict
-
-def one_hot_encoding(vector):
-    catvalues = set()
-
-    for value in vector:
-        catvalues.add(value)
-
-
-
-def create_fixed_graph(geometry, area):
-    nodes, edges, _, inlet_index, outlet_indices, node_types, tangents = geometry.generate_nodes()
-
-    inner_dict, inlet_dict, outlet_dict = \
-        convert_nodes_to_heterogeneous(nodes, edges, inlet_index, outlet_indices,
-                                       node_types, tangents)
+def create_fixed_graph(raw_graph, area):
+    inner_dict, inlet_dict, outlet_dict = raw_graph.create_heterogeneous_graph()
 
     graph_data = {('inner', 'inner_to_inner', 'inner'): \
                   (inner_dict['edges'][:,0], inner_dict['edges'][:,1]),
@@ -227,8 +72,8 @@ def create_fixed_graph(geometry, area):
     graph.nodes['outlet'].data['x'] = torch.from_numpy(outlet_dict['x'])
 
     print('Graph generated:')
-    print(' n. nodes = ' + str(nodes.shape[0]))
-    print(' n. inner edges = ' + str(edges.shape[0]))
+    print(' n. inner nodes = ' + str(inner_dict['x'].shape[0]))
+    print(' n. inner edges = ' + str(inner_dict['edges'].shape[0]))
     print(' n. inlet edges = ' + str(inlet_dict['edges'].shape[0]))
     print(' n. outlet edges = ' + str(outlet_dict['edges'].shape[0]))
 
@@ -263,22 +108,6 @@ def add_fields(graph, pressure, velocity):
 
     return newgraph
 
-def generate_analytic(pressure, velocity, area):
-    times = [t for t in pressure]
-    times.sort()
-
-    N = np.size(pressure[times[0]])
-
-    xs = np.linspace(0, 2 * np.pi, N)
-
-    T = len(times)
-    for tin in range(0, T):
-        for i in range(0, N):
-            pressure[times[tin]][i] = np.sin(2 * np.pi * tin / T)
-            velocity[times[tin]][i] = np.cos(2 * np.pi * tin / T)
-
-    return pressure, velocity
-
 def augment_time(field, period, ntimepoints):
     times_before = [t for t in field]
     times_before.sort()
@@ -306,76 +135,45 @@ def augment_time(field, period, ntimepoints):
 
     return newfield
 
-def save_animation(pressure, velocity, filename):
-    def find_min_max(field):
-        times = [t for t in field]
+def generate_graphs(model_name, model_params, input_dir, output_dir, save = True):
+    print('Create geometry: ' + model_name)
+    soln = io.read_geo(input_dir + '/' + model_name + '.vtp').GetOutput()
+    fields, _, p_array = io.get_all_arrays(soln)
 
-        minv = np.infty
-        maxv = np.NINF
+    raw_graph = RawGraph(p_array, model_params)
+    area = raw_graph.project(fields['area'])
+    raw_graph.set_node_types(fields['BifurcationId'])
+    raw_graph.show()
 
-        for t in times:
-            curmin = np.min(field[t])
-            curmax = np.max(field[t])
-            if curmin < minv:
-                minv = curmin
-            if curmax > maxv:
-                maxv = curmax
-        return minv, maxv
+    g_pressure, g_flowrate = io.gather_pressures_flowrates(fields)
 
-    times = [t for t in pressure]
-    minp, maxp = find_min_max(pressure)
-    minv, maxv = find_min_max(velocity)
+    pressure = {}
+    for t in g_pressure:
+        pressure[t] = raw_graph.partition_and_stack_field(g_pressure[t])
 
-    fig, ax = plt.subplots(2)
-    line_p, = ax[0].plot([],[],'r')
-    line_v, = ax[1].plot([],[],'r')
-
-    def animation_frame(i):
-        line_p.set_xdata(range(0,len(pressure[times[i]])))
-        line_p.set_ydata(pressure[times[i]])
-        line_v.set_xdata(range(0,len(velocity[times[i]])))
-        line_v.set_ydata(velocity[times[i]])
-        ax[0].set_xlim(0,len(pressure[times[i]]))
-        ax[0].set_ylim(minp-np.abs(minp)*0.1,maxp+np.abs(maxp)*0.1)
-        ax[1].set_xlim(0,len(velocity[times[i]]))
-        ax[1].set_ylim(minv-np.abs(minv)*0.1,maxv+np.abs(maxv)*0.1)
-        ax[0].set_title('pressure ' + str(times[i]))
-        ax[1].set_title('velocity ' + str(times[i]))
-        return line_p, line_v
-
-    anim = animation.FuncAnimation(fig, animation_frame,
-                                   frames=len(pressure),
-                                   interval=20)
-    writervideo = animation.FFMpegWriter(fps=60)
-    anim.save(filename + '.mp4', writer = writervideo)
-
-def generate_graphs(model_name, input_dir, save = True):
-    geo, fields = create_geometry(model_name, input_dir, 10, remove_caps = True,
-                                  points_to_keep = None, doresample = True)
-    pressure, velocity = io.gather_pressures_velocities(fields)
-    geo.find_points_type(fields['area'])
-    pressure, velocity, area = geo.generate_fields(pressure,
-                                                   velocity,
-                                                   fields['area'])
-
-    # the period
-    T = 6.6670000000e-1
-    npoints = 10000
+    flowrate = {}
+    for t in g_flowrate:
+        flowrate[t] = raw_graph.partition_and_stack_field(g_flowrate[t])
 
     print('Augmenting timesteps')
-    pressure = augment_time(pressure, T, npoints)
-    velocity = augment_time(velocity, T, npoints)
-    # save_animation(pressure, velocity, 'interpolated_fields')
+    pressure = augment_time(pressure, model_params['period'],
+                                      model_params['n_time_points'])
+    flowrate = augment_time(flowrate, model_params['period'],
+                                      model_params['n_time_points'])
 
     print('Generating graphs')
-    fixed_graph = create_fixed_graph(geo, area)
+    fixed_graph = create_fixed_graph(raw_graph, raw_graph.stack(area))
 
     print('Adding fields')
-    graphs = add_fields(fixed_graph, pressure, velocity)
+    graphs = add_fields(fixed_graph, pressure, flowrate)
     if save:
-        dgl.save_graphs('data/' + sys.argv[2], graphs)
+        dgl.save_graphs(output_dir + model_name + '.grph', graphs)
     return graphs
 
 if __name__ == "__main__":
     input_dir = 'vtps'
-    generate_graphs(sys.argv[1], input_dir, True)
+    output_dir = 'data/'
+    params = json.load(open(input_dir + '/dataset_info.json'))
+    for model in params:
+        print('Processing {}'.format(model))
+        generate_graphs(model, params[model], input_dir, output_dir)
