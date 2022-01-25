@@ -83,27 +83,29 @@ def get_solution_all_nodes(state, graph):
 
     return pressure, flowrate
 
-def test_rollout(model, model_name, dataset, coefs_dict, do_plot, out_folder):
-    graph = dataset.lightgraphs[0]
+def test_rollout(model, params, dataset, index_graph, do_plot, out_folder):
+    graph = dataset.lightgraphs[index_graph]
+    model_name = params['dataset_parameters']['split']['validation'][index_graph]
     true_graph = load_graphs('../graphs/data/' + model_name + '.grph')[0][0]
     times = pp.get_times(true_graph)
 
-    label_coefs = dataset.label_coefs
+    coefs_dict = params['normalization_coefficients']['features']
+    label_coefs = params['normalization_coefficients']['labels']
 
     if label_coefs['normalization_type'] == 'min_max':
-        minp = label_coefs['min'][0].detach().numpy()
-        maxp = label_coefs['max'][0].detach().numpy()
-        minq = label_coefs['min'][1].detach().numpy()
-        maxq = label_coefs['max'][1].detach().numpy()
+        minp = label_coefs['min'][0]
+        maxp = label_coefs['max'][0]
+        minq = label_coefs['min'][1]
+        maxq = label_coefs['max'][1]
         def bring_to_range_p(pressure):
             return minp + (maxp - minp) * pressure
         def bring_to_range_q(flowrate):
             return minq + (maxq - minq) * flowrate
     elif label_coefs['normalization_type'] == 'standard':
-        meanp = label_coefs['mean'][0].detach().numpy()
-        stdvp = label_coefs['std'][0].detach().numpy()
-        meanq = label_coefs['mean'][1].detach().numpy()
-        stdvq = label_coefs['std'][1].detach().numpy()
+        meanp = label_coefs['mean'][0]
+        stdvp = label_coefs['std'][0]
+        meanq = label_coefs['mean'][1]
+        stdvq = label_coefs['std'][1]
         def bring_to_range_p(pressure):
             return pressure * stdvp + meanp
         def bring_to_range_q(flowrate):
@@ -145,7 +147,6 @@ def test_rollout(model, model_name, dataset, coefs_dict, do_plot, out_folder):
     start = time.time()
     for t in range(len(times)-1):
         tp1 = t+1
-
         next_pressure = pp.normalize_function(true_graph.nodes['inner'].data['pressure_' + str(tp1)], 'pressure', coefs_dict)
         next_flowrate = pp.normalize_function(true_graph.nodes['inner'].data['flowrate_' + str(tp1)], 'flowrate', coefs_dict)
 
@@ -246,19 +247,19 @@ def test_rollout(model, model_name, dataset, coefs_dict, do_plot, out_folder):
     return err_p, err_q, np.sqrt(err_p**2 + err_q**2)
 
 if __name__ == "__main__":
-    model_name = sys.argv[1]
-    path = sys.argv[2]
+    path = sys.argv[1]
 
-    params = json.loads(json.load(open(path + 'hparams.json')))
+    params = json.load(open(path + '/parameters.json'))
 
-    gnn_model = GraphNet(params)
-    gnn_model.load_state_dict(torch.load(path + 'trained_gnn.pms'))
+    gnn_model = GraphNet(params['hyperparameters'])
+    gnn_model.load_state_dict(torch.load(path + '/trained_gnn.pms'))
     gnn_model.eval()
 
-    dataset_params = json.loads(json.load(open(path + 'dataset.json')))
-    dataset, coefs_dict = pp.generate_dataset(model_name, dataset_params)
+    dataset, coefs_dict = pp.generate_dataset(params['dataset_parameters']['split']['validation'],
+                                              dataset_params = params['dataset_parameters'],
+                                              coefs_dict = params['normalization_coefficients']['features'])
 
-    err_p, err_q, global_error = test_rollout(gnn_model, model_name,
-                                              dataset,
-                                              coefs_dict, do_plot = True,
+    err_p, err_q, global_error = test_rollout(gnn_model, params,
+                                              dataset, index_graph = 0,
+                                              do_plot = True,
                                               out_folder = '.')

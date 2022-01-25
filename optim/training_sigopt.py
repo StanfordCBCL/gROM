@@ -8,12 +8,16 @@ import training as tr
 import numpy as np
 import time
 import tester as test
+import json
+import preprocessing as pp
 
 def log_checkpoint(loss):
     sigopt.log_checkpoint({'loss': loss})
     sigopt.log_metric(name="loss", value=loss)
 
 if __name__ == "__main__":
+    dataset_json = json.load(open('../network/training_dataset.json'))
+
     sigopt.params.setdefaults(
         latent_size_gnn=32,
         latent_size_mlp=64,
@@ -31,7 +35,7 @@ if __name__ == "__main__":
         optimizer='adam',
         label_normalization='min_max'
     )
-    network_params = {'infeat_nodes': 10,
+    network_params = {'infeat_nodes': 12,
                     'infeat_edges': 4,
                     'latent_size_gnn': sigopt.params.latent_size_gnn,
                     'latent_size_mlp': sigopt.params.latent_size_mlp,
@@ -49,19 +53,23 @@ if __name__ == "__main__":
                       'label_normalization': sigopt.params.label_normalization}
 
     start = time.time()
-    gnn_model, loss, mae, dataset, coefs_dict, out_fdr = tr.launch_training(sys.argv[1],
-                                                                  sigopt.params.optimizer,
-                                                                  network_params, train_params, True,
-                                                                  log_checkpoint,
-                                                                  dataset_params)
+    gnn_model, loss, mae, dataset, \
+    coefs_dict, out_fdr, parameters = tr.launch_training(dataset_json,
+                                                         'adam', network_params, train_params,
+                                                         checkpoint_fct = log_checkpoint,
+                                                         dataset_params = dataset_params)
 
     end = time.time()
     elapsed_time = end - start
     print('Training time = ' + str(elapsed_time))
 
-    err_p, err_q, global_err = test.test_rollout(gnn_model, sys.argv[1],
+    dataset, _ = pp.generate_dataset(parameters['dataset_parameters']['split']['validation'],
+                                              dataset_params = parameters['dataset_parameters'],
+                                              coefs_dict = parameters['normalization_coefficients']['features'])
+
+    err_p, err_q, global_err = test.test_rollout(gnn_model, parameters,
                                                  dataset,
-                                                 coefs_dict,
+                                                 index_graph = 0,
                                                  do_plot = True,
                                                  out_folder = out_fdr)
 

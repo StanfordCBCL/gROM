@@ -4,8 +4,6 @@ sys.path.append("../graphs/core")
 sys.path.append("../network/")
 
 import io_utils as io
-from geometry import Geometry
-from resampled_geometry import ResampledGeometry
 import matplotlib.pyplot as plt
 import numpy as np
 import scipy
@@ -36,7 +34,7 @@ def circle3D(center, normal, radius, npoints):
     return circle
 
 def plot_3D_graph(graph, state = None, coefs = None, field_name = None, cmap = cm.get_cmap("viridis")):
-    fig = plt.figure()
+    fig = plt.figure(figsize=(8, 8), dpi=200)
     # fig.subplots_adjust(left=0, bottom=0, right=1, top=1, wspace=None, hspace=None)
     ax = plt.axes(projection='3d')
     ax._axis3don = False
@@ -69,6 +67,12 @@ def plot_3D_graph(graph, state = None, coefs = None, field_name = None, cmap = c
         field = np.concatenate((fin,fout,finner),axis=0)
 
         field = pp.invert_normalize_function(field, field_name, coefs)
+        
+        if type(coefs[field_name]['min']) == list:
+            coefs[field_name]['min'] = np.asarray(coefs[field_name]['min'])
+            
+        if type(coefs[field_name]['max']) == list:
+            coefs[field_name]['max'] = np.asarray(coefs[field_name]['max'])
 
         C = (field - coefs[field_name]['min']) / \
             (coefs[field_name]['max'] - coefs[field_name]['min'])
@@ -110,7 +114,7 @@ def plot_3D_graph(graph, state = None, coefs = None, field_name = None, cmap = c
 def plot_node_types(graph, outfile_name = None, time = 5, cmap = cm.get_cmap("viridis")):
     framerate = 60
     nframes = time * framerate
-    fig = plt.figure()
+    fig = plt.figure(figsize=(8, 8), dpi=284)
     # fig.subplots_adjust(left=0, bottom=0, right=1, top=1, wspace=None, hspace=None)
     ax = plt.axes(projection='3d')
     ax._axis3don = False
@@ -248,7 +252,7 @@ def plot_linear(pressures_pred, flowrates_pred, pressures_real, flowrates_real,
     times = selected_times
 
     nnodes = len(pressures_pred[0])
-    fig, ax = plt.subplots(2)
+    fig, ax = plt.subplots(2, dpi=284)
 
     scatter_real_p = ax[0].scatter(range(0,nnodes), \
                                    pp.invert_normalize_function(pressures_real[0],'pressure',coefs_dict) / 1333.2, color='black', s = 1.5, alpha = 0.3)
@@ -523,7 +527,7 @@ def plot_3D(model_name, states, times,
     anim = animation.FuncAnimation(fig, animation_frame,
                                    frames=len(states),
                                    interval=20)
-    writervideo = animation.FFMpegWriter(fps=framerate)
+    writervideo = animation.FFMpegWriter(fps=framerate, bitrate=-1)
     anim.save(outfile_name, writer = writervideo)
 
 if __name__ == "__main__":

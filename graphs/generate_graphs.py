@@ -61,6 +61,7 @@ def create_fixed_graph(raw_graph, area):
                                              torch.from_numpy(
                                              np.squeeze(
                                              inner_dict['node_type'].astype(int))))
+    graph.nodes['inner'].data['dt'] = torch.ones(graph.nodes['inner'].data['area'].shape)
     graph.nodes['inner'].data['tangent'] = torch.from_numpy(inner_dict['tangent'])
 
     graph.nodes['inlet'].data['global_mask'] = torch.from_numpy(inlet_dict['mask'])
@@ -106,6 +107,8 @@ def add_fields(graph, pressure, velocity):
     newgraph.nodes['params'].data['times'] = \
                         torch.from_numpy(np.expand_dims(np.array(times),axis=0))
 
+    graph.nodes['inner'].data['dt'] = graph.nodes['inner'].data['dt'] * (np.array(times[1] - times[0]))
+
     return newgraph
 
 def augment_time(field, period, ntimepoints):
@@ -143,7 +146,6 @@ def generate_graphs(model_name, model_params, input_dir, output_dir, save = True
     raw_graph = RawGraph(p_array, model_params)
     area = raw_graph.project(fields['area'])
     raw_graph.set_node_types(fields['BifurcationId'])
-    raw_graph.show()
 
     g_pressure, g_flowrate = io.gather_pressures_flowrates(fields)
 

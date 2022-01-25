@@ -15,6 +15,7 @@ import matplotlib.pyplot as plt
 from matplotlib import animation
 import numpy as np
 from datetime import datetime
+import random
 import time
 import json
 
@@ -59,14 +60,15 @@ def evaluate_model(gnn_model, train_dataloader, loss, metric = None, optimizer =
 
     return global_loss, count, end - start, global_metric
 
-def train_gnn_model(gnn_model, model_name, optimizer_name, train_params,
+def train_gnn_model(gnn_model, train, validation, optimizer_name, train_params,
                     checkpoint_fct = None, dataset_params = None):
-    dataset, coefs_dict = pp.generate_dataset(model_name,
-                                              dataset_params)
+    # we only compute the coefs_dict on the train_dataset
+    train_dataset, coefs_dict = pp.generate_dataset(train, dataset_params = dataset_params)
+    validation_dataset, _ = pp.generate_dataset(validation, coefs_dict, dataset_params)
 
     if dataset_params['label_normalization'] == 'min_max':
         def weighted_mae(input, target):
-            label_coefs = dataset.label_coefs
+            label_coefs = train_dataset.label_coefs
             shapein = input.shape
             weight = torch.ones(shapein)
             for i in range(shapein[1]):
@@ -75,7 +77,7 @@ def train_gnn_model(gnn_model, model_name, optimizer_name, train_params,
             return mae(input, target, weight)
     elif dataset_params['label_normalization'] == 'standard':
         def weighted_mae(input, target):
-            label_coefs = dataset.label_coefs
+            label_coefs = train_dataset.label_coefs
             shapein = input.shape
             weight = torch.ones(shapein)
             for i in range(shapein[1]):
@@ -87,10 +89,10 @@ def train_gnn_model(gnn_model, model_name, optimizer_name, train_params,
             return mae(input, target)
 
     gnn_model.set_normalization_coefs(coefs_dict)
-    num_examples = len(dataset)
+    num_examples = len(train_dataset)
     num_train = int(num_examples)
     train_sampler = SubsetRandomSampler(torch.arange(num_train))
-    train_dataloader = GraphDataLoader(dataset, sampler=train_sampler,
+    train_dataloader = GraphDataLoader(train_dataset, sampler=train_sampler,
                                        batch_size=train_params['batch_size'],
                                        drop_last=False)
 
@@ -140,7 +142,7 @@ def train_gnn_model(gnn_model, model_name, optimizer_name, train_params,
     print('\tFinal loss = {:.2e}\tfinal mae = {:.2e}'.format(global_loss/count,
                                                              global_mae/count))
 
-    return gnn_model, train_dataloader, global_loss / count,  global_mae / count,coefs_dict, dataset
+    return gnn_model, train_dataloader, global_loss / count,  global_mae / count,coefs_dict, train_dataset
 
 def create_directory(path):
     try:
@@ -148,10 +150,25 @@ def create_directory(path):
     except OSError as exc:
         pass
 
-def launch_training(model_name, optimizer_name, params_dict,
+def prepare_dataset(dataset_json):
+    dataset = dataset_json['dataset']
+    random.shuffle(dataset)
+    ndata = len(dataset)
+
+    train_perc = dataset_json['training']
+    valid_perc = dataset_json['validation']
+
+    train, validation, test = np.split(dataset, [int(ndata*train_perc), \
+                                                 int(ndata*(valid_perc + train_perc))])
+
+    return train, validation, test
+
+
+def launch_training(dataset_json, optimizer_name, params_dict,
                     train_params, plot_validation = True, checkpoint_fct = None,
                     dataset_params = None):
     now = datetime.now()
+    train, validation, test = prepare_dataset(dataset_json)
     dt_string = now.strftime("%d.%m.%Y_%H.%M.%S")
     folder = 'models/' + dt_string
     create_directory('models')
@@ -159,26 +176,43 @@ def launch_training(model_name, optimizer_name, params_dict,
     gnn_model = generate_gnn_model(params_dict)
     torch.save(gnn_model.state_dict(), folder + '/initial_gnn.pms')
     gnn_model, train_loader, loss, mae, coefs_dict, dataset = train_gnn_model(gnn_model,
-                                                                            model_name,
+                                                                            train,
+                                                                            validation,
                                                                             optimizer_name,
                                                                             train_params,
                                                                             checkpoint_fct,
                                                                             dataset_params)
 
+    split = {'train': train.tolist(), 'validation': validation.tolist(), 'test': test.tolist()}
+
     torch.save(gnn_model.state_dict(), folder + '/trained_gnn.pms')
-    json_params = json.dumps(params_dict, indent = 4)
-    json_train = json.dumps(train_params, indent = 4)
-    json_dataset = json.dumps(dataset_params, indent = 4)
-    with open(folder + '/hparams.json', 'w') as outfile:
-        json.dump(json_params, outfile)
-    with open(folder + '/train.json', 'w') as outfile:
-        json.dump(json_train, outfile)
-    with open(folder + '/dataset.json', 'w') as outfile:
-        json.dump(json_dataset, outfile)
-    return gnn_model, loss, mae, dataset, coefs_dict, folder
+
+    dataset_params['split'] = split
+
+    coefs = {'features': coefs_dict,
+             'labels': dataset.label_coefs}
+
+    parameters = {'hyperparameters': params_dict,
+                  'train_parameters': train_params,
+                  'dataset_parameters': dataset_params,
+                  'normalization_coefficients': coefs}
+
+    def default(obj):
+        if isinstance(obj, torch.Tensor):
+            return default(obj.detach().numpy())
+        if isinstance(obj, np.ndarray):
+            return obj.tolist()
+        print(obj)
+        raise TypeError('Not serializable')
+
+    with open(folder + '/parameters.json', 'w') as outfile:
+        json.dump(parameters, outfile, default=default)
+    return gnn_model, loss, mae, dataset, coefs_dict, folder, parameters
 
 if __name__ == "__main__":
-    params_dict = {'infeat_nodes': 10,
+    dataset_json = json.load(open('training_dataset.json'))
+
+    params_dict = {'infeat_nodes': 12,
                    'infeat_edges': 4,
                    'latent_size_gnn': 18,
                    'latent_size_mlp': 64,
@@ -196,12 +230,9 @@ if __name__ == "__main__":
                       'label_normalization': 'min_max'}
 
     start = time.time()
-    gnn_model, _, _, train_dataloader, coefs_dict, out_fdr = launch_training(sys.argv[1],
-                                                                          'adam',
-                                                                           params_dict,
-                                                                           train_params,
-                                                                           checkpoint_fct = None,
-                                                                           dataset_params = dataset_params)
+    launch_training(dataset_json,  'adam', params_dict, train_params,
+                    checkpoint_fct = None, dataset_params = dataset_params)
+
     end = time.time()
     elapsed_time = end - start
     print('Training time = ' + str(elapsed_time))
