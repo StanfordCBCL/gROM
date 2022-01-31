@@ -135,7 +135,7 @@ def train_gnn_model(gnn_model, train, validation, optimizer_name, train_params,
                 checkpoint_fct(global_loss/count)
 
         if epoch >= 6:
-            dataset.sample_noise(dataset_params['rate_noise'])
+            train_dataset.sample_noise(dataset_params['rate_noise'])
 
     # compute final loss
     global_loss, count, _, global_mae = evaluate_model(gnn_model, train_dataloader, mse, weighted_mae)

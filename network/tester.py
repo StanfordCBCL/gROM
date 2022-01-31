@@ -83,9 +83,9 @@ def get_solution_all_nodes(state, graph):
 
     return pressure, flowrate
 
-def test_rollout(model, params, dataset, index_graph, do_plot, out_folder):
+def test_rollout(model, params, dataset, index_graph, split, out_folder):
     graph = dataset.lightgraphs[index_graph]
-    model_name = params['dataset_parameters']['split']['validation'][index_graph]
+    model_name = params['dataset_parameters']['split'][split][index_graph]
     true_graph = load_graphs('../graphs/data/' + model_name + '.grph')[0][0]
     times = pp.get_times(true_graph)
 
@@ -255,11 +255,32 @@ if __name__ == "__main__":
     gnn_model.load_state_dict(torch.load(path + '/trained_gnn.pms'))
     gnn_model.eval()
 
+    training.create_directory('results_train')
+    num_train = len(params['dataset_parameters']['split']['train'])
+
+    dataset, coefs_dict = pp.generate_dataset(params['dataset_parameters']['split']['train'],
+                                              dataset_params = params['dataset_parameters'],
+                                              coefs_dict = params['normalization_coefficients']['features'])
+
+
+    for i in range(num_train):
+        training.create_directory('results_train/' + str(i))
+        err_p, err_q, global_error = test_rollout(gnn_model, params,
+                                                  dataset, index_graph = i,
+                                                  split = 'train',
+                                                  out_folder = 'results_train/' + str(i))
+
+
+    training.create_directory('results_validation')
+    num_validation = len(params['dataset_parameters']['split']['validation'])
+
     dataset, coefs_dict = pp.generate_dataset(params['dataset_parameters']['split']['validation'],
                                               dataset_params = params['dataset_parameters'],
                                               coefs_dict = params['normalization_coefficients']['features'])
 
-    err_p, err_q, global_error = test_rollout(gnn_model, params,
-                                              dataset, index_graph = 0,
-                                              do_plot = True,
-                                              out_folder = '.')
+    for i in range(num_validation):
+        training.create_directory('results_validation/' + str(i))
+        err_p, err_q, global_error = test_rollout(gnn_model, params,
+                                                  dataset, index_graph = i,
+                                                  split = 'validation',
+                                                  out_folder = 'results_validation/' + str(i))

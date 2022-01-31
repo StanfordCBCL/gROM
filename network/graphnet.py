@@ -124,7 +124,8 @@ class GraphNet(Module):
         f2 = nodes.data['pe_sum']
         fin = nodes.data['inlet_info']
         fout = nodes.data['outlet_info']
-        proc_node = self.processor_nodes[layer](torch.cat((f1, f2, fin, fout),dim=1))
+        proc_node = self.processor_nodes[layer](torch.cat((f1, f2, fin, fout),
+                                                dim=1))
         # add residual connection
         proc_node = proc_node + f1
         return {'proc_node' : proc_node}
@@ -141,9 +142,11 @@ class GraphNet(Module):
         g.apply_edges(self.encode_edges, etype='inner_to_inner')
 
         g.apply_edges(self.encode_inlet_edge, etype='in_to_inner')
-        g.update_all(fn.copy_e('inlet_info', 'm'), fn.sum('m', 'inlet_info'), etype='in_to_inner')
+        g.update_all(fn.copy_e('inlet_info', 'm'), fn.sum('m', 'inlet_info'),
+                               etype='in_to_inner')
         g.apply_edges(self.encode_outlet_edge, etype='out_to_inner')
-        g.update_all(fn.copy_e('outlet_info', 'm'), fn.sum('m', 'outlet_info'), etype='out_to_inner')
+        g.update_all(fn.copy_e('outlet_info', 'm'), fn.sum('m', 'outlet_info'),
+                               etype='out_to_inner')
 
         for i in range(self.process_iters):
             def pe(edges):
@@ -152,7 +155,8 @@ class GraphNet(Module):
                 return self.process_nodes(nodes, i)
             g.apply_edges(pe, etype='inner_to_inner')
             # aggregate new edge features in nodes
-            g.update_all(fn.copy_e('proc_edge', 'm'), fn.sum('m', 'pe_sum'), etype='inner_to_inner')
+            g.update_all(fn.copy_e('proc_edge', 'm'), fn.sum('m', 'pe_sum'),
+                                   etype='inner_to_inner')
             g.apply_nodes(pn, ntype='inner')
         g.apply_nodes(self.decode, ntype='inner')
         return g.nodes['inner'].data['h']
