@@ -1,0 +1,5 @@
+.DS_Store
+gromenv/
+data_location.txt
+.vscode
+__pycache__
