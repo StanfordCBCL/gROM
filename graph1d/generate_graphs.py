@@ -8,7 +8,6 @@ os.environ['KMP_DUPLICATE_LIB_OK']='True'
 sys.path.append("../tools/")
 
 import io_utils as io
-import json
 import numpy as np
 import matplotlib.pyplot as plt
 import matplotlib.cm as cm
@@ -56,7 +55,7 @@ def generate_types(bif_id, indices):
         elif i in indices['outlets']:
             cur_type = 3
         types.append(cur_type)
-    return types
+    return th.nn.functional.one_hot(th.tensor(types))
 
 def generate_edge_features(points, edges1, edges2):
     rel_position = []
@@ -69,14 +68,25 @@ def generate_edge_features(points, edges1, edges2):
         rel_position_norm.append(ndiff)
     return np.array(rel_position), rel_position_norm
 
-def add_fields(graph, field, field_name):
+def add_fields(graph, field, field_name, subsample_time = 10):
     timesteps = [float(t) for t in field]
     timesteps.sort()
-    dt = timesteps[1] - timesteps[0]
+    dt = (timesteps[1] - timesteps[0]) * subsample_time
+    # we skip the first 100 timesteps
+    offset = 100
+    count = 0
+    # we use the third timension for time
+    field_t = th.zeros((list(field.values())[0].shape[0], 1, 
+                        len(timesteps) - offset))
     for t in field:
-        graph.ndata[field_name + '_{:.7f}'.format(t)] = th.tensor(field[t], 
-                                                          dtype = th.float32)
-    graph.ndata['dt'] = th.ones(graph.num_nodes(), dtype = th.float32) * dt
+        if count >= offset:
+            f = th.tensor(field[t], dtype = th.float32)
+            field_t[:,0,count - offset] = f
+            # graph.ndata[field_name + '_{}'.format(count - offset)] = f
+        count = count + 1
+    graph.ndata[field_name] = field_t[:,:,::subsample_time]
+    graph.ndata['dt'] = th.reshape(th.ones(graph.num_nodes(), 
+                                   dtype = th.float32) * dt, (-1,1,1))
 
 def find_outlets(edges1, edges2):
     outlets = []
@@ -85,7 +95,7 @@ def find_outlets(edges1, edges2):
             outlets.append(e)
     return outlets    
      
-def generate_graph(model, input_dir):
+def generate_graph(file, input_dir):
     soln = io.read_geo(input_dir + '/' + file)
     point_data, _, points = io.get_all_arrays(soln.GetOutput())
     edges1, edges2 = io.get_edges(soln.GetOutput())
@@ -111,16 +121,17 @@ def generate_graph(model, input_dir):
     graph = dgl.graph((edges1, edges2), idtype = th.int32)
 
     graph.ndata['x'] = th.tensor(points, dtype = th.float32)
-    graph.ndata['area'] = th.tensor(area, dtype = th.float32)
-    graph.ndata['type'] = th.tensor(generate_types(bif_id, indices), 
-                                    dtype = th.int32)
+    graph.ndata['area'] = th.reshape(th.tensor(area, dtype = th.float32), 
+                                     (-1,1,1))
+    graph.ndata['type'] = th.unsqueeze(generate_types(bif_id, indices), 2)
 
     rel_position, norm_rel_positions = generate_edge_features(points, 
                                                               edges1,
                                                               edges2)
-    graph.edata['rel_position'] = th.tensor(rel_position, dtype = th.float32)
-    graph.edata['rel_position_norm'] = th.tensor(norm_rel_positions, 
-                                                 dtype = th.float32)
+    graph.edata['rel_position'] = th.unsqueeze(th.tensor(rel_position, 
+                                               dtype = th.float32), 2)
+    graph.edata['rel_position_norm'] = th.reshape(th.tensor(norm_rel_positions, 
+                                                  dtype = th.float32), (-1,1,1))
 
     return graph, point_data, indices
 
@@ -134,22 +145,20 @@ if __name__ == "__main__":
     print('Processing all files in {}'.format(input_dir))
     print('File list:')
     print(files)
-    for file in tqdm(files, colour='green'):
+    for file in tqdm(files, desc = 'Generating graphs', colour='green'):
         if '.vtp' in file:
             filename = file.replace('.vtp','.grph')
 
             graph, point_data, indices = generate_graph(file, input_dir)
 
             pressure = io.gather_array(point_data, 'pressure')
+            # scale pressure to be mmHg
+            for t in pressure:
+                pressure[t] = pressure[t] / 1333.2
+
             flowrate = io.gather_array(point_data, 'flow')
 
             add_fields(graph, pressure, 'pressure')
             add_fields(graph, flowrate, 'flowrate')
 
             dgl.save_graphs(output_dir + filename, graph)
-
-
-
-
-
-    

@@ -3,3 +3,4 @@ gromenv/
 data_location.txt
 .vscode
 __pycache__
+models
