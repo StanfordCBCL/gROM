@@ -21,11 +21,12 @@ params = {}
 nchuncks = 10
 
 class Dataset(DGLDataset):
-    def __init__(self, graphs, params):
+    def __init__(self, graphs, params, graph_names):
         self.graphs = graphs
         self.params = params
         self.times = []
         self.lightgraphs = []
+        self.graph_names = graph_names
         super().__init__(name='dataset')
 
     def create_index_map(self):
@@ -53,9 +54,14 @@ class Dataset(DGLDataset):
             node_data = [ndata for ndata in lightgraph.ndata]
             edge_data = [edata for edata in lightgraph.edata]
             for ndata in node_data:
-                del lightgraph.ndata[ndata]
+                if ndata != 'inlet_mask' and ndata != 'outlet_mask':
+                    del lightgraph.ndata[ndata]
             for edata in edge_data:
                 del lightgraph.edata[edata]
+
+            lightgraph.ndata['inlet_mask'] = graph.ndata['inlet_mask']
+            lightgraph.ndata['outlet_mask'] = graph.ndata['outlet_mask']
+
 
             self.times.append(graph.ndata['nfeatures'].shape[2])
             self.lightgraphs.append(lightgraph)
@@ -72,10 +78,14 @@ class Dataset(DGLDataset):
     def get_lightgraph(self, i):
         indices = self.index_map[i,:]
 
-
         nf = self.graphs[indices[0]].ndata['nfeatures'][:,:,indices[1]].clone()
         nfsize = nf[:,:2].shape
+
         curnoise = np.random.normal(0, self.noise_rate, nfsize)
+        # we don't add noise to boundary nodes
+        curnoise[self.graphs[indices[0]].ndata['inlet_mask'].bool(),0] = 0
+        curnoise[self.graphs[indices[0]].ndata['outlet_mask'].bool(),1] = 0
+
         nf[:,:2] = nf[:,:2] + curnoise
         self.lightgraphs[indices[0]].ndata['nfeatures'] = nf
 
@@ -141,10 +151,10 @@ def generate_dataset(input_dir):
     datasets = split(graphs, nchuncks)    
     for dataset in datasets:
         train_graphs = [graphs[gname] for gname in dataset['train']]
-        train_dataset = Dataset(train_graphs, params)
+        train_dataset = Dataset(train_graphs, params, dataset['train'])
 
         test_graphs = [graphs[gname] for gname in dataset['test']]
-        test_dataset = Dataset(test_graphs, params)
+        test_dataset = Dataset(test_graphs, params, dataset['test'])
 
         dataset_list.append({'train': train_dataset, 'test': test_dataset})
 

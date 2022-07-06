@@ -18,16 +18,33 @@ import json
 fields_to_normalize = {'node': ['area', 'pressure', 
                                 'flowrate', 'dt'], 
                        'edge': ['rel_position_norm']}
-normalization_type = 'min_max'
+normalization_type = 'normal'
+# normalization_type = 'min_max'
 
 def normalize(field, field_name, statistics):
-    if normalization_type == 'min_max':
+    if statistics['normalization_type'] == 'min_max':
         delta = (statistics[field_name]['max'] - statistics[field_name]['min'])
         if np.abs(delta) > 1e-8:
-            field = (field - statistics[field_name]['min']) / \
-                    (statistics[field_name]['max'] - statistics[field_name]['min'])
+            field = (field - statistics[field_name]['min']) / delta
         else:
             field = field * 0
+    elif statistics['normalization_type'] == 'normal':
+        delta = statistics[field_name]['stdv']
+        if np.abs(delta) > 1e-8:
+            field = (field - statistics[field_name]['mean']) / delta
+        else:
+            field = field * 0
+    else:
+        raise Exception('Normalization type not implemented')
+    return field
+
+def invert_normalize(field, field_name, statistics):
+    if statistics['normalization_type'] == 'min_max':
+        delta = (statistics[field_name]['max'] - statistics[field_name]['min'])
+        field = statistics[field_name]['min'] + delta * field
+    elif statistics['normalization_type'] == 'normal':
+        delta = statistics[field_name]['stdv']
+        field = statistics[field_name]['mean'] + delta * field
     else:
         raise Exception('Normalization type not implemented')
     return field
@@ -120,13 +137,21 @@ def add_features(graphs):
         area = graph.ndata['area'].repeat(1, 1, ntimes)
         type = graph.ndata['type'].repeat(1, 1, ntimes)
 
-        p = graph.ndata['pressure'][:,:,:-1]
-        q = graph.ndata['flowrate'][:,:,:-1]
+        p = graph.ndata['pressure'][:,:,:-1].clone()
+        q = graph.ndata['flowrate'][:,:,:-1].clone()
+        # set boundary conditions
+        p[graph.ndata['outlet_mask'].bool(),:,:] = \
+                graph.ndata['pressure'][graph.ndata['outlet_mask'].bool(),:,1:]
+        q[graph.ndata['inlet_mask'].bool(),:,:] = \
+                graph.ndata['flowrate'][graph.ndata['inlet_mask'].bool(),:,1:]
 
         graph.ndata['nfeatures'] = th.cat((p, q, area, type, dt), axis = 1)
 
         dp = graph.ndata['dp']
         dq = graph.ndata['dq']
+        # mask out labels at boundary nodes
+        dp[graph.ndata['outlet_mask'].bool(),:,:] = 0
+        dq[graph.ndata['inlet_mask'].bool(),:,:] = 0
         graph.ndata['nlabels'] = th.cat((dp, dq), axis = 1)
 
         rp = graph.edata['rel_position']
@@ -156,7 +181,7 @@ if __name__ == "__main__":
     input_dir = data_location + 'graphs/'
     output_dir = data_location + 'normalized_graphs/'
 
-    statistics = {}
+    statistics = {'normalization_type': normalization_type}
     graphs = load_all_graphs(input_dir)
     compute_statistics(graphs, fields_to_normalize, statistics)
     normalize_graphs(graphs, fields_to_normalize, statistics)

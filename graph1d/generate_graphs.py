@@ -45,6 +45,8 @@ def plot_graph(points, bif_id, indices):
 
 def generate_types(bif_id, indices):
     types = []
+    inlet_mask = []
+    outlet_mask = []
     for i, id in enumerate(bif_id):
         if id == -1:
             cur_type = 0
@@ -55,7 +57,15 @@ def generate_types(bif_id, indices):
         elif i in indices['outlets']:
             cur_type = 3
         types.append(cur_type)
-    return th.nn.functional.one_hot(th.tensor(types))
+        if cur_type == 2:
+            inlet_mask.append(True)
+        else:
+            inlet_mask.append(False)
+        if cur_type == 3:
+            outlet_mask.append(True)
+        else:
+            outlet_mask.append(False)
+    return th.nn.functional.one_hot(th.tensor(types)), inlet_mask, outlet_mask
 
 def generate_edge_features(points, edges1, edges2):
     rel_position = []
@@ -93,15 +103,59 @@ def find_outlets(edges1, edges2):
     for e in edges2:
         if e not in edges1:
             outlets.append(e)
-    return outlets    
+    return outlets   
+
+def resample_points(points, edges1, edges2, outlets, perc_points_to_keep):
+    npoints = points.shape[0]
+    npoints_to_keep = int(npoints * perc_points_to_keep)
+    ipoints_to_delete = []
+    for _ in range(npoints - npoints_to_keep):
+        diff = np.linalg.norm(points[edges1,:] - points[edges2,:],
+                              axis = 1)
+        # we don't consider the points that we already deleted
+        diff[np.where(diff < 1e-13)[0]] = np.inf
+        mdiff = np.min(diff)
+        mind = np.where(np.abs(diff - mdiff) < 1e-12)[0][0]
+
+        if edges2[mind] not in outlets:
+            ipoint_to_delete = edges2[mind]
+            ipoint_to_replace = edges1[mind]
+        else:
+            ipoint_to_delete = edges1[mind]
+            ipoint_to_replace = edges2[mind]
+
+        i1 = np.where(edges1 == ipoint_to_delete)[0]
+        if len(i1) != 0:   
+            edges1[i1] = ipoint_to_replace
+        
+        i2 = np.where(np.array(edges2) == ipoint_to_delete)[0]
+        if len(i2) != 0:
+            edges2[i2] = ipoint_to_replace
+
+        ipoints_to_delete.append(ipoint_to_delete)
+    
+    diff = np.linalg.norm(points[edges1,:] - points[edges2,:],
+                              axis = 1)
+
+    points = np.delete(points, ipoints_to_delete, axis = 0)
+
+    edges_to_delete = np.where(diff < 1e-13)[0]
+    edges1 = np.delete(edges1, edges_to_delete)
+    edges2 = np.delete(edges2, edges_to_delete)
+
+    sampled_indices = np.delete(np.arange(npoints), ipoints_to_delete)
+
+    for i in range(edges1.size):
+        edges1[i] = np.where(sampled_indices == edges1[i])[0][0]
+        edges2[i] = np.where(sampled_indices == edges2[i])[0][0]
+
+    return sampled_indices, points, edges1, edges2 
      
-def generate_graph(file, input_dir):
+def generate_graph(file, input_dir, resample_perc):
+    success = False
     soln = io.read_geo(input_dir + '/' + file)
     point_data, _, points = io.get_all_arrays(soln.GetOutput())
     edges1, edges2 = io.get_edges(soln.GetOutput())
-
-    bif_id = point_data['BifurcationId']
-    area = list(io.gather_array(point_data, 'area').values())[0]
 
     inlet = [0]
     outlets = find_outlets(edges1, edges2)
@@ -109,21 +163,40 @@ def generate_graph(file, input_dir):
     indices = {'inlet': inlet,
                'outlets': outlets}
 
-    # plot_graph(points, bif_id, indices)
+    sampled_indices, points, edges1, edges2 = resample_points(points, edges1, 
+                                                              edges2, outlets,
+                                                              resample_perc)
 
+    count = 0
+    for outlet in indices['outlets']:
+        iout = int(np.where(sampled_indices == outlet)[0])
+        indices['outlets'][count] = iout
+        count = count + 1
+
+
+    bif_id = point_data['BifurcationId'][sampled_indices]
+    area = list(io.gather_array(point_data, 'area').values())[0]
+    area = area[sampled_indices]
+
+    # plot_graph(points, bif_id, indices)
     # we manually make the graph bidirected in order to have the relative 
     # position of nodes make sense (xj - xi = - (xi - xj)). Otherwise, each edge
     # will have a single feature
     edges1_copy = edges1.copy()
-    edges1 = edges1 + edges2
-    edges2 = edges2 + edges1_copy
+    edges1 = np.concatenate((edges1, edges2))
+    edges2 = np.concatenate((edges2, edges1_copy))
 
     graph = dgl.graph((edges1, edges2), idtype = th.int32)
 
     graph.ndata['x'] = th.tensor(points, dtype = th.float32)
     graph.ndata['area'] = th.reshape(th.tensor(area, dtype = th.float32), 
                                      (-1,1,1))
-    graph.ndata['type'] = th.unsqueeze(generate_types(bif_id, indices), 2)
+    types, inlet_mask, \
+    outlet_mask = generate_types(bif_id, indices)
+    graph.ndata['type'] = th.unsqueeze(types, 2)
+
+    graph.ndata['inlet_mask'] = th.tensor(inlet_mask, dtype = th.int8)
+    graph.ndata['outlet_mask'] = th.tensor(outlet_mask, dtype = th.int8)
 
     rel_position, norm_rel_positions = generate_edge_features(points, 
                                                               edges1,
@@ -133,7 +206,7 @@ def generate_graph(file, input_dir):
     graph.edata['rel_position_norm'] = th.reshape(th.tensor(norm_rel_positions, 
                                                   dtype = th.float32), (-1,1,1))
 
-    return graph, point_data, indices
+    return graph, point_data, indices, sampled_indices
 
 if __name__ == "__main__":
     data_location = io.data_location()
@@ -148,15 +221,25 @@ if __name__ == "__main__":
     for file in tqdm(files, desc = 'Generating graphs', colour='green'):
         if '.vtp' in file:
             filename = file.replace('.vtp','.grph')
-
-            graph, point_data, indices = generate_graph(file, input_dir)
-
+            
+            resample_perc = 0.03
+            success = False
+            while not success:
+                try:
+                    graph, point_data, indices, \
+                    sampled_indices = generate_graph(file, input_dir, 
+                                                     resample_perc)
+                    success = True
+                except Exception as e:
+                    resample_perc = resample_perc + 0.01
+            
             pressure = io.gather_array(point_data, 'pressure')
-            # scale pressure to be mmHg
-            for t in pressure:
-                pressure[t] = pressure[t] / 1333.2
-
             flowrate = io.gather_array(point_data, 'flow')
+
+            # select indices and scale pressure to be mmHg
+            for t in pressure:
+                pressure[t] = pressure[t][sampled_indices]  / 1333.2
+                flowrate[t] = flowrate[t][sampled_indices]
 
             add_fields(graph, pressure, 'pressure')
             add_fields(graph, flowrate, 'flowrate')

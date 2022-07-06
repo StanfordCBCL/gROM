@@ -117,7 +117,7 @@ def get_edges(geo):
         edges1.append(int(geo.GetCell(i).GetPointIds().GetId(0)))
         edges2.append(int(geo.GetCell(i).GetPointIds().GetId(1)))
 
-    return edges1, edges2
+    return np.array(edges1), np.array(edges2)
 
 def read_geo(fname):
     """
