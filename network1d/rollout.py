@@ -25,8 +25,10 @@ def rollout(gnn_model, params, dataset, index_graph):
     r_features = graph.ndata['nfeatures'][:,0:2].unsqueeze(axis = 2)
     for it in range(times-1):
         delta = gnn_model(graph)
-        delta[:,0] = nz.invert_normalize(delta[:,0], 'dp', params['statistics'])
-        delta[:,1] = nz.invert_normalize(delta[:,1], 'dq', params['statistics'])
+        delta[:,0] = nz.invert_normalize(delta[:,0], 'dp', params['statistics'],
+                                         'labels')
+        delta[:,1] = nz.invert_normalize(delta[:,1], 'dq', params['statistics'],
+                                         'labels')
         gf = graph.ndata['nfeatures'][:,0:2]
         gf = gf + delta
         # set boundary conditions
@@ -42,12 +44,16 @@ def rollout(gnn_model, params, dataset, index_graph):
         r_features = th.cat((r_features, gf.unsqueeze(axis = 2)), axis = 2)
 
     tfc = true_graph.ndata['nfeatures'][:,0:2,:].clone()
-    tfc[:,0] = nz.invert_normalize(tfc[:,0], 'pressure', params['statistics'])
-    tfc[:,1] = nz.invert_normalize(tfc[:,1], 'flowrate', params['statistics'])
+    tfc[:,0] = nz.invert_normalize(tfc[:,0], 'pressure', params['statistics'],
+                                   'features')
+    tfc[:,1] = nz.invert_normalize(tfc[:,1], 'flowrate', params['statistics'],
+                                   'features')
 
     rfc = r_features.clone()
-    rfc[:,0] = nz.invert_normalize(rfc[:,0], 'pressure', params['statistics'])
-    rfc[:,1] = nz.invert_normalize(rfc[:,1], 'flowrate', params['statistics'])
+    rfc[:,0] = nz.invert_normalize(rfc[:,0], 'pressure', params['statistics'],
+                                   'features')
+    rfc[:,1] = nz.invert_normalize(rfc[:,1], 'flowrate', params['statistics'],
+                                   'features')
 
     # compute error
     diff = tfc - rfc

@@ -59,10 +59,6 @@ class Dataset(DGLDataset):
             for edata in edge_data:
                 del lightgraph.edata[edata]
 
-            lightgraph.ndata['inlet_mask'] = graph.ndata['inlet_mask']
-            lightgraph.ndata['outlet_mask'] = graph.ndata['outlet_mask']
-
-
             self.times.append(graph.ndata['nfeatures'].shape[2])
             self.lightgraphs.append(lightgraph)
 
@@ -83,8 +79,8 @@ class Dataset(DGLDataset):
 
         curnoise = np.random.normal(0, self.noise_rate, nfsize)
         # we don't add noise to boundary nodes
-        curnoise[self.graphs[indices[0]].ndata['inlet_mask'].bool(),0] = 0
-        curnoise[self.graphs[indices[0]].ndata['outlet_mask'].bool(),1] = 0
+        curnoise[self.graphs[indices[0]].ndata['outlet_mask'].bool(),0] = 0
+        curnoise[self.graphs[indices[0]].ndata['inlet_mask'].bool(),1] = 0
 
         nf[:,:2] = nf[:,:2] + curnoise
         self.lightgraphs[indices[0]].ndata['nfeatures'] = nf

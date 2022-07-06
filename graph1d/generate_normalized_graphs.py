@@ -15,20 +15,14 @@ from dgl.data.utils import load_graphs
 import numpy as np
 import json
 
-fields_to_normalize = {'node': ['area', 'pressure', 
-                                'flowrate', 'dt'], 
-                       'edge': ['rel_position_norm']}
-normalization_type = 'normal'
-# normalization_type = 'min_max'
-
-def normalize(field, field_name, statistics):
-    if statistics['normalization_type'] == 'min_max':
+def normalize(field, field_name, statistics, norm_dict_label):
+    if statistics['normalization_type'][norm_dict_label] == 'min_max':
         delta = (statistics[field_name]['max'] - statistics[field_name]['min'])
         if np.abs(delta) > 1e-8:
             field = (field - statistics[field_name]['min']) / delta
         else:
             field = field * 0
-    elif statistics['normalization_type'] == 'normal':
+    elif statistics['normalization_type'][norm_dict_label] == 'normal':
         delta = statistics[field_name]['stdv']
         if np.abs(delta) > 1e-8:
             field = (field - statistics[field_name]['mean']) / delta
@@ -38,11 +32,11 @@ def normalize(field, field_name, statistics):
         raise Exception('Normalization type not implemented')
     return field
 
-def invert_normalize(field, field_name, statistics):
-    if statistics['normalization_type'] == 'min_max':
+def invert_normalize(field, field_name, statistics, norm_dict_label):
+    if statistics['normalization_type'][norm_dict_label] == 'min_max':
         delta = (statistics[field_name]['max'] - statistics[field_name]['min'])
         field = statistics[field_name]['min'] + delta * field
-    elif statistics['normalization_type'] == 'normal':
+    elif statistics['normalization_type'][norm_dict_label] == 'normal':
         delta = statistics[field_name]['stdv']
         field = statistics[field_name]['mean'] + delta * field
     else:
@@ -111,7 +105,7 @@ def compute_statistics(graphs, fields, statistics):
                 statistics[field_name] = cur_statistics
     return statistics
 
-def normalize_graphs(graphs, fields, statistics):
+def normalize_graphs(graphs, fields, statistics, norm_dict_label):
     print('Normalize graphs')
     for etype in fields:
             for field_name in fields[etype]:
@@ -121,12 +115,14 @@ def normalize_graphs(graphs, fields, statistics):
                     if etype == 'node':
                         d = graph.ndata[field_name]
                         graph.ndata[field_name] = normalize(d, field_name,
-                                                            statistics)    
+                                                            statistics,
+                                                            norm_dict_label)    
                                 
                     if etype == 'edge':
                         d = graph.edata[field_name]
                         graph.edata[field_name] = normalize(d, field_name,
-                                                            statistics)
+                                                            statistics,
+                                                            norm_dict_label)
 
 def add_features(graphs):  
     for graph_n in tqdm(graphs, desc = 'Add features', colour='green'):
@@ -181,13 +177,20 @@ if __name__ == "__main__":
     input_dir = data_location + 'graphs/'
     output_dir = data_location + 'normalized_graphs/'
 
-    statistics = {'normalization_type': normalization_type}
+    fields_to_normalize = {'node': ['area', 'pressure', 
+                                'flowrate', 'dt'], 
+                       'edge': ['rel_position_norm']}
+    norm_type_features = 'normal'
+    norm_type_labels = 'min_max'
+
+    statistics = {'normalization_type': {'features': norm_type_features,
+                                         'labels': norm_type_labels}}
     graphs = load_all_graphs(input_dir)
     compute_statistics(graphs, fields_to_normalize, statistics)
-    normalize_graphs(graphs, fields_to_normalize, statistics)
+    normalize_graphs(graphs, fields_to_normalize, statistics, 'features')
     add_deltas(graphs)
     compute_statistics(graphs, {'node' : ['dp', 'dq']}, statistics)
-    normalize_graphs(graphs, {'node' : ['dp', 'dq']}, statistics)
+    normalize_graphs(graphs, {'node' : ['dp', 'dq']}, statistics, 'labels')
     print(statistics)
     add_features(graphs)
     save_graphs(graphs, output_dir)

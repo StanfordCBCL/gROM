@@ -15,7 +15,7 @@ import dgl
 import torch as th
 from tqdm import tqdm
 
-def plot_graph(points, bif_id, indices):
+def plot_graph(points, bif_id, indices, edges1, edges2):
     fig = plt.figure()
     ax = plt.axes(projection='3d')
     ax._axis3don = False
@@ -36,6 +36,12 @@ def plot_graph(points, bif_id, indices):
 
     outlets = indices['outlets']
     ax.scatter(points[outlets,0], points[outlets,1], points[outlets,2],color='red', depthshade=0, s = 60)
+
+    for iedge in range(edges1.size):
+        ax.plot3D([points[edges1[iedge],0],points[edges2[iedge],0]],
+                  [points[edges1[iedge],1],points[edges2[iedge],1]],
+                  [points[edges1[iedge],2],points[edges2[iedge],2]],
+                   color = 'black', linewidth=1)
 
     # ax.set_xlim([points[outlets[0],0]-0.1,points[outlets[0],0]+0.1])
     # ax.set_ylim([points[outlets[0],1]-0.1,points[outlets[0],1]+0.1])
@@ -152,7 +158,6 @@ def resample_points(points, edges1, edges2, outlets, perc_points_to_keep):
     return sampled_indices, points, edges1, edges2 
      
 def generate_graph(file, input_dir, resample_perc):
-    success = False
     soln = io.read_geo(input_dir + '/' + file)
     point_data, _, points = io.get_all_arrays(soln.GetOutput())
     edges1, edges2 = io.get_edges(soln.GetOutput())
@@ -178,7 +183,7 @@ def generate_graph(file, input_dir, resample_perc):
     area = list(io.gather_array(point_data, 'area').values())[0]
     area = area[sampled_indices]
 
-    # plot_graph(points, bif_id, indices)
+    plot_graph(points, bif_id, indices, edges1, edges2)
     # we manually make the graph bidirected in order to have the relative 
     # position of nodes make sense (xj - xi = - (xi - xj)). Otherwise, each edge
     # will have a single feature

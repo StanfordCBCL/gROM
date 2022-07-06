@@ -49,7 +49,7 @@ def mae(input, target, mask = None):
     return (mask * (th.abs(input - target))).mean()
 
 def evaluate_model(gnn_model, train_dataloader, test_dataloader, optimizer,     
-                   parallel):
+                   print_progress):
     def loop_over(dataloader, label, c_optimizer = None):
         global_loss = 0
         global_metric = 0
@@ -59,8 +59,8 @@ def evaluate_model(gnn_model, train_dataloader, test_dataloader, optimizer,
             pred = gnn_model(batched_graph)
 
             mask = th.ones(batched_graph.ndata['nlabels'].shape)
-            mask[:,0] = mask[:,0] - batched_graph.ndata['inlet_mask']
-            mask[:,1] = mask[:,1] - batched_graph.ndata['outlet_mask']
+            mask[:,0] = mask[:,0] - batched_graph.ndata['outlet_mask']
+            mask[:,1] = mask[:,1] - batched_graph.ndata['inlet_mask']
 
             loss_v = mse(pred, batched_graph.ndata['nlabels'], mask)
 
@@ -74,7 +74,7 @@ def evaluate_model(gnn_model, train_dataloader, test_dataloader, optimizer,
             return loss_v.detach().numpy(), metric_v.detach().numpy()
 
 
-        if parallel:
+        if not print_progress:
             for batched_graph in dataloader:
                 loss_v, metric_v = iteration(batched_graph, c_optimizer)
                 global_loss = global_loss + loss_v
@@ -116,7 +116,7 @@ def compute_rollout_errors(gnn_model, params, dataset, idxs_train, idxs_test):
 
     return train_errs, test_errs
 
-def train_gnn_model(gnn_model, dataset, params, parallel, 
+def train_gnn_model(gnn_model, dataset, params, parallel, rank0,
                     checkpoint_fct = None):
     if parallel:
         train_sampler = DistributedSampler(dataset['train'], 
@@ -172,7 +172,8 @@ def train_gnn_model(gnn_model, dataset, params, parallel,
     history['test_metric'] = [[], []]
     history['test_rollout'] = [[], []]         
     for epoch in range(nepochs):
-        print('================{}================'.format(epoch))
+        if rank0:
+            print('================{}================'.format(epoch))
         dataset['train'].set_noise_rate(params['rate_noise'])
         dataset['test'].set_noise_rate(params['rate_noise'])
 
@@ -180,7 +181,7 @@ def train_gnn_model(gnn_model, dataset, params, parallel,
                                                               train_dataloader,
                                                               test_dataloader,
                                                               optimizer,
-                                                              parallel)
+                                                              rank0)
 
         msg = '{:.0f}\t'.format(epoch)
         msg = msg + 'train_loss = {:.2e} '.format(train_results['loss'])
@@ -189,7 +190,9 @@ def train_gnn_model(gnn_model, dataset, params, parallel,
         msg = msg + 'test_mae = {:.2e} '.format(test_results['metric'])
         msg = msg + 'time = {:.2f} s'.format(elapsed)
 
-        print(msg)
+        if rank0:
+            print("", flush = True)
+            print(msg, flush = True)
 
         history['train_loss'][0].append(epoch)
         history['train_loss'][1].append(float(train_results['loss']))
@@ -209,7 +212,8 @@ def train_gnn_model(gnn_model, dataset, params, parallel,
             msg = msg + 'train = {:.2e} '.format(th.norm(e_train))
             msg = msg + 'test = {:.2e} '.format(th.norm(e_test))
 
-            print(msg, flush=True)
+            if rank0:
+                print(msg, flush = True)
             history['train_rollout'][0].append(epoch)
             history['train_rollout'][1].append(float(th.norm(e_train)))
             history['test_rollout'][0].append(epoch)
@@ -254,7 +258,7 @@ def launch_training(dataset, params, parallel, out_dir = 'models/',
         save_model('initial_gnn.pms')
 
     gnn_model, history = train_gnn_model(gnn_model, dataset, params, 
-                                         checkpoint_fct)
+                                         parallel, save_data, checkpoint_fct)
 
     if save_data:
         ptools.plot_history(history['train_loss'],
@@ -274,10 +278,12 @@ def launch_training(dataset, params, parallel, out_dir = 'models/',
     return gnn_model
 
 if __name__ == "__main__":
+    rank = 0
     try:
         parallel = True
         dist.init_process_group(backend='mpi')
-        print("my rank = %d, world = %d." % (dist.get_rank(), dist.get_world_size()), flush=True)
+        rank = dist.get_rank()
+        print("my rank = %d, world = %d." % (rank, dist.get_world_size()), flush=True)
     except RuntimeError:
         parallel = False
         print("MPI not supported. Running serially.")
@@ -287,7 +293,7 @@ if __name__ == "__main__":
     parser.add_argument('--bs', help='batch size', type=int, default=200)
     parser.add_argument('--epochs', help='total number of epochs', type=int, default=100)
     parser.add_argument('--lr_decay', help='learning rate decay', type=float, default=0.1)
-    parser.add_argument('--lr', help='learning rate', type=float, default=0.05)
+    parser.add_argument('--lr', help='learning rate', type=float, default=0.001)
     parser.add_argument('--rate_noise', help='rate noise', type=float, default=0.01)
     parser.add_argument('--continuity_coeff', help='continuity coefficient', type=int, default=-3)
     parser.add_argument('--bc_coeff', help='boundary conditions coefficient', type=int, default=-5)
@@ -331,4 +337,6 @@ if __name__ == "__main__":
 
     end = time.time()
     elapsed_time = end - start
-    print('Training time = ' + str(elapsed_time))
+
+    if rank == 0:
+        print('Training time = ' + str(elapsed_time))
