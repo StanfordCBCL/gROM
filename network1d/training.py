@@ -26,6 +26,7 @@ import json
 import plot_tools as ptools
 import pickle
 import signal
+import generate_normalized_graphs as gng
 
 class SignalHandler(object):
     def __init__(self):
@@ -49,7 +50,7 @@ def mae(input, target, mask = None):
     return (mask * (th.abs(input - target))).mean()
 
 def evaluate_model(gnn_model, train_dataloader, test_dataloader, optimizer,     
-                   print_progress):
+                   print_progress, params):
     def loop_over(dataloader, label, c_optimizer = None):
         global_loss = 0
         global_metric = 0
@@ -59,8 +60,14 @@ def evaluate_model(gnn_model, train_dataloader, test_dataloader, optimizer,
             pred = gnn_model(batched_graph)
 
             mask = th.ones(batched_graph.ndata['nlabels'].shape)
-            mask[:,0] = mask[:,0] - batched_graph.ndata['outlet_mask']
-            mask[:,1] = mask[:,1] - batched_graph.ndata['inlet_mask']
+            if params['bc_type'] == 'realistic_dirichlet':
+                mask[:,0] = mask[:,0] - batched_graph.ndata['outlet_mask']
+                mask[:,1] = mask[:,1] - batched_graph.ndata['inlet_mask']
+            elif params['bc_type'] == 'full_dirichlet':
+                mask[:,0] = mask[:,0] - batched_graph.ndata['inlet_mask']
+                mask[:,0] = mask[:,0] - batched_graph.ndata['outlet_mask']
+                mask[:,1] = mask[:,1] - batched_graph.ndata['inlet_mask']
+                mask[:,1] = mask[:,1] - batched_graph.ndata['outlet_mask']
 
             loss_v = mse(pred, batched_graph.ndata['nlabels'], mask)
 
@@ -181,7 +188,8 @@ def train_gnn_model(gnn_model, dataset, params, parallel, rank0,
                                                               train_dataloader,
                                                               test_dataloader,
                                                               optimizer,
-                                                              rank0)
+                                                              rank0,
+                                                              params)
 
         msg = '{:.0f}\t'.format(epoch)
         msg = msg + 'train_loss = {:.2e} '.format(train_results['loss'])
@@ -274,6 +282,9 @@ def launch_training(dataset, params, parallel, out_dir = 'models/',
 
         with open(folder + '/history.bnr', 'wb') as outfile:
             pickle.dump(history, outfile)
+        
+        with open(folder + '/parameters.json', 'w') as outfile:
+            json.dump(params, outfile, default=default, indent=4)
 
     return gnn_model
 
@@ -295,46 +306,41 @@ if __name__ == "__main__":
     parser.add_argument('--lr_decay', help='learning rate decay', type=float, default=0.1)
     parser.add_argument('--lr', help='learning rate', type=float, default=0.001)
     parser.add_argument('--rate_noise', help='rate noise', type=float, default=0.01)
-    parser.add_argument('--continuity_coeff', help='continuity coefficient', type=int, default=-3)
-    parser.add_argument('--bc_coeff', help='boundary conditions coefficient', type=int, default=-5)
-    parser.add_argument('--momentum', help='momentum', type=float, default=0)
     parser.add_argument('--weight_decay', help='weight decay for l2 regularization', type=float, default=1e-5)
     parser.add_argument('--ls_gnn', help='latent size gnn', type=int, default=16)
     parser.add_argument('--ls_mlp', help='latent size mlps', type=int, default=64)
     parser.add_argument('--process_iterations', help='gnn layers', type=int, default=2)
     parser.add_argument('--hl_mlp', help='hidden layers mlps', type=int, default=1)
-    parser.add_argument('--nmc', help='copies per model', type=int, default=1)
 
     args = parser.parse_args()
 
-    params = {'infeat_edges': 4,
+    data_location = io.data_location()
+    input_dir = data_location + 'normalized_graphs/'
+    norm_type = {'features': 'normal', 'labels': 'min_max'}
+    graphs, params  = gng.generate_normalized_graphs(input_dir, norm_type, 
+                                                     'full_dirichlet')
+    datasets = dset.generate_dataset(graphs)
+
+    t_params = {'infeat_edges': 4,
               'latent_size_gnn': args.ls_gnn,
               'latent_size_mlp': args.ls_mlp,
               'out_size': 2,
               'process_iterations': args.process_iterations,
               'number_hidden_layers_mlp': args.hl_mlp,
               'learning_rate': args.lr,
-              'momentum': args.momentum,
               'batch_size': args.bs,
               'lr_decay': args.lr_decay,
               'nepochs': args.epochs,
-              'continuity_coeff': args.continuity_coeff,
-              'bc_coeff': args.bc_coeff,
               'weight_decay': args.weight_decay,
               'rate_noise': args.rate_noise}
+    params.update(t_params)
+
+
     start = time.time()
-
-    data_location = io.data_location()
-    input_dir = data_location + 'normalized_graphs/'
-    statistics = json.load(open(input_dir + '/statistics.json'))
-
-    params['statistics'] = statistics
-
-    datasets = dset.generate_dataset(input_dir)
-
     for dataset in datasets:
+        params['train_split'] = dataset['train'].graph_names
+        params['test_split'] = dataset['test'].graph_names
         gnn_model = launch_training(dataset, params, parallel)
-
     end = time.time()
     elapsed_time = end - start
 

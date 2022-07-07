@@ -17,7 +17,8 @@ def rollout(gnn_model, params, dataset, index_graph):
     graph = copy.deepcopy(dataset.lightgraphs[index_graph])
     true_graph = dataset.graphs[index_graph]
 
-    graph.ndata['nfeatures'] = true_graph.ndata['nfeatures'][:,:,0].clone()
+    tfc = true_graph.ndata['nfeatures'].clone()
+    graph.ndata['nfeatures'] = tfc[:,:,0].clone()
     graph.edata['efeatures'] = true_graph.edata['efeatures'].squeeze().clone()
 
     times = dataset.times[index_graph]
@@ -32,13 +33,14 @@ def rollout(gnn_model, params, dataset, index_graph):
         gf = graph.ndata['nfeatures'][:,0:2]
         gf = gf + delta
         # set boundary conditions
-        pb = true_graph.ndata['nfeatures'][graph.ndata['outlet_mask'].bool(),
-                                           0,it + 1]
-        qb = true_graph.ndata['nfeatures'][graph.ndata['inlet_mask'].bool(),
-                                           1,it + 1]
-
-        gf[graph.ndata['outlet_mask'].bool(),0] = pb
-        gf[graph.ndata['inlet_mask'].bool(),1] = qb
+        if params['bc_type'] == 'realistic_dirichlet':
+            gf[graph.ndata['outlet_mask'].bool(), 0] = tfc[graph.ndata['outlet_mask'].bool(), 0, it + 1]
+            gf[graph.ndata['inlet_mask'].bool(), 1] = tfc[graph.ndata['inlet_mask'].bool(), 1, it + 1]
+        elif params['bc_type'] == 'full_dirichlet':
+            gf[graph.ndata['inlet_mask'].bool(), 0] = tfc[graph.ndata['inlet_mask'].bool(), 0, it + 1]
+            gf[graph.ndata['outlet_mask'].bool(), 0] = tfc[graph.ndata['outlet_mask'].bool(), 0, it + 1]
+            gf[graph.ndata['inlet_mask'].bool(), 1] = tfc[graph.ndata['inlet_mask'].bool(), 1, it + 1]
+            gf[graph.ndata['outlet_mask'].bool(), 1] = tfc[graph.ndata['outlet_mask'].bool(), 1, it + 1]
 
         graph.ndata['nfeatures'][:,0:2] = gf.clone()
         r_features = th.cat((r_features, gf.unsqueeze(axis = 2)), axis = 2)

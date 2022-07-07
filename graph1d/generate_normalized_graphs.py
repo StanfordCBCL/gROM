@@ -124,7 +124,7 @@ def normalize_graphs(graphs, fields, statistics, norm_dict_label):
                                                             statistics,
                                                             norm_dict_label)
 
-def add_features(graphs):  
+def add_features(graphs, params):  
     for graph_n in tqdm(graphs, desc = 'Add features', colour='green'):
         graph = graphs[graph_n]
         ntimes = graph.ndata['dp'].shape[2]
@@ -135,19 +135,34 @@ def add_features(graphs):
 
         p = graph.ndata['pressure'][:,:,:-1].clone()
         q = graph.ndata['flowrate'][:,:,:-1].clone()
-        # set boundary conditions
-        p[graph.ndata['outlet_mask'].bool(),:,:] = \
-                graph.ndata['pressure'][graph.ndata['outlet_mask'].bool(),:,1:]
-        q[graph.ndata['inlet_mask'].bool(),:,:] = \
-                graph.ndata['flowrate'][graph.ndata['inlet_mask'].bool(),:,1:]
-
-        graph.ndata['nfeatures'] = th.cat((p, q, area, type, dt), axis = 1)
 
         dp = graph.ndata['dp']
         dq = graph.ndata['dq']
-        # mask out labels at boundary nodes
-        dp[graph.ndata['outlet_mask'].bool(),:,:] = 0
-        dq[graph.ndata['inlet_mask'].bool(),:,:] = 0
+
+        # set boundary conditions
+        if params['bc_type'] == 'realistic_dirichlet':
+            p[graph.ndata['outlet_mask'].bool(),:,:] = \
+                graph.ndata['pressure'][graph.ndata['outlet_mask'].bool(),:,1:]
+            q[graph.ndata['inlet_mask'].bool(),:,:] = \
+                graph.ndata['flowrate'][graph.ndata['inlet_mask'].bool(),:,1:]
+            # mask out labels at boundary nodes
+            dp[graph.ndata['outlet_mask'].bool(),:,:] = 0
+            dq[graph.ndata['inlet_mask'].bool(),:,:] = 0
+        elif params['bc_type'] == 'full_dirichlet':
+            p[graph.ndata['inlet_mask'].bool(),:,:] = \
+                graph.ndata['pressure'][graph.ndata['inlet_mask'].bool(),:,1:]
+            p[graph.ndata['outlet_mask'].bool(),:,:] = \
+                graph.ndata['pressure'][graph.ndata['outlet_mask'].bool(),:,1:]
+            q[graph.ndata['inlet_mask'].bool(),:,:] = \
+                graph.ndata['flowrate'][graph.ndata['inlet_mask'].bool(),:,1:]
+            q[graph.ndata['outlet_mask'].bool(),:,:] = \
+                graph.ndata['flowrate'][graph.ndata['outlet_mask'].bool(),:,1:]
+            dp[graph.ndata['inlet_mask'].bool(),:,:] = 0
+            dp[graph.ndata['outlet_mask'].bool(),:,:] = 0
+            dq[graph.ndata['inlet_mask'].bool(),:,:] = 0
+            dq[graph.ndata['outlet_mask'].bool(),:,:] = 0
+
+        graph.ndata['nfeatures'] = th.cat((p, q, area, type, dt), axis = 1)
         graph.ndata['nlabels'] = th.cat((dp, dq), axis = 1)
 
         rp = graph.edata['rel_position']
@@ -168,23 +183,15 @@ def save_graphs(graphs, output_dir):
     for graph_name in tqdm(graphs, desc = 'Saving graphs', colour='green'):
         dgl.save_graphs(output_dir + graph_name, graphs[graph_name])
 
-def save_statistics(statistics, output_dir):
-    with open(output_dir + '/statistics.json', 'w') as outfile:
-        json.dump(statistics, outfile, indent=4)
-    
-if __name__ == "__main__":
-    data_location = io.data_location()
-    input_dir = data_location + 'graphs/'
-    output_dir = data_location + 'normalized_graphs/'
+def save_parameters(params, output_dir):
+    with open(output_dir + '/parameters.json', 'w') as outfile:
+        json.dump(params, outfile, indent=4)
 
+def generate_normalized_graphs(input_dir, norm_type, bc_type):
     fields_to_normalize = {'node': ['area', 'pressure', 
                                 'flowrate', 'dt'], 
                        'edge': ['rel_position_norm']}
-    norm_type_features = 'normal'
-    norm_type_labels = 'min_max'
-
-    statistics = {'normalization_type': {'features': norm_type_features,
-                                         'labels': norm_type_labels}}
+    statistics = {'normalization_type': norm_type}
     graphs = load_all_graphs(input_dir)
     compute_statistics(graphs, fields_to_normalize, statistics)
     normalize_graphs(graphs, fields_to_normalize, statistics, 'features')
@@ -192,6 +199,19 @@ if __name__ == "__main__":
     compute_statistics(graphs, {'node' : ['dp', 'dq']}, statistics)
     normalize_graphs(graphs, {'node' : ['dp', 'dq']}, statistics, 'labels')
     print(statistics)
-    add_features(graphs)
-    save_graphs(graphs, output_dir)
-    save_statistics(statistics, output_dir)
+    params = {'bc_type': bc_type}
+    params['statistics'] = statistics
+    add_features(graphs, params)
+    
+    return graphs, params
+    
+if __name__ == "__main__":
+    data_location = io.data_location()
+    norm_type_features = 'normal'
+    norm_type_labels = 'min_max'
+
+    norm_type = {'features': norm_type_features, 'labels': norm_type_labels}
+    graphs, params = generate_normalized_graphs(data_location + '/graphs/',
+                                                norm_type, 'full_dirichlet')
+    save_graphs(graphs, data_location + '/normalized_graphs/')
+    save_parameters(params, data_location + '/normalized_graphs/')

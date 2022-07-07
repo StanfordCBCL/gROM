@@ -139,10 +139,7 @@ def split(graphs, divs):
 
     return datasets
 
-def generate_dataset(input_dir):
-
-    graphs = nz.load_all_graphs(input_dir)
-
+def generate_dataset(graphs):
     dataset_list = []
     datasets = split(graphs, nchuncks)    
     for dataset in datasets:
