@@ -1,13 +1,6 @@
 import sys
 import os
-
-# this fixes a problem with openmp https://github.com/dmlc/xgboost/issues/1715
-os.environ['KMP_DUPLICATE_LIB_OK']='True'
-
-# add path to core
-sys.path.append("../tools/")
-
-import io_utils as io
+import tools.io_utils as io
 import dgl
 import torch as th
 from tqdm import tqdm
@@ -136,8 +129,8 @@ def add_features(graphs, params):
         p = graph.ndata['pressure'][:,:,:-1].clone()
         q = graph.ndata['flowrate'][:,:,:-1].clone()
 
-        dp = graph.ndata['dp']
-        dq = graph.ndata['dq']
+        dp = graph.ndata['dp'].clone()
+        dq = graph.ndata['dq'].clone()
 
         # set boundary conditions
         if params['bc_type'] == 'realistic_dirichlet':
@@ -198,7 +191,6 @@ def generate_normalized_graphs(input_dir, norm_type, bc_type):
     add_deltas(graphs)
     compute_statistics(graphs, {'node' : ['dp', 'dq']}, statistics)
     normalize_graphs(graphs, {'node' : ['dp', 'dq']}, statistics, 'labels')
-    print(statistics)
     params = {'bc_type': bc_type}
     params['statistics'] = statistics
     add_features(graphs, params)

@@ -1,18 +1,12 @@
 import sys
 import os
-
-# this fixes a problem with openmp https://github.com/dmlc/xgboost/issues/1715
-# os.environ['KMP_DUPLICATE_LIB_OK']='True'
-
-sys.path.append("../graph1d")
-sys.path.append("../tools")
-
+sys.path.append(os.getcwd())
 import argparse
 import time
-import io_utils as io
+import tools.io_utils as io
 import numpy as np
 import torch.distributed as dist
-import generate_dataset as dset
+import graph1d.generate_dataset as dset
 import torch as th
 from datetime import datetime
 from meshgraphnet import MeshGraphNet
@@ -23,10 +17,10 @@ from dgl.dataloading import GraphDataLoader
 from tqdm import tqdm
 from rollout import rollout
 import json
-import plot_tools as ptools
+import tools.plot_tools as ptools
 import pickle
 import signal
-import generate_normalized_graphs as gng
+import graph1d.generate_normalized_graphs as gng
 
 class SignalHandler(object):
     def __init__(self):
@@ -97,6 +91,7 @@ def evaluate_model(gnn_model, train_dataloader, test_dataloader, optimizer,
 
         return {'loss': global_loss / count, 'metric': global_metric / count}
 
+    gnn_model.train()
     start = time.time()
     train_results = loop_over(train_dataloader, 'train', optimizer)
     test_results = loop_over(test_dataloader, 'test ')
@@ -105,7 +100,7 @@ def evaluate_model(gnn_model, train_dataloader, test_dataloader, optimizer,
     return train_results, test_results, end - start
 
 def compute_rollout_errors(gnn_model, params, dataset, idxs_train, idxs_test):
-    train_errs = th.zeros(2)
+    train_errs = np.zeros(2)
     for idx in idxs_train:
         _, cur_train_errs = rollout(gnn_model, params, dataset['train'],
                                     idx)
@@ -113,7 +108,7 @@ def compute_rollout_errors(gnn_model, params, dataset, idxs_train, idxs_test):
     
     train_errs = train_errs / len(idxs_train)
 
-    test_errs = th.zeros(2)
+    test_errs = np.zeros(2)
     for idx in idxs_test:
         _, cur_test_errs = rollout(gnn_model, params, dataset['test'],
                                     idx)
@@ -217,15 +212,15 @@ def train_gnn_model(gnn_model, dataset, params, parallel, rank0,
                                                      params, dataset, 
                                                      idxs_train, idxs_test)
             msg = 'Rollout: \t'.format(epoch)
-            msg = msg + 'train = {:.2e} '.format(th.norm(e_train))
-            msg = msg + 'test = {:.2e} '.format(th.norm(e_test))
+            msg = msg + 'train = {:.2e} '.format(np.linalg.norm(e_train))
+            msg = msg + 'test = {:.2e} '.format(np.linalg.norm(e_test))
 
             if rank0:
                 print(msg, flush = True)
             history['train_rollout'][0].append(epoch)
-            history['train_rollout'][1].append(float(th.norm(e_train)))
+            history['train_rollout'][1].append(float(np.linalg.norm(e_train)))
             history['test_rollout'][0].append(epoch)
-            history['test_rollout'][1].append(float(th.norm(e_test)))
+            history['test_rollout'][1].append(float(np.linalg.norm(e_test)))
 
         scheduler.step()
 
@@ -302,24 +297,32 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser(description='Graph Reduced Order Models')
 
     parser.add_argument('--bs', help='batch size', type=int, default=200)
-    parser.add_argument('--epochs', help='total number of epochs', type=int, default=100)
-    parser.add_argument('--lr_decay', help='learning rate decay', type=float, default=0.1)
-    parser.add_argument('--lr', help='learning rate', type=float, default=0.001)
-    parser.add_argument('--rate_noise', help='rate noise', type=float, default=0.01)
-    parser.add_argument('--weight_decay', help='weight decay for l2 regularization', type=float, default=1e-5)
-    parser.add_argument('--ls_gnn', help='latent size gnn', type=int, default=16)
-    parser.add_argument('--ls_mlp', help='latent size mlps', type=int, default=64)
-    parser.add_argument('--process_iterations', help='gnn layers', type=int, default=2)
-    parser.add_argument('--hl_mlp', help='hidden layers mlps', type=int, default=1)
+    parser.add_argument('--epochs', help='total number of epochs', type=int,
+                        default=100)
+    parser.add_argument('--lr_decay', help='learning rate decay', type=float,
+                        default=0.1)
+    parser.add_argument('--lr', help='learning rate', type=float, default=0.01)
+    parser.add_argument('--rate_noise', help='rate noise', type=float,
+                        default=0.00)
+    parser.add_argument('--weight_decay', help='l2 regularization', 
+                        type=float, default=1e-5)
+    parser.add_argument('--ls_gnn', help='latent size gnn', type=int,
+                        default=16)
+    parser.add_argument('--ls_mlp', help='latent size mlps', type=int,
+                        default=64)
+    parser.add_argument('--process_iterations', help='gnn layers', type=int,
+                        default=2)
+    parser.add_argument('--hl_mlp', help='hidden layers mlps', type=int,
+                        default=1)
 
     args = parser.parse_args()
 
     data_location = io.data_location()
-    input_dir = data_location + 'normalized_graphs/'
+    input_dir = data_location + 'graphs/'
     norm_type = {'features': 'normal', 'labels': 'min_max'}
     graphs, params  = gng.generate_normalized_graphs(input_dir, norm_type, 
                                                      'full_dirichlet')
-    datasets = dset.generate_dataset(graphs)
+    datasets = dset.generate_dataset(graphs, params)
 
     t_params = {'infeat_edges': 4,
               'latent_size_gnn': args.ls_gnn,
@@ -334,7 +337,6 @@ if __name__ == "__main__":
               'weight_decay': args.weight_decay,
               'rate_noise': args.rate_noise}
     params.update(t_params)
-
 
     start = time.time()
     for dataset in datasets:

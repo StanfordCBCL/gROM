@@ -1,13 +1,6 @@
 import sys
 import os
-
-# this fixes a problem with openmp https://github.com/dmlc/xgboost/issues/1715
-os.environ['KMP_DUPLICATE_LIB_OK']='True'
-
-# add path to core
-sys.path.append("../tools/")
-
-import io_utils as io
+import tools.io_utils as io
 import numpy as np
 import matplotlib.pyplot as plt
 import matplotlib.cm as cm

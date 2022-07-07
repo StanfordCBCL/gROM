@@ -1,24 +1,17 @@
 import sys
 import os
-
-# this fixes a problem with openmp https://github.com/dmlc/xgboost/issues/1715
-os.environ['KMP_DUPLICATE_LIB_OK']='True'
-
-# add path to core
-sys.path.append("../tools/")
-
-import io_utils as io
+sys.path.append(os.getcwd())
+import tools.io_utils as io
 from dgl.data import DGLDataset
 import time
-import generate_normalized_graphs as nz
+import graph1d.generate_normalized_graphs as nz
 import random
 import numpy as np
 import copy
 import torch as th
 from tqdm import tqdm
 
-params = {}
-nchuncks = 10
+nchunks = 10
 
 class Dataset(DGLDataset):
     def __init__(self, graphs, params, graph_names):
@@ -79,8 +72,14 @@ class Dataset(DGLDataset):
 
         curnoise = np.random.normal(0, self.noise_rate, nfsize)
         # we don't add noise to boundary nodes
-        curnoise[self.graphs[indices[0]].ndata['outlet_mask'].bool(),0] = 0
-        curnoise[self.graphs[indices[0]].ndata['inlet_mask'].bool(),1] = 0
+        if self.params['bc_type'] == 'realistic_dirichlet':
+            curnoise[self.graphs[indices[0]].ndata['outlet_mask'].bool(),0] = 0
+            curnoise[self.graphs[indices[0]].ndata['inlet_mask'].bool(),1] = 0
+        elif self.params['bc_type'] == 'full_dirichlet':
+            curnoise[self.graphs[indices[0]].ndata['inlet_mask'].bool(),0] = 0
+            curnoise[self.graphs[indices[0]].ndata['outlet_mask'].bool(),0] = 0
+            curnoise[self.graphs[indices[0]].ndata['inlet_mask'].bool(),1] = 0
+            curnoise[self.graphs[indices[0]].ndata['outlet_mask'].bool(),1] = 0
 
         nf[:,:2] = nf[:,:2] + curnoise
         self.lightgraphs[indices[0]].ndata['nfeatures'] = nf
@@ -139,9 +138,9 @@ def split(graphs, divs):
 
     return datasets
 
-def generate_dataset(graphs):
+def generate_dataset(graphs, params):
     dataset_list = []
-    datasets = split(graphs, nchuncks)    
+    datasets = split(graphs, nchunks)    
     for dataset in datasets:
         train_graphs = [graphs[gname] for gname in dataset['train']]
         train_dataset = Dataset(train_graphs, params, dataset['train'])

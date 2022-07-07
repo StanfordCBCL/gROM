@@ -70,7 +70,7 @@ class MeshGraphNet(Module):
 
         self.output = MLP(params['latent_size_gnn'],
                           2,
-                          params['number_hidden_layers_mlp'],
+                          params['latent_size_mlp'],
                           params['number_hidden_layers_mlp'],
                           False)
 

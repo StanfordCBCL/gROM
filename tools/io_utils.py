@@ -13,7 +13,7 @@ def data_location():
         Location of the data (string)
 
     """
-    f = open('../data_location.txt', 'r')
+    f = open(os.getcwd() + '/data_location.txt', 'r')
     location = f.readline().strip()
     f.close()
     return location + '/'
