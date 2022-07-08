@@ -24,7 +24,7 @@ def rollout(gnn_model, params, dataset, index_graph):
                                          'labels')
         delta[:,1] = nz.invert_normalize(delta[:,1], 'dq', params['statistics'],
                                          'labels')
-        gf = graph.ndata['nfeatures'][:,0:2]
+        gf = graph.ndata['nfeatures'][:,0:2].clone()
         gf = gf + delta
         # set boundary conditions
         if params['bc_type'] == 'realistic_dirichlet':
@@ -36,9 +36,9 @@ def rollout(gnn_model, params, dataset, index_graph):
             gf[graph.ndata['inlet_mask'].bool(), 1] = tfc[graph.ndata['inlet_mask'].bool(), 1, it + 1]
             gf[graph.ndata['outlet_mask'].bool(), 1] = tfc[graph.ndata['outlet_mask'].bool(), 1, it + 1]
 
-        graph.ndata['nfeatures'][:,0:2] = gf.clone()
+        graph.ndata['nfeatures'][:,0:2] = gf
         # set next conditions to exact for debug
-        graph.ndata['nfeatures'][:,0:2] = tfc[:,0:2,it + 1]
+        graph.ndata['nfeatures'][:,0:2] = tfc[:,0:2,it + 1].clone()
         r_features = th.cat((r_features, gf.unsqueeze(axis = 2)), axis = 2)
 
     tfc = true_graph.ndata['nfeatures'][:,0:2,:].clone()

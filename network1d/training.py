@@ -88,6 +88,12 @@ def evaluate_model(gnn_model, train_dataloader, test_dataloader, optimizer,
                 global_loss = global_loss + loss_v
                 global_metric = global_metric + metric_v
                 count = count + 1
+                # total_norm = 0
+                # for p in gnn_model.parameters():
+                #     param_norm = p.grad.detach().data.norm(2)
+                #     total_norm += param_norm.item() ** 2
+                # total_norm = total_norm ** 0.5
+                # print(total_norm)
 
         return {'loss': global_loss / count, 'metric': global_metric / count}
 
@@ -150,7 +156,7 @@ def train_gnn_model(gnn_model, dataset, params, parallel, rank0,
     
     optimizer = th.optim.Adam(gnn_model.parameters(),
                               params['learning_rate'],
-                              weight_decay= params['weight_decay'])
+                              weight_decay = params['weight_decay'])
 
     nepochs = params['nepochs']
 
@@ -207,7 +213,7 @@ def train_gnn_model(gnn_model, dataset, params, parallel, rank0,
         history['test_metric'][0].append(epoch)
         history['test_metric'][1].append(float(test_results['metric']))
 
-        if epoch % np.floor(nepochs / 10) == 0:            
+        if epoch % np.floor(nepochs / 10) == 0 or epoch == (nepochs - 1):
             e_train, e_test = compute_rollout_errors(gnn_model, 
                                                      params, dataset, 
                                                      idxs_train, idxs_test)
@@ -296,22 +302,22 @@ if __name__ == "__main__":
 
     parser = argparse.ArgumentParser(description='Graph Reduced Order Models')
 
-    parser.add_argument('--bs', help='batch size', type=int, default=200)
+    parser.add_argument('--bs', help='batch size', type=int, default=100)
     parser.add_argument('--epochs', help='total number of epochs', type=int,
                         default=100)
     parser.add_argument('--lr_decay', help='learning rate decay', type=float,
                         default=0.1)
-    parser.add_argument('--lr', help='learning rate', type=float, default=0.01)
+    parser.add_argument('--lr', help='learning rate', type=float, default=0.005)
     parser.add_argument('--rate_noise', help='rate noise', type=float,
-                        default=0.00)
+                        default=0.1)
     parser.add_argument('--weight_decay', help='l2 regularization', 
-                        type=float, default=1e-5)
+                        type=float, default=0)
     parser.add_argument('--ls_gnn', help='latent size gnn', type=int,
-                        default=16)
+                        default=32)
     parser.add_argument('--ls_mlp', help='latent size mlps', type=int,
-                        default=64)
+                        default=32)
     parser.add_argument('--process_iterations', help='gnn layers', type=int,
-                        default=2)
+                        default=7)
     parser.add_argument('--hl_mlp', help='hidden layers mlps', type=int,
                         default=1)
 
@@ -323,6 +329,7 @@ if __name__ == "__main__":
     graphs, params  = gng.generate_normalized_graphs(input_dir, norm_type, 
                                                      'full_dirichlet')
     datasets = dset.generate_dataset(graphs, params)
+    print(params)
 
     t_params = {'infeat_edges': 4,
               'latent_size_gnn': args.ls_gnn,

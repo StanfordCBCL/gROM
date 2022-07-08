@@ -59,11 +59,11 @@ def video_all_nodes(features, graph, params, time,
                                    color = 'black', 
                                    s = 1.5, alpha = 0.3)
     scatter_pred_p = ax[0].scatter(nodes, sel_pred_features[:,0,0], 
-                                   color = 'red', s = 1.5, alpha = 0.3)
+                                   color = 'red', s = 1.5, alpha = 1)
     scatter_real_q = ax[1].scatter(nodes, sel_real_features[:,1,0], 
                                    color = 'black', s = 1.5, alpha = 0.3)
     scatter_pred_q = ax[1].scatter(nodes, sel_pred_features[:,1,0], 
-                                   color = 'red', s = 1.5, alpha = 0.3)
+                                   color = 'red', s = 1.5, alpha = 1)
     nodesidxs = np.expand_dims(nodes, axis = 1)
     ax[1].set_xlabel('graph node index')
     ax[0].set_ylabel('pressure [mmHg]')

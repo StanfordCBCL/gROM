@@ -21,6 +21,8 @@ def normalize(field, field_name, statistics, norm_dict_label):
             field = (field - statistics[field_name]['mean']) / delta
         else:
             field = field * 0
+    elif statistics['normalization_type'][norm_dict_label] == 'none':
+        pass
     else:
         raise Exception('Normalization type not implemented')
     return field
@@ -32,6 +34,8 @@ def invert_normalize(field, field_name, statistics, norm_dict_label):
     elif statistics['normalization_type'][norm_dict_label] == 'normal':
         delta = statistics[field_name]['stdv']
         field = statistics[field_name]['mean'] + delta * field
+    elif statistics['normalization_type'][norm_dict_label] == 'none':
+        pass
     else:
         raise Exception('Normalization type not implemented')
     return field
@@ -73,6 +77,11 @@ def compute_statistics(graphs, fields, statistics):
                     maxv = np.max([maxv, th.max(d)])
                     mean = th.mean(d)
                     meansq = th.mean(d**2)
+
+                    if field_name == 'area':
+                        print(graph_n)
+                        print(minv)
+                        print(maxv)
 
                     means.append(mean)
                     meansqs.append(meansq)

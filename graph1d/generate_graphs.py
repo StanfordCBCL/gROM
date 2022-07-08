@@ -1,5 +1,6 @@
 import sys
 import os
+sys.path.append(os.getcwd())
 import tools.io_utils as io
 import numpy as np
 import matplotlib.pyplot as plt
@@ -7,6 +8,7 @@ import matplotlib.cm as cm
 import dgl
 import torch as th
 from tqdm import tqdm
+import json
 
 def plot_graph(points, bif_id, indices, edges1, edges2):
     fig = plt.figure()
@@ -77,12 +79,12 @@ def generate_edge_features(points, edges1, edges2):
         rel_position_norm.append(ndiff)
     return np.array(rel_position), rel_position_norm
 
-def add_fields(graph, field, field_name, subsample_time = 10):
+def add_fields(graph, field, field_name, subsample_time = 1):
     timesteps = [float(t) for t in field]
     timesteps.sort()
     dt = (timesteps[1] - timesteps[0]) * subsample_time
     # we skip the first 100 timesteps
-    offset = 100
+    offset = 0
     count = 0
     # we use the third timension for time
     field_t = th.zeros((list(field.values())[0].shape[0], 1, 
@@ -102,12 +104,66 @@ def find_outlets(edges1, edges2):
     for e in edges2:
         if e not in edges1:
             outlets.append(e)
-    return outlets   
+    return outlets
 
-def resample_points(points, edges1, edges2, outlets, perc_points_to_keep):
+def remove_points(idxs_to_delete, idxs_to_replace, edges1, edges2, npoints):
+    npoints_to_delete = len(idxs_to_delete)   
+
+    for i in range(npoints_to_delete):
+        i1 = np.where(edges1 == idxs_to_delete[i])[0]
+        if (len(i1)) != 0:
+            edges1[i1] = idxs_to_replace[i]
+
+        i2 = np.where(edges2 == idxs_to_delete[i])[0]
+        if (len(i2)) != 0:
+            edges2[i2] = idxs_to_replace[i]
+
+    edges_to_delete = np.where(edges1 == edges2)[0]
+    edges1 = np.delete(edges1, edges_to_delete)
+    edges2 = np.delete(edges2, edges_to_delete)
+
+    sampled_indices = np.delete(np.arange(npoints), idxs_to_delete)
+    for i in range(edges1.size):
+        edges1[i] = np.where(sampled_indices == edges1[i])[0][0]
+        edges2[i] = np.where(sampled_indices == edges2[i])[0][0]
+
+    return sampled_indices, edges1, edges2
+
+def resample_points(points, edges1, edges2, indices, perc_points_to_keep, 
+                    remove_caps):
+
+    def modify_edges(edges1, edges2, ipoint_to_delete, ipoint_to_replace):
+        i1 = np.where(edges1 == ipoint_to_delete)[0]
+        if len(i1) != 0:   
+            edges1[i1] = ipoint_to_replace
+        
+        i2 = np.where(np.array(edges2) == ipoint_to_delete)[0]
+        if len(i2) != 0:
+            edges2[i2] = ipoint_to_replace
+        return edges1, edges2
     npoints = points.shape[0]
     npoints_to_keep = int(npoints * perc_points_to_keep)
     ipoints_to_delete = []
+    ipoints_to_replace = []
+
+    new_outlets = []
+    for ip in range(remove_caps):
+        for inlet in indices['inlet']:
+            ipoints_to_delete.append(inlet + ip)
+            ipoints_to_replace.append(inlet + remove_caps)
+            edges1, edges2 = modify_edges(edges1, edges2, 
+                                          inlet + ip, inlet + remove_caps)
+        for outlet in indices['outlets']:
+            ipoints_to_delete.append(outlet - ip)
+            ipoints_to_replace.append(outlet - remove_caps)  
+            edges1, edges2 = modify_edges(edges1, edges2, 
+                                          outlet - ip, outlet - remove_caps) 
+    
+    for outlet in indices['outlets']:
+        new_outlets.append(outlet - remove_caps)
+
+    indices['outlets'] = new_outlets
+
     for _ in range(npoints - npoints_to_keep):
         diff = np.linalg.norm(points[edges1,:] - points[edges2,:],
                               axis = 1)
@@ -116,39 +172,27 @@ def resample_points(points, edges1, edges2, outlets, perc_points_to_keep):
         mdiff = np.min(diff)
         mind = np.where(np.abs(diff - mdiff) < 1e-12)[0][0]
 
-        if edges2[mind] not in outlets:
+        if edges2[mind] not in new_outlets:
             ipoint_to_delete = edges2[mind]
             ipoint_to_replace = edges1[mind]
         else:
             ipoint_to_delete = edges1[mind]
             ipoint_to_replace = edges2[mind]
 
-        i1 = np.where(edges1 == ipoint_to_delete)[0]
-        if len(i1) != 0:   
-            edges1[i1] = ipoint_to_replace
-        
-        i2 = np.where(np.array(edges2) == ipoint_to_delete)[0]
-        if len(i2) != 0:
-            edges2[i2] = ipoint_to_replace
+        edges1, edges2 = modify_edges(edges1, edges2, 
+                                      ipoint_to_delete, ipoint_to_replace)
 
         ipoints_to_delete.append(ipoint_to_delete)
-    
-    diff = np.linalg.norm(points[edges1,:] - points[edges2,:],
-                              axis = 1)
+        ipoints_to_replace.append(ipoint_to_replace)    
+
+    sampled_indices, edges1, edges2 = remove_points(ipoints_to_delete,
+                                                    ipoints_to_replace, 
+                                                    edges1, edges2,
+                                                    npoints)
 
     points = np.delete(points, ipoints_to_delete, axis = 0)
 
-    edges_to_delete = np.where(diff < 1e-13)[0]
-    edges1 = np.delete(edges1, edges_to_delete)
-    edges2 = np.delete(edges2, edges_to_delete)
-
-    sampled_indices = np.delete(np.arange(npoints), ipoints_to_delete)
-
-    for i in range(edges1.size):
-        edges1[i] = np.where(sampled_indices == edges1[i])[0][0]
-        edges2[i] = np.where(sampled_indices == edges2[i])[0][0]
-
-    return sampled_indices, points, edges1, edges2 
+    return sampled_indices, points, edges1, edges2, indices
      
 def generate_graph(file, input_dir, resample_perc):
     soln = io.read_geo(input_dir + '/' + file)
@@ -161,9 +205,11 @@ def generate_graph(file, input_dir, resample_perc):
     indices = {'inlet': inlet,
                'outlets': outlets}
 
-    sampled_indices, points, edges1, edges2 = resample_points(points, edges1, 
-                                                              edges2, outlets,
-                                                              resample_perc)
+    sampled_indices, points, edges1, edges2, indices = resample_points(points,  
+                                                              edges1, 
+                                                              edges2, indices,
+                                                              resample_perc,
+                                                              remove_caps = 1)
 
     count = 0
     for outlet in indices['outlets']:
@@ -171,12 +217,14 @@ def generate_graph(file, input_dir, resample_perc):
         indices['outlets'][count] = iout
         count = count + 1
 
-
     bif_id = point_data['BifurcationId'][sampled_indices]
-    area = list(io.gather_array(point_data, 'area').values())[0]
+    try:
+        area = list(io.gather_array(point_data, 'area').values())[0]
+    except Exception as e:
+        area = point_data['area']
     area = area[sampled_indices]
 
-    plot_graph(points, bif_id, indices, edges1, edges2)
+    # plot_graph(points, bif_id, indices, edges1, edges2)
     # we manually make the graph bidirected in order to have the relative 
     # position of nodes make sense (xj - xi = - (xi - xj)). Otherwise, each edge
     # will have a single feature
@@ -208,8 +256,15 @@ def generate_graph(file, input_dir, resample_perc):
 
 if __name__ == "__main__":
     data_location = io.data_location()
-    input_dir = data_location + 'vtps_1D'
+    input_dir = data_location + 'vtps_aortas'
     output_dir = data_location + 'graphs/'
+
+    # if we provide timestep file then we need to rescale time in vtp
+    try:
+        rescale_time = True
+        timesteps = json.load(open(input_dir + '/timesteps.json'))
+    except:
+        rescale_time = False
 
     files = os.listdir(input_dir)    
 
@@ -219,20 +274,34 @@ if __name__ == "__main__":
     for file in tqdm(files, desc = 'Generating graphs', colour='green'):
         if '.vtp' in file:
             filename = file.replace('.vtp','.grph')
+            print(filename)
             
-            resample_perc = 0.03
+            resample_perc = 0.06
             success = False
             while not success:
-                try:
+                if 1:
                     graph, point_data, indices, \
                     sampled_indices = generate_graph(file, input_dir, 
                                                      resample_perc)
                     success = True
-                except Exception as e:
-                    resample_perc = resample_perc + 0.01
+                # except Exception as e:
+                #     print(e)
+                #     resample_perc = np.min([resample_perc * 2, 1])
             
             pressure = io.gather_array(point_data, 'pressure')
             flowrate = io.gather_array(point_data, 'flow')
+            if len(flowrate) == 0:
+                flowrate = io.gather_array(point_data, 'velocity')
+            
+
+            if rescale_time:
+                times = [t for t in pressure]
+                timestep = float(timesteps[filename[:filename.find('.')]])
+                for t in times:
+                    pressure[t * timestep] = pressure[t]
+                    flowrate[t * timestep] = flowrate[t]
+                    del pressure[t]
+                    del flowrate[t]
 
             # select indices and scale pressure to be mmHg
             for t in pressure:
