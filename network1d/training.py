@@ -120,7 +120,7 @@ def compute_rollout_errors(gnn_model, params, dataset, idxs_train, idxs_test):
                                     idx)
         test_errs = cur_test_errs + test_errs
     
-    test_errs = train_errs / (len(idxs_test))
+    test_errs = test_errs / (len(idxs_test))
 
     return train_errs, test_errs
 
@@ -217,16 +217,17 @@ def train_gnn_model(gnn_model, dataset, params, parallel, rank0,
             e_train, e_test = compute_rollout_errors(gnn_model, 
                                                      params, dataset, 
                                                      idxs_train, idxs_test)
-            msg = 'Rollout: \t'.format(epoch)
-            msg = msg + 'train = {:.2e} '.format(np.linalg.norm(e_train))
-            msg = msg + 'test = {:.2e} '.format(np.linalg.norm(e_test))
 
-            if rank0:
-                print(msg, flush = True)
             history['train_rollout'][0].append(epoch)
             history['train_rollout'][1].append(float(np.linalg.norm(e_train)))
             history['test_rollout'][0].append(epoch)
             history['test_rollout'][1].append(float(np.linalg.norm(e_test)))
+
+        if rank0:
+            msg = 'Rollout: {:.0f}\t'.format(epoch)
+            print(msg, flush = True)
+            print(history['train_rollout'][1])
+            print(history['test_rollout'][1])
 
         scheduler.step()
 
@@ -304,12 +305,12 @@ if __name__ == "__main__":
 
     parser.add_argument('--bs', help='batch size', type=int, default=100)
     parser.add_argument('--epochs', help='total number of epochs', type=int,
-                        default=100)
+                        default=1000)
     parser.add_argument('--lr_decay', help='learning rate decay', type=float,
                         default=0.1)
     parser.add_argument('--lr', help='learning rate', type=float, default=0.005)
     parser.add_argument('--rate_noise', help='rate noise', type=float,
-                        default=0.1)
+                        default=100)
     parser.add_argument('--weight_decay', help='l2 regularization', 
                         type=float, default=0)
     parser.add_argument('--ls_gnn', help='latent size gnn', type=int,

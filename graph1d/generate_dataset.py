@@ -70,7 +70,9 @@ class Dataset(DGLDataset):
         nf = self.graphs[indices[0]].ndata['nfeatures'][:,:,indices[1]].clone()
         nfsize = nf[:,:2].shape
 
-        curnoise = np.random.normal(0, self.noise_rate, nfsize)
+        dt = nz.invert_normalize(self.graphs[indices[0]].ndata['dt'][0], 'dt',
+                                 self.params['statistics'], 'features')
+        curnoise = np.random.normal(0, self.noise_rate * dt, nfsize)
         # we don't add noise to boundary nodes
         if self.params['bc_type'] == 'realistic_dirichlet':
             curnoise[self.graphs[indices[0]].ndata['outlet_mask'].bool(),0] = 0
@@ -85,7 +87,15 @@ class Dataset(DGLDataset):
         self.lightgraphs[indices[0]].ndata['nfeatures'] = nf
 
         nl = self.graphs[indices[0]].ndata['nlabels'][:,:,indices[1]].clone()
+        nl[:,0] = nz.invert_normalize(nl[:,0], 'dp', self.params['statistics'],
+                                      'labels')
+        nl[:,1] = nz.invert_normalize(nl[:,1], 'dq', self.params['statistics'],
+                                      'labels')
         nl[:,:2] = nl[:,:2] - curnoise
+        nl[:,0] = nz.normalize(nl[:,0], 'dp', self.params['statistics'],
+                               'labels')
+        nl[:,1] = nz.normalize(nl[:,1], 'dq', self.params['statistics'],
+                              'labels')
         self.lightgraphs[indices[0]].ndata['nlabels'] = nl
 
         ef = self.graphs[indices[0]].edata['efeatures']
