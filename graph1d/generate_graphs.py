@@ -79,12 +79,12 @@ def generate_edge_features(points, edges1, edges2):
         rel_position_norm.append(ndiff)
     return np.array(rel_position), rel_position_norm
 
-def add_fields(graph, field, field_name, subsample_time = 1):
+def add_fields(graph, field, field_name, subsample_time = 10):
     timesteps = [float(t) for t in field]
     timesteps.sort()
     dt = (timesteps[1] - timesteps[0]) * subsample_time
     # we skip the first 100 timesteps
-    offset = 0
+    offset = 100
     count = 0
     # we use the third timension for time
     field_t = th.zeros((list(field.values())[0].shape[0], 1, 
@@ -307,7 +307,12 @@ def create_junction_edges(points, bif_id, edges1, edges2):
                 juncts_inlets[bif_id[ipoint + 1]] = ipoint
                 jun_inlet_mask[ipoint] = 1
                 jun_mask[ipoint] = 1
-        if bif_id[ipoint] == -1 and bif_id[ipoint - 1] != -1:
+        # we need to handle this case because sometimes -1 points disappear 
+        # between junctions when resampling
+        elif bif_id[ipoint] != -1 and bif_id[ipoint - 1] != -1 and \
+           bif_id[ipoint - 1] != bif_id[ipoint]:
+            juncts_inlets[bif_id[ipoint]] = juncts_inlets[bif_id[ipoint-1]]
+        elif bif_id[ipoint] == -1 and bif_id[ipoint - 1] != -1:
             # we look for the right inlet
             jedges1.append(juncts_inlets[bif_id[ipoint - 1]])
             jedges2.append(ipoint)
@@ -426,7 +431,7 @@ def generate_graph(file, input_dir, resample_perc,
 
 if __name__ == "__main__":
     data_location = io.data_location()
-    input_dir = data_location + 'vtps_aortas'
+    input_dir = data_location + 'vtps_1d'
     output_dir = data_location + 'graphs/'
 
     # if we provide timestep file then we need to rescale time in vtp
@@ -450,16 +455,16 @@ if __name__ == "__main__":
             add_boundary_edges = True
             add_junction_edges = True
             while not success:
-                if 1:
+                try:
                     graph, point_data, indices, \
                     sampled_indices = generate_graph(file, input_dir, 
                                                      resample_perc,
                                                      add_boundary_edges,
                                                      add_junction_edges)
                     success = True
-                # except Exception as e:
-                #     print(e)
-                #     resample_perc = np.min([resample_perc * 2, 1])
+                except Exception as e:
+                    print(e)
+                    resample_perc = np.min([resample_perc * 2, 1])
             
             pressure = io.gather_array(point_data, 'pressure')
             flowrate = io.gather_array(point_data, 'flow')

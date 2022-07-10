@@ -65,10 +65,15 @@ def evaluate_model(gnn_model, train_dataloader, test_dataloader, optimizer,
 
             loss_v = mse(pred, batched_graph.ndata['nlabels'], mask)
             flowrate = batched_graph.ndata['nfeatures'][:,1]
-            cont_loss = gnn_model.compute_continuity_loss(batched_graph,
-                                                          flowrate,
-                                                          pred[:,1])
-            loss_v = loss_v + params['continuity_coeff'] * cont_loss
+            try:
+                c_loss = gnn_model.compute_continuity_loss(batched_graph,
+                                                            flowrate,
+                                                            pred[:,1])
+            except Exception as e:
+                c_loss = gnn_model.module.compute_continuity_loss(batched_graph,
+                                                                  flowrate,
+                                                                  pred[:,1])
+            loss_v = loss_v + params['continuity_coeff'] * c_loss
 
             metric_v = mae(pred, batched_graph.ndata['nlabels'], mask)
 
