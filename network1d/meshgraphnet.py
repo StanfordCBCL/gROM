@@ -44,11 +44,11 @@ class MeshGraphNet(Module):
     def __init__(self, params):
         super(MeshGraphNet, self).__init__()
 
-        self.encoder_nodes = MLP(8, 
+        self.encoder_nodes = MLP(params['infeat_nodes'], 
                                  params['latent_size_gnn'],
                                  params['latent_size_mlp'],
                                  params['number_hidden_layers_mlp'])
-        self.encoder_edges = MLP(4, 
+        self.encoder_edges = MLP(params['infeat_edges'], 
                                  params['latent_size_gnn'],
                                  params['latent_size_mlp'],
                                  params['number_hidden_layers_mlp'])
@@ -69,7 +69,7 @@ class MeshGraphNet(Module):
             self.processor_edges.append(generate_proc_MLP(lsgnn * 3))
 
         self.output = MLP(params['latent_size_gnn'],
-                          2,
+                          params['out_size'],
                           params['latent_size_mlp'],
                           params['number_hidden_layers_mlp'],
                           False)

@@ -219,9 +219,9 @@ def train_gnn_model(gnn_model, dataset, params, parallel, rank0,
                                                      idxs_train, idxs_test)
 
             history['train_rollout'][0].append(epoch)
-            history['train_rollout'][1].append(float(np.linalg.norm(e_train)))
+            history['train_rollout'][1].append(float(np.mean(e_train)))
             history['test_rollout'][0].append(epoch)
-            history['test_rollout'][1].append(float(np.linalg.norm(e_test)))
+            history['test_rollout'][1].append(float(np.mean(e_test)))
 
         if rank0:
             msg = 'Rollout: {:.0f}\t'.format(epoch)
@@ -305,7 +305,7 @@ if __name__ == "__main__":
 
     parser.add_argument('--bs', help='batch size', type=int, default=100)
     parser.add_argument('--epochs', help='total number of epochs', type=int,
-                        default=1000)
+                        default=100)
     parser.add_argument('--lr_decay', help='learning rate decay', type=float,
                         default=0.1)
     parser.add_argument('--lr', help='learning rate', type=float, default=0.005)
@@ -318,7 +318,7 @@ if __name__ == "__main__":
     parser.add_argument('--ls_mlp', help='latent size mlps', type=int,
                         default=32)
     parser.add_argument('--process_iterations', help='gnn layers', type=int,
-                        default=7)
+                        default=3)
     parser.add_argument('--hl_mlp', help='hidden layers mlps', type=int,
                         default=1)
 
@@ -332,18 +332,25 @@ if __name__ == "__main__":
     datasets = dset.generate_dataset(graphs, params)
     print(params)
 
-    t_params = {'infeat_edges': 4,
-              'latent_size_gnn': args.ls_gnn,
-              'latent_size_mlp': args.ls_mlp,
-              'out_size': 2,
-              'process_iterations': args.process_iterations,
-              'number_hidden_layers_mlp': args.hl_mlp,
-              'learning_rate': args.lr,
-              'batch_size': args.bs,
-              'lr_decay': args.lr_decay,
-              'nepochs': args.epochs,
-              'weight_decay': args.weight_decay,
-              'rate_noise': args.rate_noise}
+    graph = graphs[list(graphs)[0]]
+
+    infeat_nodes = graph.ndata['nfeatures'].shape[1]
+    infeat_edges = graph.edata['efeatures'].shape[1]
+    nout = graph.ndata['nlabels'].shape[1]
+
+    t_params = {'infeat_nodes': infeat_nodes,
+                'infeat_edges': infeat_edges,
+                'latent_size_gnn': args.ls_gnn,
+                'latent_size_mlp': args.ls_mlp,
+                'out_size': nout,
+                'process_iterations': args.process_iterations,
+                'number_hidden_layers_mlp': args.hl_mlp,
+                'learning_rate': args.lr,
+                'batch_size': args.bs,
+                'lr_decay': args.lr_decay,
+                'nepochs': args.epochs,
+                'weight_decay': args.weight_decay,
+                'rate_noise': args.rate_noise}
     params.update(t_params)
 
     start = time.time()

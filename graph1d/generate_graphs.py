@@ -36,7 +36,7 @@ def plot_graph(points, bif_id, indices, edges1, edges2):
         ax.plot3D([points[edges1[iedge],0],points[edges2[iedge],0]],
                   [points[edges1[iedge],1],points[edges2[iedge],1]],
                   [points[edges1[iedge],2],points[edges2[iedge],2]],
-                   color = 'black', linewidth=1)
+                   color = 'black', linewidth=0.2, alpha = 0.5)
 
     # ax.set_xlim([points[outlets[0],0]-0.1,points[outlets[0],0]+0.1])
     # ax.set_ylim([points[outlets[0],1]-0.1,points[outlets[0],1]+0.1])
@@ -193,8 +193,94 @@ def resample_points(points, edges1, edges2, indices, perc_points_to_keep,
     points = np.delete(points, ipoints_to_delete, axis = 0)
 
     return sampled_indices, points, edges1, edges2, indices
+
+def generate_boundary_edges(points, indices, edges1, edges2):
+    def dijkstra_algorithm(nodes, edges1, edges2, index):
+        nnodes = nodes.shape[0]
+        tovisit = np.arange(0,nnodes)
+        dists = np.ones((nnodes)) * np.infty
+        prevs = np.ones((nnodes)) * (-1)
+        b_edges = np.array([edges1,edges2]).transpose()
+
+        dists[index] = 0
+        while len(tovisit) != 0:
+            minindex = -1
+            minlen = np.infty
+            for iinde in range(len(tovisit)):
+                if dists[tovisit[iinde]] < minlen:
+                    minindex = iinde
+                    minlen = dists[tovisit[iinde]]
+
+            curindex = tovisit[minindex]
+            tovisit = np.delete(tovisit, minindex)
+
+            # find neighbors of curindex
+            inb = b_edges[np.where(b_edges[:,0] == curindex)[0],1]
+
+            for neib in inb:
+                if np.where(tovisit == neib)[0].size != 0:
+                    alt = dists[curindex] + np.linalg.norm(nodes[curindex,:] - \
+                            nodes[neib,:])
+                    if alt < dists[neib]:
+                        dists[neib] = alt
+                        prevs[neib] = curindex
+        if np.max(dists) == np.infty:
+            fig = plt.figure()
+            ax = plt.axes(projection='3d')
+            ax.scatter(nodes[:,0], nodes[:,1], nodes[:,2], s = 0.5, c = 'black')
+            idx = np.where(dists > 1e30)[0]
+            ax.scatter(nodes[idx,0], nodes[idx,1], nodes[idx,2], c = 'red')
+            plt.show()
+            raise ValueError("Distance in Dijkstra is infinite for some reason. You can try to adjust resample parameters.")
+        return dists, prevs
+    
+    npoints = points.shape[0]
+    idxs = indices['inlet'] + indices['outlets']
+    bedges1 = []
+    bedges2 = []
+    rel_positions = []
+    dists = []
+    types = []
+    for index in idxs:
+        d, _ = dijkstra_algorithm(points, edges1, edges2, index)
+        if index in indices['inlet']:
+            type = 1
+        else:
+            type = 2
+        for ipoint in range(npoints):
+            bedges1.append(index)
+            bedges2.append(ipoint)
+            rp = points[ipoint,:] - points[index,:]
+            rel_positions.append(rp / np.linalg.norm(rp))
+            dists.append(d[ipoint])
+            types.append(type)
+
+    # we only keep edges corresponding to the closest boundary node in graph
+    # distance to reduce number of edges
+    edges_to_delete = []
+
+    for ipoint in range(npoints):
+        cur_dists = dists[ipoint::npoints]
+        min_dist = np.min(cur_dists)
+        minidx = np.where(cur_dists == min_dist)[0][0]
+        if min_dist < 1e-12:
+            edges_to_delete.append(ipoint + minidx * npoints)
+        i = ipoint
+        while i < len(dists):
+            if i != ipoint + minidx * npoints:
+                edges_to_delete.append(i)
+            i = i + npoints
+
+    bedges1 = np.delete(np.array(bedges1), edges_to_delete)
+    bedges2 = np.delete(np.array(bedges2), edges_to_delete)
+    rel_positions = np.delete(np.array(rel_positions), edges_to_delete, 
+                              axis = 0)
+    dists = np.delete(np.array(dists), edges_to_delete)
+    types = np.delete(np.array(types), edges_to_delete)
+
+    return bedges1, bedges2, rel_positions, dists, list(types)
      
-def generate_graph(file, input_dir, resample_perc):
+def generate_graph(file, input_dir, resample_perc, add_boundary_edges):
     soln = io.read_geo(input_dir + '/' + file)
     point_data, _, points = io.get_all_arrays(soln.GetOutput())
     edges1, edges2 = io.get_edges(soln.GetOutput())
@@ -224,7 +310,6 @@ def generate_graph(file, input_dir, resample_perc):
         area = point_data['area']
     area = area[sampled_indices]
 
-    # plot_graph(points, bif_id, indices, edges1, edges2)
     # we manually make the graph bidirected in order to have the relative 
     # position of nodes make sense (xj - xi = - (xi - xj)). Otherwise, each edge
     # will have a single feature
@@ -232,6 +317,19 @@ def generate_graph(file, input_dir, resample_perc):
     edges1 = np.concatenate((edges1, edges2))
     edges2 = np.concatenate((edges2, edges1_copy))
 
+    rel_position, distance = generate_edge_features(points, edges1, edges2)
+    etypes = [0] * edges1.size
+    if add_boundary_edges:
+        bedges1, bedges2, \
+        brel_position, bdistance, \
+        btypes = generate_boundary_edges(points, indices, edges1, edges2)
+        edges1 = np.concatenate((edges1, bedges1))
+        edges2 = np.concatenate((edges2, bedges2))
+        etypes = etypes + btypes
+        distance = np.concatenate((distance, bdistance))
+        rel_position = np.concatenate((rel_position, brel_position), axis = 0)
+
+    # plot_graph(points, bif_id, indices, edges1, edges2)   
     graph = dgl.graph((edges1, edges2), idtype = th.int32)
 
     graph.ndata['x'] = th.tensor(points, dtype = th.float32)
@@ -244,13 +342,13 @@ def generate_graph(file, input_dir, resample_perc):
     graph.ndata['inlet_mask'] = th.tensor(inlet_mask, dtype = th.int8)
     graph.ndata['outlet_mask'] = th.tensor(outlet_mask, dtype = th.int8)
 
-    rel_position, norm_rel_positions = generate_edge_features(points, 
-                                                              edges1,
-                                                              edges2)
     graph.edata['rel_position'] = th.unsqueeze(th.tensor(rel_position, 
                                                dtype = th.float32), 2)
-    graph.edata['rel_position_norm'] = th.reshape(th.tensor(norm_rel_positions, 
-                                                  dtype = th.float32), (-1,1,1))
+    graph.edata['distance'] = th.reshape(th.tensor(distance, 
+                                         dtype = th.float32), (-1,1,1))
+    if add_boundary_edges:
+        etypes = th.nn.functional.one_hot(th.tensor(etypes))
+        graph.edata['type'] = th.unsqueeze(etypes, 2)
 
     return graph, point_data, indices, sampled_indices
 
@@ -274,26 +372,26 @@ if __name__ == "__main__":
     for file in tqdm(files, desc = 'Generating graphs', colour='green'):
         if '.vtp' in file:
             filename = file.replace('.vtp','.grph')
-            print(filename)
             
             resample_perc = 0.06
             success = False
+            add_boundary_nodes = True
             while not success:
-                if 1:
+                try:
                     graph, point_data, indices, \
                     sampled_indices = generate_graph(file, input_dir, 
-                                                     resample_perc)
+                                                     resample_perc,
+                                                     add_boundary_nodes)
                     success = True
-                # except Exception as e:
-                #     print(e)
-                #     resample_perc = np.min([resample_perc * 2, 1])
+                except Exception as e:
+                    print(e)
+                    resample_perc = np.min([resample_perc * 2, 1])
             
             pressure = io.gather_array(point_data, 'pressure')
             flowrate = io.gather_array(point_data, 'flow')
             if len(flowrate) == 0:
                 flowrate = io.gather_array(point_data, 'velocity')
             
-
             if rescale_time:
                 times = [t for t in pressure]
                 timestep = float(timesteps[filename[:filename.find('.')]])

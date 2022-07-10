@@ -1,5 +1,6 @@
 import sys
 import os
+sys.path.append(os.getcwd())
 import tools.io_utils as io
 import dgl
 import torch as th
@@ -168,8 +169,12 @@ def add_features(graphs, params):
         graph.ndata['nlabels'] = th.cat((dp, dq), axis = 1)
 
         rp = graph.edata['rel_position']
-        rpn = graph.edata['rel_position_norm']
-        graph.edata['efeatures'] = th.cat((rp, rpn), axis = 1)
+        rpn = graph.edata['distance']
+        if 'type' in graph.edata:
+            rpt = graph.edata['type']
+            graph.edata['efeatures'] = th.cat((rp, rpn, rpt), axis = 1)
+        else:
+            graph.edata['efeatures'] = th.cat((rp, rpn), axis = 1)
 
 def add_deltas(graphs):
     for graph_n in tqdm(graphs, desc = 'Add deltas', colour='green'):
@@ -192,7 +197,7 @@ def save_parameters(params, output_dir):
 def generate_normalized_graphs(input_dir, norm_type, bc_type):
     fields_to_normalize = {'node': ['area', 'pressure', 
                                 'flowrate', 'dt'], 
-                       'edge': ['rel_position_norm']}
+                       'edge': ['distance']}
     statistics = {'normalization_type': norm_type}
     graphs = load_all_graphs(input_dir)
     compute_statistics(graphs, fields_to_normalize, statistics)

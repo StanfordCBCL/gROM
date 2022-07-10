@@ -24,7 +24,7 @@ def rollout(gnn_model, params, dataset, index_graph):
                                          'labels')
         delta[:,1] = nz.invert_normalize(delta[:,1], 'dq', params['statistics'],
                                          'labels')
-        delta = tfc[:,0:2,it + 1] - tfc[:,0:2,it]
+        # delta = tfc[:,0:2,it + 1] - tfc[:,0:2,it]
         gf = graph.ndata['nfeatures'][:,0:2].clone()
         gf = gf + delta
         # set boundary conditions
