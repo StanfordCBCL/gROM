@@ -194,46 +194,46 @@ def resample_points(points, edges1, edges2, indices, perc_points_to_keep,
 
     return sampled_indices, points, edges1, edges2, indices
 
-def generate_boundary_edges(points, indices, edges1, edges2):
-    def dijkstra_algorithm(nodes, edges1, edges2, index):
-        nnodes = nodes.shape[0]
-        tovisit = np.arange(0,nnodes)
-        dists = np.ones((nnodes)) * np.infty
-        prevs = np.ones((nnodes)) * (-1)
-        b_edges = np.array([edges1,edges2]).transpose()
+def dijkstra_algorithm(nodes, edges1, edges2, index):
+    nnodes = nodes.shape[0]
+    tovisit = np.arange(0,nnodes)
+    dists = np.ones((nnodes)) * np.infty
+    prevs = np.ones((nnodes)) * (-1)
+    b_edges = np.array([edges1,edges2]).transpose()
 
-        dists[index] = 0
-        while len(tovisit) != 0:
-            minindex = -1
-            minlen = np.infty
-            for iinde in range(len(tovisit)):
-                if dists[tovisit[iinde]] < minlen:
-                    minindex = iinde
-                    minlen = dists[tovisit[iinde]]
+    dists[index] = 0
+    while len(tovisit) != 0:
+        minindex = -1
+        minlen = np.infty
+        for iinde in range(len(tovisit)):
+            if dists[tovisit[iinde]] < minlen:
+                minindex = iinde
+                minlen = dists[tovisit[iinde]]
 
-            curindex = tovisit[minindex]
-            tovisit = np.delete(tovisit, minindex)
+        curindex = tovisit[minindex]
+        tovisit = np.delete(tovisit, minindex)
 
-            # find neighbors of curindex
-            inb = b_edges[np.where(b_edges[:,0] == curindex)[0],1]
+        # find neighbors of curindex
+        inb = b_edges[np.where(b_edges[:,0] == curindex)[0],1]
 
-            for neib in inb:
-                if np.where(tovisit == neib)[0].size != 0:
-                    alt = dists[curindex] + np.linalg.norm(nodes[curindex,:] - \
-                            nodes[neib,:])
-                    if alt < dists[neib]:
-                        dists[neib] = alt
-                        prevs[neib] = curindex
-        if np.max(dists) == np.infty:
-            fig = plt.figure()
-            ax = plt.axes(projection='3d')
-            ax.scatter(nodes[:,0], nodes[:,1], nodes[:,2], s = 0.5, c = 'black')
-            idx = np.where(dists > 1e30)[0]
-            ax.scatter(nodes[idx,0], nodes[idx,1], nodes[idx,2], c = 'red')
-            plt.show()
-            raise ValueError("Distance in Dijkstra is infinite for some reason. You can try to adjust resample parameters.")
-        return dists, prevs
-    
+        for neib in inb:
+            if np.where(tovisit == neib)[0].size != 0:
+                alt = dists[curindex] + np.linalg.norm(nodes[curindex,:] - \
+                        nodes[neib,:])
+                if alt < dists[neib]:
+                    dists[neib] = alt
+                    prevs[neib] = curindex
+    if np.max(dists) == np.infty:
+        fig = plt.figure()
+        ax = plt.axes(projection='3d')
+        ax.scatter(nodes[:,0], nodes[:,1], nodes[:,2], s = 0.5, c = 'black')
+        idx = np.where(dists > 1e30)[0]
+        ax.scatter(nodes[idx,0], nodes[idx,1], nodes[idx,2], c = 'red')
+        plt.show()
+        raise ValueError("Distance in Dijkstra is infinite for some reason. You can try to adjust resample parameters.")
+    return dists, prevs
+
+def generate_boundary_edges(points, indices, edges1, edges2): 
     npoints = points.shape[0]
     idxs = indices['inlet'] + indices['outlets']
     bedges1 = []
@@ -251,7 +251,9 @@ def generate_boundary_edges(points, indices, edges1, edges2):
             bedges1.append(index)
             bedges2.append(ipoint)
             rp = points[ipoint,:] - points[index,:]
-            rel_positions.append(rp / np.linalg.norm(rp))
+            rel_positions.append(rp)
+            if np.linalg.norm(rp) > 1e-12:
+                rel_positions[-1] = rel_positions[-1] / np.linalg.norm(rp)
             dists.append(d[ipoint])
             types.append(type)
 
@@ -279,8 +281,64 @@ def generate_boundary_edges(points, indices, edges1, edges2):
     types = np.delete(np.array(types), edges_to_delete)
 
     return bedges1, bedges2, rel_positions, dists, list(types)
+
+def create_continuity_mask(types):
+    continuity_mask = [0]
+    npoints = types.shape[0]
+    for i in range(1,npoints-1):
+        if types[i-1,0] == 1 and types[i,0] == 1 and types[i + 1,0]:
+            continuity_mask.append(1)
+        else:
+            continuity_mask.append(0)
+    continuity_mask.append(0)
+    return continuity_mask
+
+def create_junction_edges(points, bif_id, edges1, edges2):
+    npoints = bif_id.size
+    jun_inlet_mask = [0] * npoints
+    jun_mask = [0] * npoints
+    juncts_inlets = {}
+    jedges1 = []
+    jedges2 = []
+    for ipoint in range(npoints - 1):
+        if bif_id[ipoint] == -1 and bif_id[ipoint + 1] != -1:
+            # we use the junction id as key and the junction idx as value
+            if juncts_inlets.get(bif_id[ipoint + 1]) == None:
+                juncts_inlets[bif_id[ipoint + 1]] = ipoint
+                jun_inlet_mask[ipoint] = 1
+                jun_mask[ipoint] = 1
+        if bif_id[ipoint] == -1 and bif_id[ipoint - 1] != -1:
+            # we look for the right inlet
+            jedges1.append(juncts_inlets[bif_id[ipoint - 1]])
+            jedges2.append(ipoint)
+            jun_mask[ipoint] = 1
+    masks = {'inlets': jun_inlet_mask, 'all': jun_mask}
+    dists = {}
+    for jun_id in juncts_inlets:
+        d, _ = dijkstra_algorithm(points, edges1, edges2, juncts_inlets[jun_id])
+        dists[juncts_inlets[jun_id]] = d
+
+    jrel_position = []
+    jdistance = []
+    for iedg in range(len(jedges1)):
+        jrel_position.append(points[jedges2[iedg],:] - points[jedges1[iedg],:])
+        jdistance.append(dists[jedges1[iedg]][jedges2[iedg]])
+
+    jrel_position = np.array(jrel_position)
+    jdistance = np.array(jdistance)
+
+    # make edges bidirectional
+    jedges1_copy = jedges1.copy()
+    jedges1 = jedges1 + jedges2
+    jedges2 = jedges2 + jedges1_copy
+    jrel_position = np.concatenate((jrel_position, -jrel_position), axis = 0)
+    jdistance = np.concatenate((jdistance, jdistance))
+    types = [3] * len(jedges1)
+    return jedges1, jedges2, jrel_position, jdistance, types, masks
+
      
-def generate_graph(file, input_dir, resample_perc, add_boundary_edges):
+def generate_graph(file, input_dir, resample_perc, 
+                   add_boundary_edges, add_junction_edges):
     soln = io.read_geo(input_dir + '/' + file)
     point_data, _, points = io.get_all_arrays(soln.GetOutput())
     edges1, edges2 = io.get_edges(soln.GetOutput())
@@ -329,6 +387,16 @@ def generate_graph(file, input_dir, resample_perc, add_boundary_edges):
         distance = np.concatenate((distance, bdistance))
         rel_position = np.concatenate((rel_position, brel_position), axis = 0)
 
+    if add_junction_edges:
+        jedges1, jedges2, \
+        jrel_position, jdistance, \
+        jtypes, jmasks = create_junction_edges(points, bif_id, edges1, edges2)
+        edges1 = np.concatenate((edges1, jedges1))
+        edges2 = np.concatenate((edges2, jedges2))
+        etypes = etypes + jtypes
+        distance = np.concatenate((distance, jdistance))
+        rel_position = np.concatenate((rel_position, jrel_position), axis = 0)
+
     # plot_graph(points, bif_id, indices, edges1, edges2)   
     graph = dgl.graph((edges1, edges2), idtype = th.int32)
 
@@ -337,10 +405,14 @@ def generate_graph(file, input_dir, resample_perc, add_boundary_edges):
                                      (-1,1,1))
     types, inlet_mask, \
     outlet_mask = generate_types(bif_id, indices)
-    graph.ndata['type'] = th.unsqueeze(types, 2)
+    continuity_mask = create_continuity_mask(types)
 
+    graph.ndata['type'] = th.unsqueeze(types, 2)
     graph.ndata['inlet_mask'] = th.tensor(inlet_mask, dtype = th.int8)
     graph.ndata['outlet_mask'] = th.tensor(outlet_mask, dtype = th.int8)
+    graph.ndata['continuity_mask'] = th.tensor(continuity_mask, dtype = th.int8)
+    graph.ndata['jun_inlet_mask'] = th.tensor(jmasks['inlets'], dtype = th.int8)
+    graph.ndata['jun_mask'] = th.tensor(jmasks['all'], dtype = th.int8)
 
     graph.edata['rel_position'] = th.unsqueeze(th.tensor(rel_position, 
                                                dtype = th.float32), 2)
@@ -375,17 +447,19 @@ if __name__ == "__main__":
             
             resample_perc = 0.06
             success = False
-            add_boundary_nodes = True
+            add_boundary_edges = True
+            add_junction_edges = True
             while not success:
-                try:
+                if 1:
                     graph, point_data, indices, \
                     sampled_indices = generate_graph(file, input_dir, 
                                                      resample_perc,
-                                                     add_boundary_nodes)
+                                                     add_boundary_edges,
+                                                     add_junction_edges)
                     success = True
-                except Exception as e:
-                    print(e)
-                    resample_perc = np.min([resample_perc * 2, 1])
+                # except Exception as e:
+                #     print(e)
+                #     resample_perc = np.min([resample_perc * 2, 1])
             
             pressure = io.gather_array(point_data, 'pressure')
             flowrate = io.gather_array(point_data, 'flow')

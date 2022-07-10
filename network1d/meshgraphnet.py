@@ -1,11 +1,14 @@
-from base64 import encode
-import torch
+import os
+import sys
+sys.path.append(os.getcwd())
+import torch as th
 from torch.nn.modules.module import Module
 from torch.nn import LayerNorm
 from torch.nn import Linear
 import torch.nn.functional as F
 import numpy as np
 import dgl.function as fn
+import graph1d.generate_normalized_graphs as nz
 
 class MLP(Module):
     def __init__(self, in_feats, out_feats, latent_space, n_h_layers, 
@@ -14,7 +17,7 @@ class MLP(Module):
         self.input = Linear(in_feats,latent_space,bias = True).float()
         self.output = Linear(latent_space, out_feats, bias = True).float()
         self.n_h_layers = n_h_layers
-        self.hidden_layers = torch.nn.ModuleList()
+        self.hidden_layers = th.nn.ModuleList()
         for i in range(self.n_h_layers):
             self.hidden_layers.append(Linear(latent_space, 
                                              latent_space, 
@@ -44,6 +47,8 @@ class MeshGraphNet(Module):
     def __init__(self, params):
         super(MeshGraphNet, self).__init__()
 
+        self.params = params
+
         self.encoder_nodes = MLP(params['infeat_nodes'], 
                                  params['latent_size_gnn'],
                                  params['latent_size_mlp'],
@@ -54,8 +59,8 @@ class MeshGraphNet(Module):
                                  params['number_hidden_layers_mlp'])
 
 
-        self.processor_nodes = torch.nn.ModuleList()
-        self.processor_edges = torch.nn.ModuleList()
+        self.processor_nodes = th.nn.ModuleList()
+        self.processor_edges = th.nn.ModuleList()
         self.process_iters = params['process_iterations']
         for i in range(self.process_iters):
             def generate_proc_MLP(in_feat):
@@ -86,7 +91,7 @@ class MeshGraphNet(Module):
         f1 = edges.data['proc_edge']
         f2 = edges.src['proc_node']
         f3 = edges.dst['proc_node']
-        proc_edge = self.processor_edges[index](torch.cat((f1, f2, f3), 1))
+        proc_edge = self.processor_edges[index](th.cat((f1, f2, f3), 1))
         # add residual connection
         proc_edge = proc_edge + f1
         return {'proc_edge': proc_edge}
@@ -94,7 +99,7 @@ class MeshGraphNet(Module):
     def process_nodes(self, nodes, index):
         f1 = nodes.data['proc_node']
         f2 = nodes.data['pe_sum']
-        proc_node = self.processor_nodes[index](torch.cat((f1, f2), 1))
+        proc_node = self.processor_nodes[index](th.cat((f1, f2), 1))
         # add residual connection
         proc_node = proc_node + f1
         return {'proc_node': proc_node}
@@ -102,6 +107,33 @@ class MeshGraphNet(Module):
     def decode_nodes(self, nodes):
         h = self.output(nodes.data['proc_node'])
         return {'pred_labels': h}
+
+    def compute_continuity_loss(self, g, flowrate, delta_flowrate):
+        scaled_delta = nz.invert_normalize(delta_flowrate, 'dq', 
+                                           self.params['statistics'], 'labels')
+        g.ndata['next_flowrate'] = flowrate + scaled_delta
+
+        # we send flowrate through branches, compute the mean of
+        # of neighboring nodes, and compute the diff with our estimate
+        g.update_all(fn.copy_u('next_flowrate', 'm'), 
+                     fn.mean('m', 'mean_flowrate'))
+        diff = th.abs(g.ndata['next_flowrate'] - g.ndata['mean_flowrate'])
+        diff = diff * g.ndata['continuity_mask']
+        branch_continuity = th.mean(diff)
+
+        # we keep flowrate at inlet and outlets of junctions
+        g.ndata['flow_junction'] = g.ndata['next_flowrate'] * \
+                                   g.ndata['jun_mask']
+
+        g.update_all(fn.copy_u('flow_junction', 'm'), 
+                     fn.sum('m', 'sum_flowrate'))
+
+        # we use the inlet to compute the difference
+        diff = th.abs(g.ndata['sum_flowrate'] - g.ndata['next_flowrate'])
+        diff = diff * g.ndata['jun_inlet_mask']
+        junction_continuity = th.mean(diff)
+
+        return branch_continuity + junction_continuity
 
     def forward(self, g):
         g.apply_nodes(self.encode_nodes)

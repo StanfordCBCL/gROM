@@ -64,6 +64,11 @@ def evaluate_model(gnn_model, train_dataloader, test_dataloader, optimizer,
                 mask[:,1] = mask[:,1] - batched_graph.ndata['outlet_mask']
 
             loss_v = mse(pred, batched_graph.ndata['nlabels'], mask)
+            flowrate = batched_graph.ndata['nfeatures'][:,1]
+            cont_loss = gnn_model.compute_continuity_loss(batched_graph,
+                                                          flowrate,
+                                                          pred[:,1])
+            loss_v = loss_v + params['continuity_coeff'] * cont_loss
 
             metric_v = mae(pred, batched_graph.ndata['nlabels'], mask)
 
@@ -164,10 +169,11 @@ def train_gnn_model(gnn_model, dataset, params, parallel, rank0,
     scheduler = th.optim.lr_scheduler.CosineAnnealingLR(optimizer,
                                                         T_max = nepochs,
                                                         eta_min = eta_min)
+    # th.optim.lr_scheduler.ExponentialLR()
 
     # sample train and test graphs for rollout
     np.random.seed(10)
-    ngraphs = 2
+    ngraphs = 5
     idxs_train = np.random.randint(0, len(dataset['train'].graphs), (ngraphs))
     idxs_test = np.random.randint(0, len(dataset['test'].graphs), (ngraphs))
 
@@ -310,7 +316,7 @@ if __name__ == "__main__":
                         default=0.1)
     parser.add_argument('--lr', help='learning rate', type=float, default=0.005)
     parser.add_argument('--rate_noise', help='rate noise', type=float,
-                        default=100)
+                        default=200)
     parser.add_argument('--weight_decay', help='l2 regularization', 
                         type=float, default=0)
     parser.add_argument('--ls_gnn', help='latent size gnn', type=int,
@@ -321,12 +327,14 @@ if __name__ == "__main__":
                         default=3)
     parser.add_argument('--hl_mlp', help='hidden layers mlps', type=int,
                         default=1)
+    parser.add_argument('--continuity_coeff', help='continuity coefficient',
+                        type=float, default=1000)
 
     args = parser.parse_args()
 
     data_location = io.data_location()
     input_dir = data_location + 'graphs/'
-    norm_type = {'features': 'normal', 'labels': 'min_max'}
+    norm_type = {'features': 'normal', 'labels': 'normal'}
     graphs, params  = gng.generate_normalized_graphs(input_dir, norm_type, 
                                                      'full_dirichlet')
     datasets = dset.generate_dataset(graphs, params)
@@ -350,7 +358,8 @@ if __name__ == "__main__":
                 'lr_decay': args.lr_decay,
                 'nepochs': args.epochs,
                 'weight_decay': args.weight_decay,
-                'rate_noise': args.rate_noise}
+                'rate_noise': args.rate_noise,
+                'continuity_coeff': args.continuity_coeff}
     params.update(t_params)
 
     start = time.time()

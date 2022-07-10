@@ -47,7 +47,7 @@ class Dataset(DGLDataset):
             node_data = [ndata for ndata in lightgraph.ndata]
             edge_data = [edata for edata in lightgraph.edata]
             for ndata in node_data:
-                if ndata != 'inlet_mask' and ndata != 'outlet_mask':
+                if 'mask' not in ndata:
                     del lightgraph.ndata[ndata]
             for edata in edge_data:
                 del lightgraph.edata[edata]
