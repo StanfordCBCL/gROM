@@ -1,3 +1,4 @@
+from ast import Num
 import sys
 import os
 sys.path.append(os.getcwd())
@@ -9,6 +10,7 @@ import dgl
 import torch as th
 from tqdm import tqdm
 import json
+import random
 
 def plot_graph(points, bif_id, indices, edges1, edges2):
     fig = plt.figure()
@@ -66,7 +68,8 @@ def generate_types(bif_id, indices):
             outlet_mask.append(True)
         else:
             outlet_mask.append(False)
-    return th.nn.functional.one_hot(th.tensor(types)), inlet_mask, outlet_mask
+    types = th.nn.functional.one_hot(th.tensor(types), num_classes = 4)
+    return types, inlet_mask, outlet_mask
 
 def generate_edge_features(points, edges1, edges2):
     rel_position = []
@@ -79,12 +82,12 @@ def generate_edge_features(points, edges1, edges2):
         rel_position_norm.append(ndiff)
     return np.array(rel_position), rel_position_norm
 
-def add_fields(graph, field, field_name, subsample_time = 10):
+def add_fields(graph, field, field_name, subsample_time = 1):
     timesteps = [float(t) for t in field]
     timesteps.sort()
     dt = (timesteps[1] - timesteps[0]) * subsample_time
     # we skip the first 100 timesteps
-    offset = 100
+    offset = 0
     count = 0
     # we use the third timension for time
     field_t = th.zeros((list(field.values())[0].shape[0], 1, 
@@ -341,12 +344,14 @@ def create_junction_edges(points, bif_id, edges1, edges2):
     types = [3] * len(jedges1)
     return jedges1, jedges2, jrel_position, jdistance, types, masks
 
-     
-def generate_graph(file, input_dir, resample_perc, 
-                   add_boundary_edges, add_junction_edges):
+def load_vtp(file, input_dir):
     soln = io.read_geo(input_dir + '/' + file)
     point_data, _, points = io.get_all_arrays(soln.GetOutput())
     edges1, edges2 = io.get_edges(soln.GetOutput())
+    return point_data, points, edges1, edges2
+
+def generate_graph(point_data, points, edges1, edges2, 
+                   add_boundary_edges, add_junction_edges):
 
     inlet = [0]
     outlets = find_outlets(edges1, edges2)
@@ -354,24 +359,12 @@ def generate_graph(file, input_dir, resample_perc,
     indices = {'inlet': inlet,
                'outlets': outlets}
 
-    sampled_indices, points, edges1, edges2, indices = resample_points(points,  
-                                                              edges1, 
-                                                              edges2, indices,
-                                                              resample_perc,
-                                                              remove_caps = 1)
+    bif_id = point_data['BifurcationId']
 
-    count = 0
-    for outlet in indices['outlets']:
-        iout = int(np.where(sampled_indices == outlet)[0])
-        indices['outlets'][count] = iout
-        count = count + 1
-
-    bif_id = point_data['BifurcationId'][sampled_indices]
     try:
         area = list(io.gather_array(point_data, 'area').values())[0]
     except Exception as e:
         area = point_data['area']
-    area = area[sampled_indices]
 
     # we manually make the graph bidirected in order to have the relative 
     # position of nodes make sense (xj - xi = - (xi - xj)). Otherwise, each edge
@@ -392,7 +385,7 @@ def generate_graph(file, input_dir, resample_perc,
         distance = np.concatenate((distance, bdistance))
         rel_position = np.concatenate((rel_position, brel_position), axis = 0)
 
-    if add_junction_edges:
+    if add_junction_edges and np.max(bif_id) > -1:
         jedges1, jedges2, \
         jrel_position, jdistance, \
         jtypes, jmasks = create_junction_edges(points, bif_id, edges1, edges2)
@@ -401,6 +394,10 @@ def generate_graph(file, input_dir, resample_perc,
         etypes = etypes + jtypes
         distance = np.concatenate((distance, jdistance))
         rel_position = np.concatenate((rel_position, jrel_position), axis = 0)
+    else:
+        jmasks = {}
+        jmasks['inlets'] = np.zeros(bif_id.size)
+        jmasks['all'] = np.zeros(bif_id.size)
 
     # plot_graph(points, bif_id, indices, edges1, edges2)   
     graph = dgl.graph((edges1, edges2), idtype = th.int32)
@@ -423,15 +420,96 @@ def generate_graph(file, input_dir, resample_perc,
                                                dtype = th.float32), 2)
     graph.edata['distance'] = th.reshape(th.tensor(distance, 
                                          dtype = th.float32), (-1,1,1))
-    if add_boundary_edges:
-        etypes = th.nn.functional.one_hot(th.tensor(etypes))
-        graph.edata['type'] = th.unsqueeze(etypes, 2)
+    etypes = th.nn.functional.one_hot(th.tensor(etypes), num_classes = 4)
+    graph.edata['type'] = th.unsqueeze(etypes, 2)
 
-    return graph, point_data, indices, sampled_indices
+    return graph, indices
+
+def create_partitions(points, bif_id,
+                      edges1, edges2, max_num_partitions):
+
+    def create_partition(edges1, edges2, starting_point, inlets):
+        sampling_indices = [starting_point]
+        new_edges1 = []
+        new_edges2 = []
+        points_to_visit = [starting_point]
+        count = 0
+        numbering = {starting_point: count}
+        count = count + 1
+        while len(points_to_visit) > 0:
+            j = points_to_visit[0]
+            del points_to_visit[0]
+            iedges = np.where(edges1 == j)[0]
+            for iedg in iedges:
+                next_point = edges2[iedg]
+                numbering[next_point] = count
+                count = count + 1
+                sampling_indices.append(next_point)
+                new_edges1.append(numbering[j])
+                new_edges2.append(numbering[next_point])
+                if next_point not in inlets:
+                    points_to_visit.append(next_point)
+
+        return np.array(new_edges1), np.array(new_edges2), sampling_indices
+
+    bif_id = point_data['BifurcationId']
+    npoints = bif_id.size
+    
+    inlets = [0]
+    # num_partions is the number of inlets that we have to randomly select from
+    # the graph. So we start by randoming selecting one inlet between each 
+    # couple of consecutive bifurcations, and then we randomly select the
+    # following inlets
+    for ipoint in range(npoints):
+        if len(inlets) == max_num_partitions:
+            break
+        # then it's the outlet of a junction, we traverse the graph and until we
+        # can. If we reach an outlet, we do nothing. If we reach another 
+        # junction, we sample a point between these two indices
+        if bif_id[ipoint] != -1 and bif_id[ipoint+1] == -1:
+            j = ipoint
+            next = -1
+            while True:
+                iedg = np.where(edges1 == j)[0]
+                if len(iedg) == 0:
+                    break
+                j = edges2[iedg[0]]
+                if bif_id[j] != -1:
+                    next = j
+                    break
+            if next != -1:
+                inlets.append(int(np.random.randint(ipoint +1 , next)))
+
+    if len(inlets) < max_num_partitions:
+        available_in = list(np.where(bif_id == -1)[0])
+        # we allow for a max of 2 straight partitions
+        n_new_inlets = np.min((max_num_partitions - len(inlets), 2))
+        inlets = inlets + random.sample(available_in, n_new_inlets)
+
+    partitions = []
+
+    for ipartition in range(len(inlets)):
+        pedges1, pedges2, sampling_indices = create_partition(edges1, edges2,
+                                                            inlets[ipartition],
+                                                            inlets)
+        ppoints = points[sampling_indices,:]
+
+        ppoint_data = {}
+        for ndata in point_data:
+            ppoint_data[ndata] = point_data[ndata][sampling_indices]
+        
+        new_partition = {'edges1': pedges1, 
+                         'edges2': pedges2,
+                         'points': ppoints, 
+                         'sampling_indices': sampling_indices,
+                         'point_data': ppoint_data}
+        if pedges1.size > 1:
+            partitions.append(new_partition)
+    return partitions
 
 if __name__ == "__main__":
     data_location = io.data_location()
-    input_dir = data_location + 'vtps_1d'
+    input_dir = data_location + 'vtps'
     output_dir = data_location + 'graphs/'
 
     # if we provide timestep file then we need to rescale time in vtp
@@ -448,24 +526,32 @@ if __name__ == "__main__":
     print(files)
     for file in tqdm(files, desc = 'Generating graphs', colour='green'):
         if '.vtp' in file:
-            filename = file.replace('.vtp','.grph')
-            
-            resample_perc = 0.06
+            point_data, points, edges1, edges2 = load_vtp(file, input_dir)
+
+            inlet = [0]
+            outlets = find_outlets(edges1, edges2)
+
+            indices = {'inlet': inlet,
+                    'outlets': outlets}
+
+            resample_perc = 0.08
             success = False
-            add_boundary_edges = True
-            add_junction_edges = True
             while not success:
                 try:
-                    graph, point_data, indices, \
-                    sampled_indices = generate_graph(file, input_dir, 
-                                                     resample_perc,
-                                                     add_boundary_edges,
-                                                     add_junction_edges)
+                    sampled_indices, points, \
+                    edges1, edges2, _ = resample_points(points.copy(),  
+                                                    edges1.copy(), 
+                                                    edges2.copy(), indices,
+                                                    resample_perc,
+                                                    remove_caps = 3)
                     success = True
                 except Exception as e:
                     print(e)
                     resample_perc = np.min([resample_perc * 2, 1])
-            
+
+            for ndata in point_data:
+                point_data[ndata] = point_data[ndata][sampled_indices]
+
             pressure = io.gather_array(point_data, 'pressure')
             flowrate = io.gather_array(point_data, 'flow')
             if len(flowrate) == 0:
@@ -473,19 +559,44 @@ if __name__ == "__main__":
             
             if rescale_time:
                 times = [t for t in pressure]
-                timestep = float(timesteps[filename[:filename.find('.')]])
+                timestep = float(timesteps[file[:file.find('.')]])
                 for t in times:
                     pressure[t * timestep] = pressure[t]
                     flowrate[t * timestep] = flowrate[t]
                     del pressure[t]
                     del flowrate[t]
 
-            # select indices and scale pressure to be mmHg
+            # scale pressure to be mmHg
             for t in pressure:
-                pressure[t] = pressure[t][sampled_indices]  / 1333.2
-                flowrate[t] = flowrate[t][sampled_indices]
+                pressure[t] = pressure[t] / 1333.2
 
-            add_fields(graph, pressure, 'pressure')
-            add_fields(graph, flowrate, 'flowrate')
+            max_num_partitions = 5
+            partitions = create_partitions(points, point_data,
+                                           edges1, edges2, max_num_partitions)
 
-            dgl.save_graphs(output_dir + filename, graph)
+
+            for i, part in enumerate(partitions):
+                filename = file.replace('.vtp','.' + str(i) + '.grph')
+                add_boundary_edges = True
+                add_junction_edges = True
+                try:
+                    graph, indices = generate_graph(part['point_data'],
+                                                    part['points'],
+                                                    part['edges1'], 
+                                                    part['edges2'], 
+                                                    add_boundary_edges,
+                                                    add_junction_edges)
+                    c_pressure = {}
+                    c_flowrate = {}
+                    for t in pressure:
+                        c_pressure[t] = pressure[t][part['sampling_indices']]
+                        c_flowrate[t] = flowrate[t][part['sampling_indices']]
+
+                    add_fields(graph, c_pressure, 'pressure')
+                    add_fields(graph, c_flowrate, 'flowrate')
+
+                    dgl.save_graphs(output_dir + filename, graph)
+                except Exception as e:
+                    print(e)
+                
+            
