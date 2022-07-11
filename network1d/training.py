@@ -224,15 +224,23 @@ def train_gnn_model(gnn_model, dataset, params, parallel, rank0,
         history['test_metric'][0].append(epoch)
         history['test_metric'][1].append(float(test_results['metric']))
 
-        if epoch % np.floor(nepochs / 10) == 0 or epoch == (nepochs - 1):
-            e_train, e_test = compute_rollout_errors(gnn_model, 
-                                                     params, dataset, 
-                                                     idxs_train, idxs_test)
+        if rank0:
+            msg = 'Starting rollout'
+            print(msg, flush = True)
 
-            history['train_rollout'][0].append(epoch)
-            history['train_rollout'][1].append(float(np.mean(e_train)))
-            history['test_rollout'][0].append(epoch)
-            history['test_rollout'][1].append(float(np.mean(e_test)))
+        if rank0:
+            if epoch % np.floor(nepochs / 10) == 0 or epoch == (nepochs - 1):
+                e_train, e_test = compute_rollout_errors(gnn_model, 
+                                                        params, dataset, 
+                                                        idxs_train, idxs_test)
+                if rank0:
+                    msg = 'End rollout'
+                    print(msg, flush = True)
+
+                history['train_rollout'][0].append(epoch)
+                history['train_rollout'][1].append(float(np.mean(e_train)))
+                history['test_rollout'][0].append(epoch)
+                history['test_rollout'][1].append(float(np.mean(e_test)))
 
         if rank0:
             msg = 'Rollout: {:.0f}\t'.format(epoch)
@@ -281,6 +289,9 @@ def launch_training(dataset, params, parallel, out_dir = 'models/',
     gnn_model, history = train_gnn_model(gnn_model, dataset, params, 
                                          parallel, save_data, checkpoint_fct)
 
+    final_rollout = history['test_rollout'][1][-1]
+    print('Final rollout error on test = ' + str(final_rollout))
+
     if save_data:
         ptools.plot_history(history['train_loss'],
                         history['test_loss'],
@@ -316,14 +327,14 @@ if __name__ == "__main__":
 
     parser.add_argument('--bs', help='batch size', type=int, default=100)
     parser.add_argument('--epochs', help='total number of epochs', type=int,
-                        default=100)
+                        default=1000)
     parser.add_argument('--lr_decay', help='learning rate decay', type=float,
                         default=0.1)
     parser.add_argument('--lr', help='learning rate', type=float, default=0.005)
     parser.add_argument('--rate_noise', help='rate noise', type=float,
                         default=200)
     parser.add_argument('--weight_decay', help='l2 regularization', 
-                        type=float, default=0)
+                        type=float, default=1e-6)
     parser.add_argument('--ls_gnn', help='latent size gnn', type=int,
                         default=32)
     parser.add_argument('--ls_mlp', help='latent size mlps', type=int,

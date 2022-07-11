@@ -303,8 +303,9 @@ def create_junction_edges(points, bif_id, edges1, edges2):
     juncts_inlets = {}
     jedges1 = []
     jedges2 = []
-    for ipoint in range(npoints - 1):
-        if bif_id[ipoint] == -1 and bif_id[ipoint + 1] != -1:
+    for ipoint in range(npoints - 1):            
+        if bif_id[ipoint] == -1 and bif_id[ipoint + 1] != -1 or \
+           (ipoint == 0 and bif_id[ipoint] != -1):
             # we use the junction id as key and the junction idx as value
             if juncts_inlets.get(bif_id[ipoint + 1]) == None:
                 juncts_inlets[bif_id[ipoint + 1]] = ipoint
@@ -509,7 +510,7 @@ def create_partitions(points, bif_id,
 
 if __name__ == "__main__":
     data_location = io.data_location()
-    input_dir = data_location + 'vtps'
+    input_dir = data_location + 'vtps_aortas'
     output_dir = data_location + 'graphs/'
 
     # if we provide timestep file then we need to rescale time in vtp
@@ -570,9 +571,18 @@ if __name__ == "__main__":
             for t in pressure:
                 pressure[t] = pressure[t] / 1333.2
 
-            max_num_partitions = 5
-            partitions = create_partitions(points, point_data,
-                                           edges1, edges2, max_num_partitions)
+            max_num_partitions = 2
+            if max_num_partitions > 1:
+                partitions = create_partitions(points, point_data,
+                                            edges1, edges2, 
+                                            max_num_partitions)
+            else:
+                sampling_indices = np.arange(points.shape[0])
+                partitions = [{'point_data': point_data,
+                            'points': points,
+                            'edges1': edges1,
+                            'edges2': edges2,
+                            'sampling_indices': sampling_indices}]
 
 
             for i, part in enumerate(partitions):
@@ -597,6 +607,5 @@ if __name__ == "__main__":
 
                     dgl.save_graphs(output_dir + filename, graph)
                 except Exception as e:
-                    print(e)
-                
+                    print(e)                
             
