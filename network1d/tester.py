@@ -20,7 +20,7 @@ def plot_rollout(features, graph, params, folder):
 
 def evaluate_all_models(dataset, split_name, gnn_model, params):
     print('==========' + split_name + '==========')
-    dataset = dataset['train']
+    dataset = dataset[split_name]
     pathlib.Path('results/' + split_name).mkdir(parents=True, exist_ok=True)
 
     tot_errs = 0
@@ -35,7 +35,7 @@ def evaluate_all_models(dataset, split_name, gnn_model, params):
 
     print('-------------------------------------')
     print('Global statistics')
-    print(errs)
+    print(tot_errs / len(dataset.graphs))
 
 if __name__ == '__main__':
     print(sys.argv)
@@ -55,3 +55,4 @@ if __name__ == '__main__':
     if os.path.exists('results'):
         shutil.rmtree('results')
     evaluate_all_models(datasets[0], 'train', gnn_model, params)
+    evaluate_all_models(datasets[0], 'test', gnn_model, params)

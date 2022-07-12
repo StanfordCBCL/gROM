@@ -178,7 +178,7 @@ def train_gnn_model(gnn_model, dataset, params, parallel, rank0,
 
     # sample train and test graphs for rollout
     np.random.seed(10)
-    ngraphs = 5
+    ngraphs = 10
     idxs_train = np.random.randint(0, len(dataset['train'].graphs), (ngraphs))
     idxs_test = np.random.randint(0, len(dataset['test'].graphs), (ngraphs))
 
@@ -225,17 +225,10 @@ def train_gnn_model(gnn_model, dataset, params, parallel, rank0,
         history['test_metric'][1].append(float(test_results['metric']))
 
         if rank0:
-            msg = 'Starting rollout'
-            print(msg, flush = True)
-
-        if rank0:
             if epoch % np.floor(nepochs / 10) == 0 or epoch == (nepochs - 1):
                 e_train, e_test = compute_rollout_errors(gnn_model, 
                                                         params, dataset, 
                                                         idxs_train, idxs_test)
-                if rank0:
-                    msg = 'End rollout'
-                    print(msg, flush = True)
 
                 history['train_rollout'][0].append(epoch)
                 history['train_rollout'][1].append(float(np.mean(e_train)))
@@ -332,9 +325,9 @@ if __name__ == "__main__":
                         default=0.1)
     parser.add_argument('--lr', help='learning rate', type=float, default=0.005)
     parser.add_argument('--rate_noise', help='rate noise', type=float,
-                        default=200)
+                        default=100)
     parser.add_argument('--weight_decay', help='l2 regularization', 
-                        type=float, default=1e-6)
+                        type=float, default=1e-5)
     parser.add_argument('--ls_gnn', help='latent size gnn', type=int,
                         default=32)
     parser.add_argument('--ls_mlp', help='latent size mlps', type=int,
@@ -344,13 +337,19 @@ if __name__ == "__main__":
     parser.add_argument('--hl_mlp', help='hidden layers mlps', type=int,
                         default=1)
     parser.add_argument('--continuity_coeff', help='continuity coefficient',
-                        type=float, default=1000)
-
+                        type=float, default=1)
+    parser.add_argument('--label_norm', help='0: min_max, 1: normal',
+                        type=int, default=1)
     args = parser.parse_args()
+
+    if args.label_norm == '0':
+        label_normalization = 'min_max'
+    else:
+        label_normalization = 'normal'
 
     data_location = io.data_location()
     input_dir = data_location + 'graphs/'
-    norm_type = {'features': 'normal', 'labels': 'normal'}
+    norm_type = {'features': 'normal', 'labels': label_normalization}
     graphs, params  = gng.generate_normalized_graphs(input_dir, norm_type, 
                                                      'full_dirichlet')
     datasets = dset.generate_dataset(graphs, params)

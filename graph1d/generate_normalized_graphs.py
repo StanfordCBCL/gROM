@@ -79,11 +79,6 @@ def compute_statistics(graphs, fields, statistics):
                     mean = th.mean(d)
                     meansq = th.mean(d**2)
 
-                    if field_name == 'area':
-                        print(graph_n)
-                        print(minv)
-                        print(maxv)
-
                     means.append(mean)
                     meansqs.append(meansq)
                     Ns.append(N)

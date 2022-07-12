@@ -11,6 +11,7 @@ import torch as th
 from tqdm import tqdm
 import json
 import random
+import pathlib
 
 def plot_graph(points, bif_id, indices, edges1, edges2):
     fig = plt.figure()
@@ -43,8 +44,10 @@ def plot_graph(points, bif_id, indices, edges1, edges2):
     # ax.set_xlim([points[outlets[0],0]-0.1,points[outlets[0],0]+0.1])
     # ax.set_ylim([points[outlets[0],1]-0.1,points[outlets[0],1]+0.1])
     # ax.set_zlim([points[outlets[0],2]-0.1,points[outlets[0],2]+0.1])
-
-    plt.show()
+    ax.set_box_aspect((np.ptp(points[:,0]), 
+                       np.ptp(points[:,1]), 
+                       np.ptp(points[:,2])))
+    plt.box(False)
 
 def generate_types(bif_id, indices):
     types = []
@@ -89,7 +92,7 @@ def add_fields(graph, field, field_name, subsample_time = 1):
     # we skip the first 100 timesteps
     offset = 0
     count = 0
-    # we use the third timension for time
+    # we use the third dimension for time
     field_t = th.zeros((list(field.values())[0].shape[0], 1, 
                         len(timesteps) - offset))
     for t in field:
@@ -247,9 +250,9 @@ def generate_boundary_edges(points, indices, edges1, edges2):
     for index in idxs:
         d, _ = dijkstra_algorithm(points, edges1, edges2, index)
         if index in indices['inlet']:
-            type = 1
-        else:
             type = 2
+        else:
+            type = 3
         for ipoint in range(npoints):
             bedges1.append(index)
             bedges2.append(ipoint)
@@ -342,7 +345,7 @@ def create_junction_edges(points, bif_id, edges1, edges2):
     jedges2 = jedges2 + jedges1_copy
     jrel_position = np.concatenate((jrel_position, -jrel_position), axis = 0)
     jdistance = np.concatenate((jdistance, jdistance))
-    types = [3] * len(jedges1)
+    types = [4] * len(jedges1)
     return jedges1, jedges2, jrel_position, jdistance, types, masks
 
 def load_vtp(file, input_dir):
@@ -375,7 +378,16 @@ def generate_graph(point_data, points, edges1, edges2,
     edges2 = np.concatenate((edges2, edges1_copy))
 
     rel_position, distance = generate_edge_features(points, edges1, edges2)
+
+    types, inlet_mask, \
+    outlet_mask = generate_types(bif_id, indices)
+
     etypes = [0] * edges1.size
+    # we set etype to 1 if either of the nodes is a junction
+    for iedge in range(edges1.size):
+        if types[edges1[iedge],1] == 1 or types[edges2[iedge],1] == 1:
+            etypes[iedge] = 1
+
     if add_boundary_edges:
         bedges1, bedges2, \
         brel_position, bdistance, \
@@ -406,8 +418,6 @@ def generate_graph(point_data, points, edges1, edges2,
     graph.ndata['x'] = th.tensor(points, dtype = th.float32)
     graph.ndata['area'] = th.reshape(th.tensor(area, dtype = th.float32), 
                                      (-1,1,1))
-    types, inlet_mask, \
-    outlet_mask = generate_types(bif_id, indices)
     continuity_mask = create_continuity_mask(types)
 
     graph.ndata['type'] = th.unsqueeze(types, 2)
@@ -416,12 +426,14 @@ def generate_graph(point_data, points, edges1, edges2,
     graph.ndata['continuity_mask'] = th.tensor(continuity_mask, dtype = th.int8)
     graph.ndata['jun_inlet_mask'] = th.tensor(jmasks['inlets'], dtype = th.int8)
     graph.ndata['jun_mask'] = th.tensor(jmasks['all'], dtype = th.int8)
+    graph.ndata['branch_mask'] = th.tensor(types[:,0].detach().numpy() == 1,
+                                           dtype = th.int8)
 
     graph.edata['rel_position'] = th.unsqueeze(th.tensor(rel_position, 
                                                dtype = th.float32), 2)
     graph.edata['distance'] = th.reshape(th.tensor(distance, 
                                          dtype = th.float32), (-1,1,1))
-    etypes = th.nn.functional.one_hot(th.tensor(etypes), num_classes = 4)
+    etypes = th.nn.functional.one_hot(th.tensor(etypes), num_classes = 5)
     graph.edata['type'] = th.unsqueeze(etypes, 2)
 
     return graph, indices
@@ -535,7 +547,7 @@ if __name__ == "__main__":
             indices = {'inlet': inlet,
                     'outlets': outlets}
 
-            resample_perc = 0.08
+            resample_perc = 0.1
             success = False
             while not success:
                 try:
@@ -552,6 +564,12 @@ if __name__ == "__main__":
 
             for ndata in point_data:
                 point_data[ndata] = point_data[ndata][sampled_indices]
+
+            inlet = [0]
+            outlets = find_outlets(edges1, edges2)
+
+            indices = {'inlet': inlet,
+                    'outlets': outlets}
 
             pressure = io.gather_array(point_data, 'pressure')
             flowrate = io.gather_array(point_data, 'flow')
@@ -596,6 +614,15 @@ if __name__ == "__main__":
                                                     part['edges2'], 
                                                     add_boundary_edges,
                                                     add_junction_edges)
+                    pathlib.Path('images').mkdir(parents=True, exist_ok=True)
+                    plot_graph(part['points'], 
+                               part['point_data']['BifurcationId'], 
+                               indices, 
+                               part['edges1'], 
+                               part['edges2'])
+                    plt.savefig('images/' + filename + '.eps', 
+                                format='eps',
+                                bbox_inches='tight')
                     c_pressure = {}
                     c_flowrate = {}
                     for t in pressure:
