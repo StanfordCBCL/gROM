@@ -4,50 +4,16 @@ import os
 sys.path.append(os.getcwd())
 import tools.io_utils as io
 import numpy as np
-import matplotlib.pyplot as plt
-import matplotlib.cm as cm
+import scipy
+from scipy import interpolate
 import dgl
 import torch as th
 from tqdm import tqdm
 import json
 import random
 import pathlib
-
-def plot_graph(points, bif_id, indices, edges1, edges2):
-    fig = plt.figure()
-    ax = plt.axes(projection='3d')
-    ax._axis3don = False
-
-    minc = np.min(bif_id)
-    maxc = np.max(bif_id)
-
-    if minc == maxc:
-        C = bif_id * 0
-    else:
-        C = (bif_id - minc) / (maxc - minc)
-
-    cmap = cm.get_cmap("viridis")
-    ax.scatter(points[:,0], points[:,1], points[:,2], color=cmap(C),            depthshade=0, s = 5)
-
-    inlet = indices['inlet']
-    ax.scatter(points[inlet,0], points[inlet,1], points[inlet,2],               color='green', depthshade=0, s = 60)
-
-    outlets = indices['outlets']
-    ax.scatter(points[outlets,0], points[outlets,1], points[outlets,2],color='red', depthshade=0, s = 60)
-
-    for iedge in range(edges1.size):
-        ax.plot3D([points[edges1[iedge],0],points[edges2[iedge],0]],
-                  [points[edges1[iedge],1],points[edges2[iedge],1]],
-                  [points[edges1[iedge],2],points[edges2[iedge],2]],
-                   color = 'black', linewidth=0.2, alpha = 0.5)
-
-    # ax.set_xlim([points[outlets[0],0]-0.1,points[outlets[0],0]+0.1])
-    # ax.set_ylim([points[outlets[0],1]-0.1,points[outlets[0],1]+0.1])
-    # ax.set_zlim([points[outlets[0],2]-0.1,points[outlets[0],2]+0.1])
-    ax.set_box_aspect((np.ptp(points[:,0]), 
-                       np.ptp(points[:,1]), 
-                       np.ptp(points[:,2])))
-    plt.box(False)
+import tools.plot_tools as pt
+import matplotlib.pyplot as plt
 
 def generate_types(bif_id, indices):
     types = []
@@ -354,6 +320,26 @@ def load_vtp(file, input_dir):
     edges1, edges2 = io.get_edges(soln.GetOutput())
     return point_data, points, edges1, edges2
 
+def generate_tangents(points, branch_id):
+    tangents = np.zeros(points.shape)
+    maxbid = int(np.max(branch_id))
+    for bid in range(maxbid):
+        point_idxs = np.where(branch_id == bid)[0]
+
+        tck, u = scipy.interpolate.splprep([points[point_idxs, 0],
+                                            points[point_idxs, 1],
+                                            points[point_idxs, 2]], s=0, 
+                                            k = np.min((3, len(point_idxs)-1)))
+
+        x, y, z = interpolate.splev(u, tck)
+        tangents[point_idxs,0] = x
+        tangents[point_idxs,1] = y
+        tangents[point_idxs,2] = z
+
+    # make sure tangents are unitary
+    tangents = tangents / np.linalg.norm(tangents, axis = 0)
+    return tangents
+
 def generate_graph(point_data, points, edges1, edges2, 
                    add_boundary_edges, add_junction_edges):
 
@@ -412,10 +398,11 @@ def generate_graph(point_data, points, edges1, edges2,
         jmasks['inlets'] = np.zeros(bif_id.size)
         jmasks['all'] = np.zeros(bif_id.size)
 
-    # plot_graph(points, bif_id, indices, edges1, edges2)   
     graph = dgl.graph((edges1, edges2), idtype = th.int32)
 
     graph.ndata['x'] = th.tensor(points, dtype = th.float32)
+    graph.ndata['tangent'] = th.tensor(point_data['tangent'], 
+                                       dtype = th.float32)
     graph.ndata['area'] = th.reshape(th.tensor(area, dtype = th.float32), 
                                      (-1,1,1))
     continuity_mask = create_continuity_mask(types)
@@ -436,7 +423,7 @@ def generate_graph(point_data, points, edges1, edges2,
     etypes = th.nn.functional.one_hot(th.tensor(etypes), num_classes = 5)
     graph.edata['type'] = th.unsqueeze(etypes, 2)
 
-    return graph, indices
+    return graph, indices, points, bif_id, indices, edges1, edges2
 
 def create_partitions(points, bif_id,
                       edges1, edges2, max_num_partitions):
@@ -541,13 +528,16 @@ if __name__ == "__main__":
         if '.vtp' in file:
             point_data, points, edges1, edges2 = load_vtp(file, input_dir)
 
+            point_data['tangent'] = generate_tangents(points, 
+                                                      point_data['BranchIdTmp'])
+
             inlet = [0]
             outlets = find_outlets(edges1, edges2)
 
             indices = {'inlet': inlet,
                     'outlets': outlets}
 
-            resample_perc = 0.1
+            resample_perc = 0.06
             success = False
             while not success:
                 try:
@@ -589,7 +579,7 @@ if __name__ == "__main__":
             for t in pressure:
                 pressure[t] = pressure[t] / 1333.2
 
-            max_num_partitions = 2
+            max_num_partitions = 1
             if max_num_partitions > 1:
                 partitions = create_partitions(points, point_data,
                                             edges1, edges2, 
@@ -607,19 +597,17 @@ if __name__ == "__main__":
                 filename = file.replace('.vtp','.' + str(i) + '.grph')
                 add_boundary_edges = True
                 add_junction_edges = True
-                try:
-                    graph, indices = generate_graph(part['point_data'],
+                if 1:
+                    graph, indices, \
+                    points, bif_id, indices, \
+                    edges1, edges2 = generate_graph(part['point_data'],
                                                     part['points'],
                                                     part['edges1'], 
                                                     part['edges2'], 
                                                     add_boundary_edges,
                                                     add_junction_edges)
                     pathlib.Path('images').mkdir(parents=True, exist_ok=True)
-                    plot_graph(part['points'], 
-                               part['point_data']['BifurcationId'], 
-                               indices, 
-                               part['edges1'], 
-                               part['edges2'])
+                    pt.plot_graph(points, bif_id, indices, edges1, edges2)
                     plt.savefig('images/' + filename + '.eps', 
                                 format='eps',
                                 bbox_inches='tight')
@@ -633,6 +621,6 @@ if __name__ == "__main__":
                     add_fields(graph, c_flowrate, 'flowrate')
 
                     dgl.save_graphs(output_dir + filename, graph)
-                except Exception as e:
-                    print(e)                
+                # except Exception as e:
+                #     print(e)                
             

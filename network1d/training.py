@@ -118,16 +118,15 @@ def evaluate_model(gnn_model, train_dataloader, test_dataloader, optimizer,
 def compute_rollout_errors(gnn_model, params, dataset, idxs_train, idxs_test):
     train_errs = np.zeros(2)
     for idx in idxs_train:
-        _, cur_train_errs = rollout(gnn_model, params, dataset['train'],
-                                    idx)
+        _, cur_train_errs, _ = rollout(gnn_model, params, 
+                                       dataset['train'].graphs[idx])
         train_errs = cur_train_errs + train_errs
     
     train_errs = train_errs / len(idxs_train)
 
     test_errs = np.zeros(2)
     for idx in idxs_test:
-        _, cur_test_errs = rollout(gnn_model, params, dataset['test'],
-                                    idx)
+        _, cur_test_errs, _ = rollout(gnn_model, params, dataset['test'].graphs[idx])
         test_errs = cur_test_errs + test_errs
     
     test_errs = test_errs / (len(idxs_test))
@@ -320,7 +319,7 @@ if __name__ == "__main__":
 
     parser.add_argument('--bs', help='batch size', type=int, default=100)
     parser.add_argument('--epochs', help='total number of epochs', type=int,
-                        default=1000)
+                        default=100)
     parser.add_argument('--lr_decay', help='learning rate decay', type=float,
                         default=0.1)
     parser.add_argument('--lr', help='learning rate', type=float, default=0.005)

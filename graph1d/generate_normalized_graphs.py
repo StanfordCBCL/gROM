@@ -129,6 +129,7 @@ def add_features(graphs, params):
 
         dt = graph.ndata['dt'].repeat(1, 1, ntimes)
         area = graph.ndata['area'].repeat(1, 1, ntimes)
+        tangent = graph.ndata['area'].repeat(1, 1, ntimes)
         type = graph.ndata['type'].repeat(1, 1, ntimes)
 
         p = graph.ndata['pressure'][:,:,:-1].clone()
@@ -160,7 +161,8 @@ def add_features(graphs, params):
             dq[graph.ndata['inlet_mask'].bool(),:,:] = 0
             dq[graph.ndata['outlet_mask'].bool(),:,:] = 0
 
-        graph.ndata['nfeatures'] = th.cat((p, q, area, type, dt), axis = 1)
+        graph.ndata['nfeatures'] = th.cat((p, q, area, tangent, 
+                                           type, dt), axis = 1)
         graph.ndata['nlabels'] = th.cat((dp, dq), axis = 1)
 
         rp = graph.edata['rel_position']

@@ -23,19 +23,26 @@ def evaluate_all_models(dataset, split_name, gnn_model, params):
     dataset = dataset[split_name]
     pathlib.Path('results/' + split_name).mkdir(parents=True, exist_ok=True)
 
+    total_timesteps = 0
+    total_time = 0
     tot_errs = 0
     for i in range(len(dataset.graphs)):
         print('model name = {}'.format(dataset.graph_names[i]))
         fdr = 'results/' + split_name + '/' + dataset.graph_names[i] + '/'
         pathlib.Path(fdr).mkdir(parents=True, exist_ok=True)
-        r_features, errs = rollout(gnn_model, params, dataset, i)
+        r_features, errs, elaps = rollout(gnn_model, params, dataset.graphs[i])
+        total_time = total_time + elaps
+        total_timesteps = total_timesteps + r_features.shape[2]
         print_rollout_errors(errs)
-        plot_rollout(r_features, dataset.graphs[i], params, fdr)
+        # plot_rollout(r_features, dataset.graphs[i], params, fdr)
         tot_errs = tot_errs + errs
 
     print('-------------------------------------')
     print('Global statistics')
-    print(tot_errs / len(dataset.graphs))
+    N = len(dataset.graphs)
+    print(tot_errs / N)
+    print('Average time = {:.2f}'.format(total_time / N))
+    print('Average n timesteps = {:.2f}'.format(total_timesteps / N))
 
 if __name__ == '__main__':
     print(sys.argv)
