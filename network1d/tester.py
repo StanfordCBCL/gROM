@@ -34,7 +34,7 @@ def evaluate_all_models(dataset, split_name, gnn_model, params):
         total_time = total_time + elaps
         total_timesteps = total_timesteps + r_features.shape[2]
         print_rollout_errors(errs)
-        # plot_rollout(r_features, dataset.graphs[i], params, fdr)
+        plot_rollout(r_features, dataset.graphs[i], params, fdr)
         tot_errs = tot_errs + errs
 
     print('-------------------------------------')

@@ -12,13 +12,13 @@ import json
 def normalize(field, field_name, statistics, norm_dict_label):
     if statistics['normalization_type'][norm_dict_label] == 'min_max':
         delta = (statistics[field_name]['max'] - statistics[field_name]['min'])
-        if np.abs(delta) > 1e-8:
+        if np.abs(delta) > 1e-5:
             field = (field - statistics[field_name]['min']) / delta
         else:
             field = field * 0
     elif statistics['normalization_type'][norm_dict_label] == 'normal':
         delta = statistics[field_name]['stdv']
-        if np.abs(delta) > 1e-8:
+        if np.abs(delta) > 1e-5:
             field = (field - statistics[field_name]['mean']) / delta
         else:
             field = field * 0

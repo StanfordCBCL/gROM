@@ -319,9 +319,9 @@ if __name__ == "__main__":
 
     parser.add_argument('--bs', help='batch size', type=int, default=100)
     parser.add_argument('--epochs', help='total number of epochs', type=int,
-                        default=100)
+                        default=200)
     parser.add_argument('--lr_decay', help='learning rate decay', type=float,
-                        default=0.1)
+                        default=0.4)
     parser.add_argument('--lr', help='learning rate', type=float, default=0.005)
     parser.add_argument('--rate_noise', help='rate noise', type=float,
                         default=100)

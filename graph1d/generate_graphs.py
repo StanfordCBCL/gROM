@@ -331,7 +331,7 @@ def generate_tangents(points, branch_id):
                                             points[point_idxs, 2]], s=0, 
                                             k = np.min((3, len(point_idxs)-1)))
 
-        x, y, z = interpolate.splev(u, tck)
+        x, y, z = interpolate.splev(u, tck, der = 1)
         tangents[point_idxs,0] = x
         tangents[point_idxs,1] = y
         tangents[point_idxs,2] = z
@@ -507,6 +507,35 @@ def create_partitions(points, bif_id,
             partitions.append(new_partition)
     return partitions
 
+def resample_time(field, timestep):
+
+    original_timesteps = [t for t in field]
+    original_timesteps.sort()
+
+    t0 = original_timesteps[0]
+    T = original_timesteps[-1]
+    t = [t0]
+    nnodes = field[t0].size
+    resampled_field = {t0: np.zeros(nnodes)}
+    while t[-1] < T:
+        t.append(t[-1] + timestep)
+        resampled_field[t[-1]] = np.zeros(nnodes)
+
+
+    for inode in range(nnodes):
+        values = []
+        for time in original_timesteps:
+            values.append(field[time][inode])
+
+        tck, u = scipy.interpolate.splprep([values], 
+                                           u = original_timesteps, s = 0)
+        values_interpolated = interpolate.splev(t, tck)[0]
+
+        for i, time in enumerate(t):
+            resampled_field[time][inode] = values_interpolated[i]
+        
+    return resampled_field
+
 if __name__ == "__main__":
     data_location = io.data_location()
     input_dir = data_location + 'vtps_aortas'
@@ -616,6 +645,12 @@ if __name__ == "__main__":
                     for t in pressure:
                         c_pressure[t] = pressure[t][part['sampling_indices']]
                         c_flowrate[t] = flowrate[t][part['sampling_indices']]
+
+                    do_resample_time = False
+                    if do_resample_time:
+                        dt = 0.001
+                        c_pressure = resample_time(c_pressure, timestep = dt)
+                        c_flowrate = resample_time(c_flowrate, timestep = dt)
 
                     add_fields(graph, c_pressure, 'pressure')
                     add_fields(graph, c_flowrate, 'flowrate')
