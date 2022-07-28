@@ -229,6 +229,19 @@ def generate_boundary_edges(points, indices, edges1, edges2):
             dists.append(d[ipoint])
             types.append(type)
 
+        # check distances computed with dijkstra_algorithm
+        # fig = plt.figure()
+        # ax = plt.axes(projection='3d')
+        # for i in range(npoints):
+        #     ax.scatter(points[i,0], points[i,1], points[i,2], color = 'black', s = 1)
+        #     ax.text(points[i,0], points[i,1], points[i,2], 
+        #             "{:.1f}".format(d[i]), 
+        #             fontsize=5)
+        #     ax.set_box_aspect((np.ptp(points[:,0]), 
+        #                np.ptp(points[:,1]), 
+        #                np.ptp(points[:,2])))
+        # plt.show()
+
     # we only keep edges corresponding to the closest boundary node in graph
     # distance to reduce number of edges
     edges_to_delete = []
@@ -236,7 +249,7 @@ def generate_boundary_edges(points, indices, edges1, edges2):
     for ipoint in range(npoints):
         cur_dists = dists[ipoint::npoints]
         min_dist = np.min(cur_dists)
-        minidx = np.where(cur_dists == min_dist)[0][0]
+        minidx = np.where(np.abs(cur_dists - min_dist) < 1e-12)[0][0]
         if min_dist < 1e-12:
             edges_to_delete.append(ipoint + minidx * npoints)
         i = ipoint
@@ -252,6 +265,18 @@ def generate_boundary_edges(points, indices, edges1, edges2):
     dists = np.delete(np.array(dists), edges_to_delete)
     types = np.delete(np.array(types), edges_to_delete)
 
+    fig = plt.figure()
+    ax = plt.axes(projection='3d')
+    ax.scatter(points[:,0], points[:,1], points[:,2], color = 'black', s = 1)
+    for iedge in range(bedges1.size):
+            ax.plot3D([points[bedges1[iedge],0],points[bedges2[iedge],0]],
+                    [points[bedges1[iedge],1],points[bedges2[iedge],1]],
+                    [points[bedges1[iedge],2],points[bedges2[iedge],2]],
+                    color = 'black', linewidth=0.3, alpha = 0.5)
+    ax.set_box_aspect((np.ptp(points[:,0]), 
+                np.ptp(points[:,1]), 
+                np.ptp(points[:,2])))
+    plt.show()
     return bedges1, bedges2, rel_positions, dists, list(types)
 
 def create_continuity_mask(types):
@@ -265,7 +290,7 @@ def create_continuity_mask(types):
     continuity_mask.append(0)
     return continuity_mask
 
-def create_junction_edges(points, bif_id, edges1, edges2):
+def create_junction_edges(points, bif_id, edges1, edges2, outlets):
     npoints = bif_id.size
     jun_inlet_mask = [0] * npoints
     jun_mask = [0] * npoints
@@ -273,8 +298,9 @@ def create_junction_edges(points, bif_id, edges1, edges2):
     jedges1 = []
     jedges2 = []
     for ipoint in range(npoints - 1):            
-        if bif_id[ipoint] == -1 and bif_id[ipoint + 1] != -1 or \
-           (ipoint == 0 and bif_id[ipoint] != -1):
+        if ((bif_id[ipoint] == -1 and bif_id[ipoint + 1] != -1) or \
+           (ipoint == 0 and bif_id[ipoint] != -1)) and \
+           ipoint not in outlets:
             # we use the junction id as key and the junction idx as value
             if juncts_inlets.get(bif_id[ipoint + 1]) == None:
                 juncts_inlets[bif_id[ipoint + 1]] = ipoint
@@ -387,7 +413,10 @@ def generate_graph(point_data, points, edges1, edges2,
     if add_junction_edges and np.max(bif_id) > -1:
         jedges1, jedges2, \
         jrel_position, jdistance, \
-        jtypes, jmasks = create_junction_edges(points, bif_id, edges1, edges2)
+        jtypes, jmasks = create_junction_edges(points, bif_id, 
+                                               edges1, 
+                                               edges2,
+                                               outlets)
         edges1 = np.concatenate((edges1, jedges1))
         edges2 = np.concatenate((edges2, jedges2))
         etypes = etypes + jtypes
@@ -621,12 +650,11 @@ if __name__ == "__main__":
                             'edges2': edges2,
                             'sampling_indices': sampling_indices}]
 
-
             for i, part in enumerate(partitions):
                 filename = file.replace('.vtp','.' + str(i) + '.grph')
                 add_boundary_edges = True
                 add_junction_edges = True
-                if 1:
+                try:
                     graph, indices, \
                     points, bif_id, indices, \
                     edges1, edges2 = generate_graph(part['point_data'],
@@ -656,6 +684,6 @@ if __name__ == "__main__":
                     add_fields(graph, c_flowrate, 'flowrate')
 
                     dgl.save_graphs(output_dir + filename, graph)
-                # except Exception as e:
-                #     print(e)                
+                except Exception as e:
+                    print(e)                
             

@@ -15,6 +15,9 @@ from vtk.util.numpy_support import vtk_to_numpy
 from random import sample
 import graph1d.generate_normalized_graphs as nz
 import matplotlib.cm as cm
+from stl import mesh
+from mpl_toolkits import mplot3d
+from matplotlib import pyplot
 
 Cardinal_red = "#8F353C"
 Cardinal_blue = "#54A0C0"
@@ -33,7 +36,7 @@ color_list = [Cardinal_red, Cardinal_blue, CB91_Violet, CB91_Green, CB91_Pink,
               CB91_Amber, CB91_Purple]
 plt.rcParams['axes.prop_cycle'] = plt.cycler(color=color_list)
 
-def plot_graph(points, bif_id, indices, edges1, edges2):
+def plot_graph(points, bif_id, indices, edges1, edges2, stl_mesh = None):
     fig = plt.figure()
     ax = plt.axes(projection='3d')
     ax._axis3don = False
@@ -41,25 +44,32 @@ def plot_graph(points, bif_id, indices, edges1, edges2):
     minc = np.min(bif_id)
     maxc = np.max(bif_id)
 
-    if minc == maxc:
-        C = bif_id * 0
-    else:
-        C = (bif_id - minc) / (maxc - minc)
+    branch_nodes = np.where(bif_id == -1)[0]
+    jun_nodes = np.where(bif_id > -1)[0]
 
-    cmap = cm.get_cmap("viridis")
-    ax.scatter(points[:,0], points[:,1], points[:,2], color=cmap(C),            depthshade=0, s = 5)
+    ax.scatter(points[branch_nodes,0], 
+               points[branch_nodes,1], 
+               points[branch_nodes,2], 
+               color = CB91_Blue,
+               depthshade=0, s = 1)
+
+    ax.scatter(points[jun_nodes,0], 
+            points[jun_nodes,1], 
+            points[jun_nodes,2], 
+            color = CB91_Amber,
+            depthshade=0, s = 1)
 
     inlet = indices['inlet']
-    ax.scatter(points[inlet,0], points[inlet,1], points[inlet,2],               color='green', depthshade=0, s = 60)
+    ax.scatter(points[inlet,0], points[inlet,1], points[inlet,2],               color='green', depthshade=0, s = 10)
 
     outlets = indices['outlets']
-    ax.scatter(points[outlets,0], points[outlets,1], points[outlets,2],color='red', depthshade=0, s = 60)
+    ax.scatter(points[outlets,0], points[outlets,1], points[outlets,2],color='red', depthshade=0, s = 10)
 
     for iedge in range(edges1.size):
         ax.plot3D([points[edges1[iedge],0],points[edges2[iedge],0]],
                   [points[edges1[iedge],1],points[edges2[iedge],1]],
                   [points[edges1[iedge],2],points[edges2[iedge],2]],
-                   color = 'black', linewidth=0.1, alpha = 0.5)
+                   color = 'black', linewidth=0.05, alpha = 0.5)
 
     # ax.set_xlim([points[outlets[0],0]-0.1,points[outlets[0],0]+0.1])
     # ax.set_ylim([points[outlets[0],1]-0.1,points[outlets[0],1]+0.1])
@@ -67,6 +77,9 @@ def plot_graph(points, bif_id, indices, edges1, edges2):
     ax.set_box_aspect((np.ptp(points[:,0]), 
                        np.ptp(points[:,1]), 
                        np.ptp(points[:,2])))
+    if stl_mesh != None:
+        ax.add_collection3d(mplot3d.art3d.Poly3DCollection(stl_mesh.vectors,
+                            alpha=0.3))
     plt.box(False)
 
 def plot_history(history_train, history_test, label, folder = None):
