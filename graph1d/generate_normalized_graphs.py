@@ -10,6 +10,21 @@ import numpy as np
 import json
 
 def normalize(field, field_name, statistics, norm_dict_label):
+    """
+    Normalize field.
+  
+    Normalize a field using statistics provided as input.
+  
+    Arguments:
+        field: the field to normalize
+        field_name (string): name of field
+        statistics: dictionary containining statistics 
+                    (key: statistics name, value: value)
+        norm_dict_label (string): 'features' or 'labels'
+    Returns:
+        normalized field
+  
+    """
     if statistics['normalization_type'][norm_dict_label] == 'min_max':
         delta = (statistics[field_name]['max'] - statistics[field_name]['min'])
         if np.abs(delta) > 1e-5:
@@ -29,6 +44,21 @@ def normalize(field, field_name, statistics, norm_dict_label):
     return field
 
 def invert_normalize(field, field_name, statistics, norm_dict_label):
+    """
+    Invert normalization over field.
+
+    Invert normalization using statistics provided as input.
+
+    Arguments:
+        field: the field to normalize
+        field_name (string): name of field
+        statistics: dictionary containining statistics 
+                    (key: statistics name, value: value)
+        norm_dict_label (string): 'feature' or 'label'
+    Returns:
+        normalized field
+
+    """
     if statistics['normalization_type'][norm_dict_label] == 'min_max':
         delta = (statistics[field_name]['max'] - statistics[field_name]['min'])
         field = statistics[field_name]['min'] + delta * field
@@ -42,6 +72,17 @@ def invert_normalize(field, field_name, statistics, norm_dict_label):
     return field
 
 def load_all_graphs(input_dir):
+    """
+    Load all graphs in directory.
+
+    Load all graphs in input_dir.
+
+    Arguments:
+        input_dir (string): input directory path
+    Returns:
+        list of DGL graphs
+
+    """
     files = os.listdir(input_dir) 
 
     graphs = {}
@@ -52,6 +93,23 @@ def load_all_graphs(input_dir):
     return graphs
 
 def compute_statistics(graphs, fields, statistics):
+    """
+    Compute statistics on a list of graphs.
+
+    The computet statistics are: min value, max value, mean, and standard 
+    deviation.
+
+    Arguments:
+        graphs: list of graphs
+        fields: dictionary containing field names, divided into node and edge
+                fields
+        statistics: dictionary containining statistics 
+                    (key: statistics name, value: value)
+    Returns:
+        dictionary containining statistics (key: statistics name, value: value).
+        New fields are appended to the input 'statistics' argument.
+
+    """
     print('Compute statistics')
     for etype in fields:
             for field_name in fields[etype]:
@@ -104,6 +162,18 @@ def compute_statistics(graphs, fields, statistics):
     return statistics
 
 def normalize_graphs(graphs, fields, statistics, norm_dict_label):
+    """
+    Normalize all graphs in a list.
+
+    Arguments:
+        graphs: list of graphs
+        fields: dictionary containing field names, divided into node and edge
+                fields
+        statistics: dictionary containining statistics 
+                    (key: statistics name, value: value)
+        norm_dict_label (string): 'features' or 'labels'
+
+    """
     print('Normalize graphs')
     for etype in fields:
             for field_name in fields[etype]:
@@ -122,7 +192,18 @@ def normalize_graphs(graphs, fields, statistics, norm_dict_label):
                                                             statistics,
                                                             norm_dict_label)
 
-def add_features(graphs, params):  
+def add_features(graphs, params):
+    """
+    Add features to graphs.
+
+    This function adds node and edge features to all graphs in 
+    the input list.
+
+    Arguments:
+        graphs: list of graphs
+        params: dictionary containing parameters of the normalization
+
+    """
     for graph_n in tqdm(graphs, desc = 'Add features', colour='green'):
         graph = graphs[graph_n]
         ntimes = graph.ndata['dp'].shape[2]
@@ -174,6 +255,16 @@ def add_features(graphs, params):
             graph.edata['efeatures'] = th.cat((rp, rpn), axis = 1)
 
 def add_deltas(graphs):
+    """
+    Compute pressure and flowrate increments.
+
+    The increments are computed from time t to t+1 and stored as node features
+    labelled 'dp' and 'dq'
+
+    Arguments:
+        graphs: list of graphs
+
+    """
     for graph_n in tqdm(graphs, desc = 'Add deltas', colour='green'):
         graph = graphs[graph_n]
 
@@ -184,14 +275,43 @@ def add_deltas(graphs):
                             graph.ndata['flowrate'][:,:,:-1]
 
 def save_graphs(graphs, output_dir):
+    """
+    Save all graphs contained in a list to file.
+
+    Arguments:
+        graphs: list of graphs
+        output_dir: path of output directory
+
+    """
     for graph_name in tqdm(graphs, desc = 'Saving graphs', colour='green'):
         dgl.save_graphs(output_dir + graph_name, graphs[graph_name])
 
 def save_parameters(params, output_dir):
+    """
+    Save normalization parameters to file .
+
+    Arguments:
+        params: dictionary containing nornalization parameters
+        output_dir: path of output directory
+
+    """
     with open(output_dir + '/parameters.json', 'w') as outfile:
         json.dump(params, outfile, indent=4)
 
 def generate_normalized_graphs(input_dir, norm_type, bc_type):
+    """
+    Generate normalized graphs.
+
+    Arguments:
+        input_dir: path to input directory
+        norm_type: dictionary with keys: features/labels, 
+                   values: min_max/normal
+        bc_type: boundary condition type. Currently supported: full_dirichlet 
+                 (pressure and flowrate imposed at boundary nodes) and 
+                 realistic dirichlet (flowrate imposed at inlet, pressure
+                 imposed at outlets)
+
+    """
     fields_to_normalize = {'node': ['area', 'pressure', 
                                 'flowrate', 'dt'], 
                        'edge': ['distance']}
@@ -208,13 +328,13 @@ def generate_normalized_graphs(input_dir, norm_type, bc_type):
     
     return graphs, params
     
-if __name__ == "__main__":
-    data_location = io.data_location()
-    norm_type_features = 'normal'
-    norm_type_labels = 'min_max'
+# if __name__ == "__main__":
+#     data_location = io.data_location()
+#     norm_type_features = 'normal'
+#     norm_type_labels = 'min_max'
 
-    norm_type = {'features': norm_type_features, 'labels': norm_type_labels}
-    graphs, params = generate_normalized_graphs(data_location + '/graphs/',
-                                                norm_type, 'full_dirichlet')
-    save_graphs(graphs, data_location + '/normalized_graphs/')
-    save_parameters(params, data_location + '/normalized_graphs/')
+#     norm_type = {'features': norm_type_features, 'labels': norm_type_labels}
+#     graphs, params = generate_normalized_graphs(data_location + '/graphs/',
+#                                                 norm_type, 'full_dirichlet')
+#     save_graphs(graphs, data_location + '/normalized_graphs/')
+#     save_parameters(params, data_location + '/normalized_graphs/')
