@@ -7,7 +7,8 @@ def data_location():
     """
     Return data location.
   
-    Returns data location, which by default needs to be stored in data_location.txt
+    Returns data location, which by default needs to be stored in 
+    data_location.txt
   
     Returns:
         Location of the data (string)
@@ -41,7 +42,8 @@ def collect_arrays(celldata, components = None):
   
     Arguments:
         celldata: Input data
-        components (int): Number of array components to keep. Default: None -> keep all
+        components (int): Number of array components to keep. 
+                          Default: None -> keep all
     Returns:
         A dictionary of arrays (key: array name, value: numpy array)
   
@@ -64,7 +66,8 @@ def collect_points(celldata, components = None):
   
     Arguments:
         celldata: Name of the directory
-        components (int): Number of array components to keep. Default: None -> keep allNone
+        components (int): Number of array components to keep. 
+                          Default: None -> keep allNone
     Returns:
         The array of points (numpy array)
   
@@ -83,7 +86,8 @@ def get_all_arrays(geo, components = None):
   
     Arguments:
         geo: Input geometry
-        components (int): Number of array components to keep. Default: None -> keep all
+        components (int): Number of array components to keep. 
+                          Default: None -> keep all
     Returns:
         Point data dictionary (key: array name, value: numpy array)
         Cell data dictionary (key: array name, value: numpy array)

@@ -16,6 +16,21 @@ import tools.plot_tools as pt
 import matplotlib.pyplot as plt
 
 def generate_types(bif_id, indices):
+    """
+    Generate node types.
+  
+    Generate one-hot representation of node type: 0 = branch node, 1 = junction
+    node, 2 = inlet, 3 = outlet.
+  
+    Arguments:
+        bif_id: numpy array containing node types as read from .vtp
+        indices: dictionary containing inlet and outlets indices
+    Returns:
+        One-hot representation of the node type
+        Inlet mask, i.e., array containing 1 at inlet index and 0 elsewhere
+        Outlet maks, i.e., array containing 1 at outlet indices and 0 elsewhere
+  
+    """
     types = []
     inlet_mask = []
     outlet_mask = []
@@ -41,6 +56,23 @@ def generate_types(bif_id, indices):
     return types, inlet_mask, outlet_mask
 
 def generate_edge_features(points, edges1, edges2):
+    """
+    Generate edge features.
+  
+    Returns a n x 3 array where row i contains (x_j - x_i) / |x_j - x_i| 
+    (node coordinates) and n is the number of nodes.
+    Here, j and i are the node indices contained in row i of the edges1 and
+    edges2 inputs. The second output is |x_j - x_i|.
+  
+    Arguments:
+        points: n x 3 numpy array of point coordinates
+        edges1: numpy array containing indices of source nodes for every edge
+        edges2: numpy array containing indices of dest nodes for every edge
+    Returns:
+        n x 3 numpy array containing x_j - x_i
+        n dimensional numpy array containing |x_j - x_i|
+
+    """
     rel_position = []
     rel_position_norm = []
     nedges = len(edges1)
@@ -51,12 +83,26 @@ def generate_edge_features(points, edges1, edges2):
         rel_position_norm.append(ndiff)
     return np.array(rel_position), rel_position_norm
 
-def add_fields(graph, field, field_name, subsample_time = 1):
+def add_fields(graph, field, field_name, subsample_time = 1, offset = 0):
+    """
+    Add time-dependent fields to a DGL graph.
+  
+    Add time-dependent scalar fields as graph node features. The time-dependent
+    fields are stored as n x 1 x m Pytorch tensors, where n is the number of 
+    graph nodes and m the number of timesteps.
+  
+    Arguments:
+        graph: DGL graph
+        field: dictionary with (key: timestep, value: field value)
+        field_name (string): name of the field
+        subsample_time (int): select every subsample_time timesteps. 
+                              Default: 1 -> keep all timesteps
+        offset (int): number of timesteps to skip.
+                      Default: 0 -> keep all timesteps
+    """
     timesteps = [float(t) for t in field]
     timesteps.sort()
     dt = (timesteps[1] - timesteps[0]) * subsample_time
-    # we skip the first 100 timesteps
-    offset = 0
     count = 0
     # we use the third dimension for time
     field_t = th.zeros((list(field.values())[0].shape[0], 1, 
@@ -72,6 +118,16 @@ def add_fields(graph, field, field_name, subsample_time = 1):
                                    dtype = th.float32) * dt, (-1,1,1))
 
 def find_outlets(edges1, edges2):
+    """
+    Find outlets.
+  
+    Find outlet indices given edge node indices.
+  
+    Arguments:
+        edges1: numpy array containing indices of source nodes for every edge
+        edges2: numpy array containing indices of dest nodes for every edge
+
+    """
     outlets = []
     for e in edges2:
         if e not in edges1:
@@ -79,6 +135,27 @@ def find_outlets(edges1, edges2):
     return outlets
 
 def remove_points(idxs_to_delete, idxs_to_replace, edges1, edges2, npoints):
+    """
+    Remove points.
+  
+    Remove points given their indices. This function is useful to find new
+    connectivity arrays edges1 and edges2 after deleting nodes.
+  
+    Arguments:
+        idxs_to_delete: indices of nodes to delete
+        idxs_to_replace: indices of nodes that replace the deleted nodes. 
+                         Must have the same number of components as 
+                         idxs_to_delete
+        edges1: numpy array containing indices of source nodes for every edge
+        edges2: numpy array containing indices of dest nodes for every edge
+        npoints: total number of nodes in the graph
+
+    Returns:
+        numpy array with indices of the remaining nodes
+        (modified) numpy array containing indices of source nodes for every edge
+        (modified) numpy array containing indices of dest nodes for every edge
+
+    """
     npoints_to_delete = len(idxs_to_delete)   
 
     for i in range(npoints_to_delete):
@@ -103,6 +180,29 @@ def remove_points(idxs_to_delete, idxs_to_replace, edges1, edges2, npoints):
 
 def resample_points(points, edges1, edges2, indices, perc_points_to_keep, 
                     remove_caps):
+    """
+    Resample points.
+  
+    Select a subset of the points originally contained in the centerline.
+    Specifically, this function retains perc_points_to_keep% points deleting
+    those corresponding to the smallest edge sizes.
+  
+    Arguments:
+        points: n x 3 numpy array of point coordinates
+        edges1: numpy array containing indices of source nodes for every edge
+        edges2: numpy array containing indices of dest nodes for every edge
+        indices: dictionary containing inlet and outlets indices
+        perc_points_to_keep (float): percentage of points to keep (in decimals)
+        remove_caps (int): number of points to remove at the caps
+
+    Returns:
+        numpy array with indices of the remaining nodes
+        (modified) n x 3 numpy array of point coordinates
+        (modified) numpy array containing indices of source nodes for every edge
+        (modified) numpy array containing indices of dest nodes for every edge
+        (modified) dictionary containing inlet and outlets indices
+
+    """
 
     def modify_edges(edges1, edges2, ipoint_to_delete, ipoint_to_replace):
         i1 = np.where(edges1 == ipoint_to_delete)[0]
@@ -167,6 +267,25 @@ def resample_points(points, edges1, edges2, indices, perc_points_to_keep,
     return sampled_indices, points, edges1, edges2, indices
 
 def dijkstra_algorithm(nodes, edges1, edges2, index):
+    """
+    Dijkstra's algorithm.
+  
+    The algorithm finds the shortest paths from one node to every other node
+    in the graph
+  
+    Arguments:
+        nodes: n x 3 numpy array of point coordinates
+        edges1: numpy array containing indices of source nodes for every edge
+        edges2: numpy array containing indices of dest nodes for every edge
+        index (int): index of the seed node
+
+    Returns:
+        numpy array with n components (n being the total number of nodes)
+            containing all shortest path lengths
+        numpy array with n components containing the previous nodes explored 
+            when traversing the graph
+
+    """
     nnodes = nodes.shape[0]
     tovisit = np.arange(0,nnodes)
     dists = np.ones((nnodes)) * np.infty
@@ -206,6 +325,26 @@ def dijkstra_algorithm(nodes, edges1, edges2, index):
     return dists, prevs
 
 def generate_boundary_edges(points, indices, edges1, edges2): 
+    """
+    Generate boundary edges.
+  
+    Generate edges connecting boundary nodes to interior nodes. Every interior
+    node is connected to the closest boundary node (in terms of path length).
+  
+    Arguments:
+        points: n x 3 numpy array of point coordinates
+        indices: dictionary containing inlet and outlets indices
+        edges1: numpy array containing indices of source nodes for every edge
+        edges2: numpy array containing indices of dest nodes for every edge
+
+    Returns:
+        numpy array containing indices of source nodes for every boundary edge
+        numpy array containing indices of dest nodes for every boundary edge
+        n x 3 numpy array containing (x_j - x_i) / |x_j - x_i|
+        n dimensional numpy array containing, for every node, its distance to 
+            the closest boundary node (in terms of path length)
+
+    """
     npoints = points.shape[0]
     idxs = indices['inlet'] + indices['outlets']
     bedges1 = []
@@ -229,7 +368,7 @@ def generate_boundary_edges(points, indices, edges1, edges2):
             dists.append(d[ipoint])
             types.append(type)
 
-        # check distances computed with dijkstra_algorithm
+        # DEBUG: check distances computed with dijkstra_algorithm
         # fig = plt.figure()
         # ax = plt.axes(projection='3d')
         # for i in range(npoints):
@@ -265,21 +404,34 @@ def generate_boundary_edges(points, indices, edges1, edges2):
     dists = np.delete(np.array(dists), edges_to_delete)
     types = np.delete(np.array(types), edges_to_delete)
 
-    fig = plt.figure()
-    ax = plt.axes(projection='3d')
-    ax.scatter(points[:,0], points[:,1], points[:,2], color = 'black', s = 1)
-    for iedge in range(bedges1.size):
-            ax.plot3D([points[bedges1[iedge],0],points[bedges2[iedge],0]],
-                    [points[bedges1[iedge],1],points[bedges2[iedge],1]],
-                    [points[bedges1[iedge],2],points[bedges2[iedge],2]],
-                    color = 'black', linewidth=0.3, alpha = 0.5)
-    ax.set_box_aspect((np.ptp(points[:,0]), 
-                np.ptp(points[:,1]), 
-                np.ptp(points[:,2])))
-    plt.show()
+    # DEBUG: plot all edges
+    # fig = plt.figure()
+    # ax = plt.axes(projection='3d')
+    # ax.scatter(points[:,0], points[:,1], points[:,2], color = 'black', s = 1)
+    # for iedge in range(bedges1.size):
+    #         ax.plot3D([points[bedges1[iedge],0],points[bedges2[iedge],0]],
+    #                 [points[bedges1[iedge],1],points[bedges2[iedge],1]],
+    #                 [points[bedges1[iedge],2],points[bedges2[iedge],2]],
+    #                 color = 'black', linewidth=0.3, alpha = 0.5)
+    # ax.set_box_aspect((np.ptp(points[:,0]), 
+    #             np.ptp(points[:,1]), 
+    #             np.ptp(points[:,2])))
+    # plt.show()
     return bedges1, bedges2, rel_positions, dists, list(types)
 
 def create_continuity_mask(types):
+    """
+    Generate mask to use when computing mass loss.
+
+    Returns a numpy array containing 1s only at junction inlet indices.
+
+    Arguments:
+        types: n x m array containing the one-hot representation of node types
+
+    Returns:
+        n-dimensional numpy array containing 1s only at junction inlet indices
+
+    """
     continuity_mask = [0]
     npoints = types.shape[0]
     for i in range(1,npoints-1):
@@ -291,6 +443,29 @@ def create_continuity_mask(types):
     return continuity_mask
 
 def create_junction_edges(points, bif_id, edges1, edges2, outlets):
+    """
+    Generate junction edges.
+  
+    Junction edges are bidirectional edges connecting junction inlets to 
+    the corresponding outlets.
+  
+    Arguments:
+        points: n x 3 numpy array of point coordinates
+        bif_id: n-dimensional array containing bifurcation (junction) ids
+        edges1: numpy array containing indices of source nodes for every edge
+        edges2: numpy array containing indices of dest nodes for every edge
+        outlets: list of outlets indices
+
+    Returns:
+        numpy array containing indices of source nodes for every junction edge
+        numpy array containing indices of dest nodes for every junction edge
+        n x 3 numpy array containing (x_j - x_i) / |x_j - x_i|
+        n dimensional numpy array containing, for every node, its distance to 
+            the closest boundary node (in terms of path length)
+        list of n elements containing edge types (4)
+        dictionary containing masks for inlet nodes and inlet+outlet nodes
+
+    """
     npoints = bif_id.size
     jun_inlet_mask = [0] * npoints
     jun_mask = [0] * npoints
@@ -341,12 +516,41 @@ def create_junction_edges(points, bif_id, edges1, edges2, outlets):
     return jedges1, jedges2, jrel_position, jdistance, types, masks
 
 def load_vtp(file, input_dir):
+    """
+    Load vtp file.
+  
+    Load vtp file.
+  
+    Arguments:
+        file (string): file name
+        input_dir (string): path to input_dir
+
+    Returns:
+        dictionary containing point data (key: name, value: data)
+        n x 3 numpy array of point coordinates
+        numpy array containing indices of source nodes for every edge
+        numpy array containing indices of dest nodes for every edge
+
+    """
     soln = io.read_geo(input_dir + '/' + file)
     point_data, _, points = io.get_all_arrays(soln.GetOutput())
     edges1, edges2 = io.get_edges(soln.GetOutput())
     return point_data, points, edges1, edges2
 
 def generate_tangents(points, branch_id):
+    """
+    Generate tangents.
+  
+    Generate tangent vector at every graph node.
+  
+    Arguments:
+        points: n x 3 numpy array of point coordinates
+        branch_id: n-dimensional array containing branch ids
+
+    Returns:
+        n x 3 numpy array of normalized tangent vectors
+
+    """
     tangents = np.zeros(points.shape)
     maxbid = int(np.max(branch_id))
     for bid in range(maxbid):
@@ -368,6 +572,27 @@ def generate_tangents(points, branch_id):
 
 def generate_graph(point_data, points, edges1, edges2, 
                    add_boundary_edges, add_junction_edges):
+    """
+    Generate graph.
+  
+    Generate DGL graph out of data obtained from a vtp file.
+  
+    Arguments:
+        point_data: dictionary containing point data (key: name, value: data)
+        points: n x 3 numpy array of point coordinates
+        edges1: numpy array containing indices of source nodes for every edge
+        edges2: numpy array containing indices of dest nodes for every edge
+        add_boundary_edges (bool): decide whether to add boundary edges
+        add_junction_edges (bool): decide whether to add junction edges
+
+    Returns:
+        DGL graph
+        dictionary containing indices of inlet and outlet nodes
+        n x 3 numpy array of point coordinates
+        n-dimensional array containin junction ids
+        numpy array containing indices of source nodes for every edge
+        numpy array containing indices of dist nodes for every edge
+    """
 
     inlet = [0]
     outlets = find_outlets(edges1, edges2)
@@ -452,10 +677,27 @@ def generate_graph(point_data, points, edges1, edges2,
     etypes = th.nn.functional.one_hot(th.tensor(etypes), num_classes = 5)
     graph.edata['type'] = th.unsqueeze(etypes, 2)
 
-    return graph, indices, points, bif_id, indices, edges1, edges2
+    return graph, indices, points, bif_id, edges1, edges2
 
 def create_partitions(points, bif_id,
                       edges1, edges2, max_num_partitions):
+    """
+    Generate partitions out of a graph.
+  
+    Generate partitions out of a graph. This function splits the graph into 
+    multiple subgraphs, making sure that junctions are kept in the same 
+    partition.
+  
+    Arguments:
+        points: n x 3 numpy array of point coordinates
+        bif_id: n-dimensional array containin junction ids
+        edges1: numpy array containing indices of source nodes for every edge
+        edges2: numpy array containing indices of dest nodes for every edge
+        max_num_partitions (int): maximum number of partitions
+
+    Returns:
+        list of partitions
+    """
 
     def create_partition(edges1, edges2, starting_point, inlets):
         sampling_indices = [starting_point]
@@ -537,7 +779,21 @@ def create_partitions(points, bif_id,
     return partitions
 
 def resample_time(field, timestep):
+    """
+    Resample timesteps.
+  
+    Given a time-dependent field distributed over graph nodes, this function
+    resamples the field in time using B-spline interpolation at every node.
+  
+    Arguments:
+        field: dictionary containing the field for all timesteps
+               (key: timestep, value: n-dimensional numpy array)
+        timestep (float): the new timestep
 
+    Returns:
+        dictionary containing the field for all resampled timesteps
+            (key: timestep, value: n-dimensional numpy array)
+    """
     original_timesteps = [t for t in field]
     original_timesteps.sort()
 
@@ -565,6 +821,10 @@ def resample_time(field, timestep):
         
     return resampled_field
 
+"""
+The main function reads all vtps files from the folder specified in input_dir 
+and generate DGL graphs. The graphs are saved in output_dir.
+"""
 if __name__ == "__main__":
     data_location = io.data_location()
     input_dir = data_location + 'vtps_aortas'
@@ -656,7 +916,7 @@ if __name__ == "__main__":
                 add_junction_edges = True
                 try:
                     graph, indices, \
-                    points, bif_id, indices, \
+                    points, bif_id, \
                     edges1, edges2 = generate_graph(part['point_data'],
                                                     part['points'],
                                                     part['edges1'], 
