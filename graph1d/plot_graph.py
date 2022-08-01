@@ -77,7 +77,7 @@ if __name__ == "__main__":
         filename = file.replace('.vtp','.' + str(i) + '.grph')
         add_boundary_edges = True
         add_junction_edges = True
-        if try:
+        try:
             graph, indices, \
             points, bif_id, \
             edges1, edges2 = gg.generate_graph(part['point_data'],
