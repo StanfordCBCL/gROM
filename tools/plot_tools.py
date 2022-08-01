@@ -36,7 +36,8 @@ color_list = [Cardinal_red, Cardinal_blue, CB91_Violet, CB91_Green, CB91_Pink,
               CB91_Amber, CB91_Purple]
 plt.rcParams['axes.prop_cycle'] = plt.cycler(color=color_list)
 
-def plot_graph(points, bif_id, indices, edges1, edges2, stl_mesh = None):
+def plot_graph(points, bif_id, indices, edges1, edges2, 
+               stl_mesh = None, linewidth = 0.3, s = 1):
     fig = plt.figure()
     ax = plt.axes(projection='3d')
     ax._axis3don = False
@@ -51,25 +52,25 @@ def plot_graph(points, bif_id, indices, edges1, edges2, stl_mesh = None):
                points[branch_nodes,1], 
                points[branch_nodes,2], 
                color = CB91_Blue,
-               depthshade=0, s = 1)
+               depthshade=0, s = s)
 
     ax.scatter(points[jun_nodes,0], 
             points[jun_nodes,1], 
             points[jun_nodes,2], 
             color = CB91_Amber,
-            depthshade=0, s = 1)
+            depthshade=0, s = s)
 
     inlet = indices['inlet']
-    ax.scatter(points[inlet,0], points[inlet,1], points[inlet,2],               color='green', depthshade=0, s = 10)
+    ax.scatter(points[inlet,0], points[inlet,1], points[inlet,2],               color='green', depthshade=0, s = s * 10)
 
     outlets = indices['outlets']
-    ax.scatter(points[outlets,0], points[outlets,1], points[outlets,2],color='red', depthshade=0, s = 10)
+    ax.scatter(points[outlets,0], points[outlets,1], points[outlets,2],color='red', depthshade=0, s = s * 10)
 
     for iedge in range(edges1.size):
         ax.plot3D([points[edges1[iedge],0],points[edges2[iedge],0]],
                   [points[edges1[iedge],1],points[edges2[iedge],1]],
                   [points[edges1[iedge],2],points[edges2[iedge],2]],
-                   color = 'black', linewidth=0.05, alpha = 0.5)
+                   color = 'black', linewidth = linewidth, alpha = 0.5)
 
     # ax.set_xlim([points[outlets[0],0]-0.1,points[outlets[0],0]+0.1])
     # ax.set_ylim([points[outlets[0],1]-0.1,points[outlets[0],1]+0.1])

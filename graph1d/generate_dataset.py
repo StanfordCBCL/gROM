@@ -14,7 +14,33 @@ from tqdm import tqdm
 nchunks = 10
 
 class Dataset(DGLDataset):
+    """
+    Class to store and traverse a DGL dataset.
+    
+    Attributes:
+        graphs: list of graphs in the dataset
+        params: dictionary containing parameters of the problem
+        times: array containing number of times for each graph in the dataset
+        lightgraphs: list of graphs, without edge and node features
+        graph_names: n x 2 array (n is the total number of timesteps in the 
+                     dataset) mapping a graph index (first column) to the
+                     timestep index (second column).
+  
+    """
     def __init__(self, graphs, params, graph_names):
+        """
+        Init Dataset.
+        
+        Init Dataset with list of graphs, dictionary of parameters, and list of 
+        graph names.
+
+        Arguments:
+            graphs: lift of graphs
+            params: dictionary of parameters
+            graph_names: list of graph names
+            index_map: 
+    
+        """
         self.graphs = graphs
         self.params = params
         self.times = []
@@ -23,6 +49,14 @@ class Dataset(DGLDataset):
         super().__init__(name='dataset')
 
     def create_index_map(self):
+        """
+        Create index map.
+        
+        Index map is a n x 2 array (n is the total number of timesteps in the 
+        dataset) mapping a graph index (first column) to the timestep index 
+        (second column).
+    
+        """
         i = 0
         offset = 0
         self.index_map = np.zeros((self.total_times, 2))
@@ -37,6 +71,13 @@ class Dataset(DGLDataset):
         self.index_map = np.array(self.index_map, dtype = int)
             
     def process(self):
+        """
+        Process Dataset.
+
+        This function creates lightgraphs, the index map, and collects all times
+        from the graphs.
+    
+        """
         start = time.time()
 
         for graph in tqdm(self.graphs, desc = 'Processing dataset', 
@@ -65,6 +106,14 @@ class Dataset(DGLDataset):
         print('\tDataset generated in {:0.2f} s'.format(elapsed_time))
 
     def get_lightgraph(self, i):
+        """
+        Get ith lightgraph
+
+        Noise is added to node features of the graph (pressure and flowrate).
+
+        Arguments:
+            i: index of the graph
+        """
         indices = self.index_map[i,:]
 
         nf = self.graphs[indices[0]].ndata['nfeatures'][:,:,indices[1]].clone()
@@ -104,19 +153,51 @@ class Dataset(DGLDataset):
         return self.lightgraphs[indices[0]]
 
     def set_noise_rate(self, noise_rate):
+        """
+        Set noise rate.
+
+        Noise is added to node features of the graph (pressure and flowrate).
+
+        Arguments:
+            noise rate: rate of the noise
+        """
         self.noise_rate = noise_rate
-        # self.noises = []
-        # for graph in self.graphs:
-        #     nsize = graph.ndata['nfeatures'][:,:2,:].shape
-        #     self.noises.append(np.random.normal(0, noise_rate, nsize))
 
     def __getitem__(self, i):
+        """
+        Get ith lightgraph
+
+        Arguments:
+            i: index of the lightgraph
+        
+        Returns:
+            ith lightgraph
+        """
         return self.get_lightgraph(i)
 
     def __len__(self):
+        """
+        Length of the dataset
+
+        Length of the dataset is the total number of timesteps.
+
+        Returns:
+            length of the Dataset
+        """
         return self.total_times
 
 def split(graphs, divs):
+    """
+    Split a list of graphs.
+
+    The graphs are split into multiple train/test groups. Number of groups is 
+    determined by the divs argument.
+
+    Arguments: 
+        divs: number of train/test groups.
+    Returns:
+        List of groups
+    """
     def chunks(lst, n):
         n = int(np.floor(len(lst)/n))
         for i in range(0, len(lst), n):
@@ -149,6 +230,17 @@ def split(graphs, divs):
     return datasets
 
 def generate_dataset(graphs, params):
+    """
+    Generate a list of datasets
+
+    The listis composed of dictionary containing train and test Datasets.
+
+    Arguments: 
+        params: dictionary of parameters
+
+    Returns:
+        List of datasets
+    """
     dataset_list = []
     datasets = split(graphs, nchunks)    
     for dataset in datasets:

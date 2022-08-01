@@ -18,13 +18,16 @@ import generate_graphs as gg
 from stl import mesh
 from mpl_toolkits import mplot3d
 
+"""
+This function plots a graph and saves it to file.
+"""
 if __name__ == "__main__":
     data_location = io.data_location()
     input_dir = data_location + 'vtps_aortas'
     input_dir_mesh = data_location + 'stls/'
     output_dir = data_location + 'graphs/'
 
-    file = '0003_0001.1' # sys.argv[1]
+    file = '0111_0001.1'  # sys.argv[1]
     stl_mesh = None
     if os.path.exists(input_dir_mesh + file + '.stl'):
         stl_mesh = mesh.Mesh.from_file(input_dir_mesh + file + '.stl')
@@ -39,7 +42,7 @@ if __name__ == "__main__":
     indices = {'inlet': inlet,
             'outlets': outlets}
 
-    resample_perc = 0.03
+    resample_perc = 0.05
     success = False
     while not success:
         try:
@@ -74,9 +77,9 @@ if __name__ == "__main__":
         filename = file.replace('.vtp','.' + str(i) + '.grph')
         add_boundary_edges = True
         add_junction_edges = True
-        try:
+        if try:
             graph, indices, \
-            points, bif_id, indices, \
+            points, bif_id, \
             edges1, edges2 = gg.generate_graph(part['point_data'],
                                             part['points'],
                                             part['edges1'], 
@@ -84,11 +87,13 @@ if __name__ == "__main__":
                                             add_boundary_edges,
                                             add_junction_edges)
             pathlib.Path('images').mkdir(parents=True, exist_ok=True)
-            pt.plot_graph(points, bif_id, indices, edges1, edges2, stl_mesh)
+            pt.plot_graph(points, bif_id, indices, edges1, edges2, stl_mesh,
+                          linewidth = 0.3, s = 4)
             plt.savefig('graph.png', 
                         format='png',
                         bbox_inches='tight',
                         dpi=1200)
+            # plt.show()
 
         except Exception as e:
             print(e)                
