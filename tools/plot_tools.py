@@ -21,12 +21,14 @@ from matplotlib import pyplot
 
 Cardinal_red = "#8F353C"
 Cardinal_blue = "#54A0C0"
+Gray = "#c5c7c5"
 CB91_Blue = '#2CBDFE'
 CB91_Green = '#47DBCD'
 CB91_Pink = '#F3A0F2'
 CB91_Purple = '#9D2EC5'
 CB91_Violet = '#661D98'
 CB91_Amber = '#F5B14C'
+
 
 font = {'size'   : 20}
 
@@ -70,7 +72,7 @@ def plot_graph(points, bif_id, indices, edges1, edges2,
         ax.plot3D([points[edges1[iedge],0],points[edges2[iedge],0]],
                   [points[edges1[iedge],1],points[edges2[iedge],1]],
                   [points[edges1[iedge],2],points[edges2[iedge],2]],
-                   color = 'black', linewidth = linewidth, alpha = 0.5)
+                   color = Gray, linewidth = linewidth, alpha = 0.5)
 
     # ax.set_xlim([points[outlets[0],0]-0.1,points[outlets[0],0]+0.1])
     # ax.set_ylim([points[outlets[0],1]-0.1,points[outlets[0],1]+0.1])

@@ -186,6 +186,15 @@ class Dataset(DGLDataset):
         """
         return self.total_times
 
+    def __str__(self):
+        """
+        Returns graph names.
+
+        Returns:
+            graph names
+        """
+        return 'Dataset = ' + ', '.join(self.graph_names)
+
 def split(graphs, divs):
     """
     Split a list of graphs.

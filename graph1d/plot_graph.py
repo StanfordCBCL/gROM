@@ -27,7 +27,7 @@ if __name__ == "__main__":
     input_dir_mesh = data_location + 'stls/'
     output_dir = data_location + 'graphs/'
 
-    file = '0111_0001.1'  # sys.argv[1]
+    file = sys.argv[1]
     stl_mesh = None
     if os.path.exists(input_dir_mesh + file + '.stl'):
         stl_mesh = mesh.Mesh.from_file(input_dir_mesh + file + '.stl')
@@ -89,7 +89,7 @@ if __name__ == "__main__":
             pathlib.Path('images').mkdir(parents=True, exist_ok=True)
             pt.plot_graph(points, bif_id, indices, edges1, edges2, stl_mesh,
                           linewidth = 0.3, s = 4)
-            plt.savefig('graph.png', 
+            plt.savefig(file + '.png', 
                         format='png',
                         bbox_inches='tight',
                         dpi=1200)
