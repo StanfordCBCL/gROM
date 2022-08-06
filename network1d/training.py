@@ -192,8 +192,6 @@ def train_gnn_model(gnn_model, dataset, params, parallel, rank0,
     for epoch in range(nepochs):
         if rank0:
             print('================{}================'.format(epoch))
-        dataset['train'].set_noise_rate(params['rate_noise'])
-        dataset['test'].set_noise_rate(params['rate_noise'])
 
         train_results, test_results, elapsed = evaluate_model(gnn_model,
                                                               train_dataloader,
@@ -325,6 +323,8 @@ if __name__ == "__main__":
     parser.add_argument('--lr', help='learning rate', type=float, default=0.005)
     parser.add_argument('--rate_noise', help='rate noise', type=float,
                         default=100)
+    parser.add_argument('--rate_noise_features', help='rate noise features', 
+                        type=float, default=1e-2)
     parser.add_argument('--weight_decay', help='l2 regularization', 
                         type=float, default=1e-5)
     parser.add_argument('--ls_gnn', help='latent size gnn', type=int,
@@ -374,6 +374,7 @@ if __name__ == "__main__":
                 'nepochs': args.epochs,
                 'weight_decay': args.weight_decay,
                 'rate_noise': args.rate_noise,
+                'rate_noise_features': args.rate_noise_features,
                 'continuity_coeff': args.continuity_coeff}
     params.update(t_params)
 

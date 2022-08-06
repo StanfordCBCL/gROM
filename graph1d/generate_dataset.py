@@ -121,7 +121,7 @@ class Dataset(DGLDataset):
 
         dt = nz.invert_normalize(self.graphs[indices[0]].ndata['dt'][0], 'dt',
                                  self.params['statistics'], 'features')
-        curnoise = np.random.normal(0, self.noise_rate * dt, nfsize)
+        curnoise = np.random.normal(0, self.params['rate_noise'] * dt, nfsize)
         # we don't add noise to boundary nodes
         if self.params['bc_type'] == 'realistic_dirichlet':
             curnoise[self.graphs[indices[0]].ndata['outlet_mask'].bool(),0] = 0
@@ -133,6 +133,12 @@ class Dataset(DGLDataset):
             curnoise[self.graphs[indices[0]].ndata['outlet_mask'].bool(),1] = 0
 
         nf[:,:2] = nf[:,:2] + curnoise
+
+        # add regular noise rest of the features to prevent overfitting
+        fnoise = np.random.normal(0, self.params['rate_noise_features'], 
+                                  nf[:,2:].shape)
+        nf[:,2:] = nf[:,2:] + fnoise
+
         self.lightgraphs[indices[0]].ndata['nfeatures'] = nf
 
         nl = self.graphs[indices[0]].ndata['nlabels'][:,:,indices[1]].clone()
@@ -148,20 +154,14 @@ class Dataset(DGLDataset):
         self.lightgraphs[indices[0]].ndata['nlabels'] = nl
 
         ef = self.graphs[indices[0]].edata['efeatures']
+
+        # add regular noise to the edge features to prevent overfitting
+        fnoise = np.random.normal(0, self.params['rate_noise_features'], 
+                                  ef[:,2:].shape)
+        ef[:,2:] = ef[:,2:] + fnoise
         self.lightgraphs[indices[0]].edata['efeatures'] = ef.squeeze()
 
         return self.lightgraphs[indices[0]]
-
-    def set_noise_rate(self, noise_rate):
-        """
-        Set noise rate.
-
-        Noise is added to node features of the graph (pressure and flowrate).
-
-        Arguments:
-            noise rate: rate of the noise
-        """
-        self.noise_rate = noise_rate
 
     def __getitem__(self, i):
         """
@@ -219,7 +219,7 @@ def split(graphs, divs):
                      'test': [names[0]]}]
         return datasets
 
-    random.seed(10)
+    # random.seed(10)
     random.shuffle(names)
 
     sets = list(chunks(names, divs))
