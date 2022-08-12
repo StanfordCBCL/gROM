@@ -12,7 +12,7 @@ Then, from the root of the project:
 
     bash create_venv.sh
 
-This will create a virtual environment `gromenv` following python packages: matplotlib, vtk, scipy, dgl, torch, sigopt.
+This will create a virtual environment `gromenv` with the required dependencies.
 
 ### Download the data ###
 
@@ -21,7 +21,7 @@ Next, duplicate or rename `data_location_example.txt` as `data_location.txt` and
 
 Note: `.vtp` files can be  inspected with [Paraview](https://www.paraview.org).
 
-The `gROM_data` contains all the data necessary to train the GNN. However, it is possible to regenerate the data by launching `python graph1d/generate_graphs.py` from the root of the project.
+The `gromdata` contains all the data necessary to train the GNN. However, it is possible to regenerate the data by launching `python graph1d/generate_graphs.py` from the root of the project.
 
 ### Train a GNN ###
 
@@ -43,3 +43,5 @@ For example,
 
 This will save comparative plots in the same directory.
 In the example, `models/01.01.1990_00.00.00` is a model generated after training (see Train a GNN).
+
+One already-trained model is included in `gromdata`

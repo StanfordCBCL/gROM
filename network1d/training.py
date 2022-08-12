@@ -52,8 +52,6 @@ def evaluate_model(gnn_model, train_dataloader, test_dataloader, optimizer,
 
         def iteration(batched_graph, c_optimizer):
             pred = gnn_model(batched_graph)
-            print(pred)
-
             mask = th.ones(batched_graph.ndata['nlabels'].shape)
             if params['bc_type'] == 'realistic_dirichlet':
                 mask[:,0] = mask[:,0] - batched_graph.ndata['outlet_mask']
@@ -340,9 +338,9 @@ if __name__ == "__main__":
     parser.add_argument('--hl_mlp', help='hidden layers mlps', type=int,
                         default=1)
     parser.add_argument('--continuity_coeff', help='continuity coefficient',
-                        type=float, default=0)
+                        type=float, default=1)
     parser.add_argument('--label_norm', help='0: min_max, 1: normal',
-                        type=int, default=0)
+                        type=int, default=1)
     args = parser.parse_args()
 
     if args.label_norm == 0:

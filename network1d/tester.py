@@ -47,7 +47,7 @@ def evaluate_all_models(dataset, split_name, gnn_model, params):
     print('Global statistics')
     N = len(dataset.graphs)
     print('Errors normalized')
-    print(errs_normalized / N)
+    print(tot_errs_normalized / N)
     print('Errors')
     print(tot_errs / N)
     print('Average time = {:.2f}'.format(total_time / N))
