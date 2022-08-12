@@ -21,6 +21,7 @@ import tools.plot_tools as ptools
 import pickle
 import signal
 import graph1d.generate_normalized_graphs as gng
+import random
 
 class SignalHandler(object):
     def __init__(self):
@@ -127,7 +128,12 @@ def compute_rollout_errors(gnn_model, params, dataset, idxs_train, idxs_test):
     for idx in idxs_test:
         _, cur_test_errs, _, _ = rollout(gnn_model, params, dataset['test'].graphs[idx])
         test_errs = cur_test_errs + test_errs
-    
+        print(dataset['test'].graph_names[idx])
+        print(cur_test_errs)
+
+    print(test_errs)
+    print(len(idxs_test))
+
     test_errs = test_errs / (len(idxs_test))
 
     return train_errs, test_errs
@@ -176,10 +182,9 @@ def train_gnn_model(gnn_model, dataset, params, parallel, rank0,
 
     # sample train and test graphs for rollout
     np.random.seed(10)
-    ngraphs = 10
-    idxs_train = np.random.randint(0, len(dataset['train'].graphs), (ngraphs))
-    idxs_test = np.random.randint(0, len(dataset['test'].graphs), (ngraphs))
-
+    ngraphs = np.min((10, len(dataset['test'].graphs)))
+    idxs_train = random.sample(range(len(dataset['train'].graphs)), ngraphs)
+    idxs_test = random.sample(range(len(dataset['test'].graphs)), ngraphs)
     s = SignalHandler()
     history = {}
     history['train_loss'] = [[], []]
@@ -319,20 +324,20 @@ if __name__ == "__main__":
 
     parser.add_argument('--bs', help='batch size', type=int, default=100)
     parser.add_argument('--epochs', help='total number of epochs', type=int,
-                        default=100)
+                        default=5000)
     parser.add_argument('--lr_decay', help='learning rate decay', type=float,
-                        default=0.4)
+                        default=0.1)
     parser.add_argument('--lr', help='learning rate', type=float, default=0.005)
     parser.add_argument('--rate_noise', help='rate noise', type=float,
                         default=100)
     parser.add_argument('--rate_noise_features', help='rate noise features', 
-                        type=float, default=0)
+                        type=float, default=1e-5)
     parser.add_argument('--weight_decay', help='l2 regularization', 
                         type=float, default=1e-5)
     parser.add_argument('--ls_gnn', help='latent size gnn', type=int,
-                        default=32)
+                        default=16)
     parser.add_argument('--ls_mlp', help='latent size mlps', type=int,
-                        default=32)
+                        default=64)
     parser.add_argument('--process_iterations', help='gnn layers', type=int,
                         default=3)
     parser.add_argument('--hl_mlp', help='hidden layers mlps', type=int,

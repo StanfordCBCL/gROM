@@ -29,7 +29,6 @@ if __name__ == '__main__':
     print('Test rollout')
     print(history['test_rollout'][1][-1])
 
-
     data_location = io.data_location()
     graphs, _  = gng.generate_normalized_graphs(data_location + 'graphs/', 
                                                 params['statistics']['normalization_type'], 

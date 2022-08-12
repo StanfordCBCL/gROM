@@ -71,5 +71,5 @@ if __name__ == '__main__':
     if os.path.exists('results'):
         shutil.rmtree('results')
     
-    evaluate_all_models(datasets[0], 'train', gnn_model, params)
+    # evaluate_all_models(datasets[0], 'train', gnn_model, params)
     evaluate_all_models(datasets[0], 'test', gnn_model, params)
