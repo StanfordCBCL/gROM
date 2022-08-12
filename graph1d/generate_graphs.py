@@ -113,6 +113,7 @@ def add_fields(graph, field, field_name, subsample_time = 1, offset = 0):
             field_t[:,0,count - offset] = f
             # graph.ndata[field_name + '_{}'.format(count - offset)] = f
         count = count + 1
+    
     graph.ndata[field_name] = field_t[:,:,::subsample_time]
     graph.ndata['dt'] = th.reshape(th.ones(graph.num_nodes(), 
                                    dtype = th.float32) * dt, (-1,1,1))
@@ -519,8 +520,6 @@ def load_vtp(file, input_dir):
     """
     Load vtp file.
   
-    Load vtp file.
-  
     Arguments:
         file (string): file name
         input_dir (string): path to input_dir
@@ -535,6 +534,25 @@ def load_vtp(file, input_dir):
     soln = io.read_geo(input_dir + '/' + file)
     point_data, _, points = io.get_all_arrays(soln.GetOutput())
     edges1, edges2 = io.get_edges(soln.GetOutput())
+
+    # lets check for nans and delete points if they appear
+    ni = np.argwhere(np.isnan(point_data['area']))
+    if ni.size > 0:
+        for i in ni[0]:
+            indices = np.where(edges1 >= i)[0]
+            edges1[indices] = edges1[indices] - 1
+
+            indices = np.where(edges2 >= i)[0]
+            edges2[indices] = edges2[indices] - 1
+
+            indices = np.where(edges1 == edges2)[0]
+            edges1 = np.delete(edges1,indices)
+            edges2 = np.delete(edges2,indices)
+
+            points = np.delete(points, i, axis = 0)
+            for ndata in point_data:
+                point_data[ndata] = np.delete(point_data[ndata], i)
+
     return point_data, points, edges1, edges2
 
 def generate_tangents(points, branch_id):
@@ -857,6 +875,7 @@ if __name__ == "__main__":
 
             resample_perc = 0.06
             success = False
+
             while not success:
                 try:
                     sampled_indices, points, \

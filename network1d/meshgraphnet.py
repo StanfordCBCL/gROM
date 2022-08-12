@@ -240,11 +240,17 @@ class MeshGraphNet(Module):
                                            self.params['statistics'], 'labels')
         g.ndata['next_flowrate'] = flowrate + scaled_delta
 
-        # we send flowrate through branches, compute the mean of
+        # we zero-out inlet and outlet flowrate (otherwise they would send
+        # their flowrate to branch and junction nodes)
+        g.ndata['next_flowrate'][g.ndata['inlet_mask'].bool()] = 0
+        g.ndata['next_flowrate'][g.ndata['outlet_mask'].bool()] = 0
+
+        # we send flowrate through branches, compute the mean
         # of neighboring nodes, and compute the diff with our estimate
         g.update_all(fn.copy_u('next_flowrate', 'm'), 
-                     fn.mean('m', 'mean_flowrate'))
-        diff = th.abs(g.ndata['next_flowrate'] - g.ndata['mean_flowrate'])
+                     fn.sum('m', 'sum_flowrate'))
+        # branch nodes have only two neighbors
+        diff = th.abs(2 * g.ndata['next_flowrate'] - g.ndata['sum_flowrate'])
         diff = diff * g.ndata['continuity_mask']
         branch_continuity = th.mean(diff)
 

@@ -15,7 +15,6 @@ import pickle
 
 if __name__ == '__main__':
     path = sys.argv[1]
-    model_name = sys.argv[2]
 
     params = json.load(open(path + '/parameters.json'))
 
@@ -25,12 +24,18 @@ if __name__ == '__main__':
     with open(path + '/history.bnr', 'rb') as f:
         history = pickle.load(f)
 
+    print('Train rollout')
+    print(history['train_rollout'][1][-1])
+    print('Test rollout')
+    print(history['test_rollout'][1][-1])
+
 
     data_location = io.data_location()
     graphs, _  = gng.generate_normalized_graphs(data_location + 'graphs/', 
                                                 params['statistics']['normalization_type'], 
                                                 params['bc_type'])
     
+    model_name = sys.argv[2]
     features, _, _ = rollout(gnn_model, params, graphs[model_name])
     real_features = graphs[model_name].ndata['nfeatures']
 
@@ -38,5 +43,4 @@ if __name__ == '__main__':
                    graphs[model_name].ndata['x'], 5, params, '.')
     pt.plot_history(history['train_loss'], history['test_loss'], 'loss', '.')
     pt.plot_history(history['train_rollout'], history['test_rollout'], 'relative rollout error', '.')
-
 

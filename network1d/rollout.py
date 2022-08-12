@@ -45,16 +45,8 @@ def rollout(gnn_model, params, graph):
 
     end = time.time()
     tfc = true_graph.ndata['nfeatures'][:,0:2,:].clone()
-    tfc[:,0,:] = nz.invert_normalize(tfc[:,0,:], 'pressure', 
-                                     params['statistics'], 'features')
-    tfc[:,1,:] = nz.invert_normalize(tfc[:,1,:], 'flowrate', 
-                                     params['statistics'], 'features')
 
     rfc = r_features.clone()
-    rfc[:,0,:] = nz.invert_normalize(rfc[:,0,:], 'pressure', 
-                                     params['statistics'], 'features')
-    rfc[:,1,:] = nz.invert_normalize(rfc[:,1,:], 'flowrate', 
-                                     params['statistics'], 'features')
 
     # we only compute errors on branch nodes
     branch_mask = th.reshape(graph.ndata['branch_mask'],(-1,1,1))
@@ -64,17 +56,28 @@ def rollout(gnn_model, params, graph):
     tfc = tfc * branch_mask
     rfc = rfc * branch_mask
     diff = tfc - rfc
+
     errs = th.sum(th.sum(diff**2, dim = 0), dim = 1)
-    # to compute the error, we bring true pressure and flowrate to zero mean
-    # (otherwise, error on pressure will be lower almost always)
-    # print(th.mean(tfc[:,0,:]))
-    # print(th.mean(tfc[:,1,:]))
-    # tfc[:,0,:] = tfc[:,0,:] - th.mean(tfc[:,0,:])
-    # tfc[:,1,:] = tfc[:,1,:] - th.mean(tfc[:,1,:])
+    errs = errs / th.sum(th.sum(tfc**2, dim = 0), dim = 1)
+    errs_normalized = th.sqrt(errs)
+
+    tfc[:,0,:] = nz.invert_normalize(tfc[:,0,:], 'pressure', 
+                                     params['statistics'], 'features')
+    tfc[:,1,:] = nz.invert_normalize(tfc[:,1,:], 'flowrate', 
+                                     params['statistics'], 'features')
+
+    rfc[:,0,:] = nz.invert_normalize(rfc[:,0,:], 'pressure', 
+                                     params['statistics'], 'features')
+    rfc[:,1,:] = nz.invert_normalize(rfc[:,1,:], 'flowrate', 
+                                     params['statistics'], 'features')
+
+    diff = tfc - rfc
+    errs = th.sum(th.sum(diff**2, dim = 0), dim = 1)
     errs = errs / th.sum(th.sum(tfc**2, dim = 0), dim = 1)
     errs = th.sqrt(errs)
 
-    return r_features.detach().numpy(), errs.detach().numpy(), end - start
+    return r_features.detach().numpy(), errs_normalized.detach().numpy(), \
+           errs.detach().numpy(), end - start
 
     
 

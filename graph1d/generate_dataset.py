@@ -219,7 +219,9 @@ def split(graphs, divs):
                      'test': [names[0]]}]
         return datasets
 
-    # random.seed(10)
+    # the seed MUST be set when using parallelism! Otherwise cores get different
+    # splits
+    random.seed(10)
     random.shuffle(names)
 
     sets = list(chunks(names, divs))

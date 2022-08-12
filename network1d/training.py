@@ -52,6 +52,7 @@ def evaluate_model(gnn_model, train_dataloader, test_dataloader, optimizer,
 
         def iteration(batched_graph, c_optimizer):
             pred = gnn_model(batched_graph)
+            print(pred)
 
             mask = th.ones(batched_graph.ndata['nlabels'].shape)
             if params['bc_type'] == 'realistic_dirichlet':
@@ -118,7 +119,7 @@ def evaluate_model(gnn_model, train_dataloader, test_dataloader, optimizer,
 def compute_rollout_errors(gnn_model, params, dataset, idxs_train, idxs_test):
     train_errs = np.zeros(2)
     for idx in idxs_train:
-        _, cur_train_errs, _ = rollout(gnn_model, params, 
+        _, cur_train_errs, _, _ = rollout(gnn_model, params, 
                                        dataset['train'].graphs[idx])
         train_errs = cur_train_errs + train_errs
     
@@ -126,7 +127,7 @@ def compute_rollout_errors(gnn_model, params, dataset, idxs_train, idxs_test):
 
     test_errs = np.zeros(2)
     for idx in idxs_test:
-        _, cur_test_errs, _ = rollout(gnn_model, params, dataset['test'].graphs[idx])
+        _, cur_test_errs, _, _ = rollout(gnn_model, params, dataset['test'].graphs[idx])
         test_errs = cur_test_errs + test_errs
     
     test_errs = test_errs / (len(idxs_test))
@@ -279,8 +280,11 @@ def launch_training(dataset, params, parallel, out_dir = 'models/',
     gnn_model, history = train_gnn_model(gnn_model, dataset, params, 
                                          parallel, save_data, checkpoint_fct)
 
-    final_rollout = history['test_rollout'][1][-1]
-    print('Final rollout error on test = ' + str(final_rollout))
+    if save_data:
+        final_rollout = history['test_rollout'][1][-1]
+        print('Final rollout error on test = ' + str(final_rollout))
+    else:
+        sys.exit()
 
     if save_data:
         ptools.plot_history(history['train_loss'],
@@ -324,7 +328,7 @@ if __name__ == "__main__":
     parser.add_argument('--rate_noise', help='rate noise', type=float,
                         default=100)
     parser.add_argument('--rate_noise_features', help='rate noise features', 
-                        type=float, default=1e-2)
+                        type=float, default=0)
     parser.add_argument('--weight_decay', help='l2 regularization', 
                         type=float, default=1e-5)
     parser.add_argument('--ls_gnn', help='latent size gnn', type=int,
@@ -336,12 +340,12 @@ if __name__ == "__main__":
     parser.add_argument('--hl_mlp', help='hidden layers mlps', type=int,
                         default=1)
     parser.add_argument('--continuity_coeff', help='continuity coefficient',
-                        type=float, default=1)
+                        type=float, default=0)
     parser.add_argument('--label_norm', help='0: min_max, 1: normal',
-                        type=int, default=1)
+                        type=int, default=0)
     args = parser.parse_args()
 
-    if args.label_norm == '0':
+    if args.label_norm == 0:
         label_normalization = 'min_max'
     else:
         label_normalization = 'normal'
@@ -388,3 +392,4 @@ if __name__ == "__main__":
 
     if rank == 0:
         print('Training time = ' + str(elapsed_time))
+    sys.exit()
