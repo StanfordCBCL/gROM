@@ -21,7 +21,7 @@ Next, duplicate or rename `data_location_example.txt` as `data_location.txt` and
 
 Note: `.vtp` files can be  inspected with [Paraview](https://www.paraview.org).
 
-The `gROM_data` contains all the data necessary to train the GNN and you are welcome to skip the remaining parts of this section. However, it is possible to regenerate the data by launching `python graph1d/generate_graphs.py` from the root of the project.
+The `gROM_data` contains all the data necessary to train the GNN. However, it is possible to regenerate the data by launching `python graph1d/generate_graphs.py` from the root of the project.
 
 ### Train a GNN ###
 
