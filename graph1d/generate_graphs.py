@@ -14,6 +14,7 @@ import random
 import pathlib
 import tools.plot_tools as pt
 import matplotlib.pyplot as plt
+import shutil
 
 def generate_types(bif_id, indices):
     """
@@ -845,7 +846,7 @@ and generate DGL graphs. The graphs are saved in output_dir.
 """
 if __name__ == "__main__":
     data_location = io.data_location()
-    input_dir = data_location + 'vtps_aortas'
+    input_dir = data_location + 'vtps_aortas/'
     output_dir = data_location + 'graphs/'
 
     # if we provide timestep file then we need to rescale time in vtp
@@ -964,5 +965,7 @@ if __name__ == "__main__":
 
                     dgl.save_graphs(output_dir + filename, graph)
                 except Exception as e:
-                    print(e)                
+                    print(e) 
+
+    shutil.copy(input_dir + 'types.json',  output_dir + 'types.json')           
             

@@ -11,7 +11,7 @@ import copy
 import torch as th
 from tqdm import tqdm
 
-nchunks = 10
+nchunks = 5
 
 class Dataset(DGLDataset):
     """
@@ -195,15 +195,18 @@ class Dataset(DGLDataset):
         """
         return 'Dataset = ' + ', '.join(self.graph_names)
 
-def split(graphs, divs):
+def split(graphs, divs, types):
     """
     Split a list of graphs.
 
     The graphs are split into multiple train/test groups. Number of groups is 
-    determined by the divs argument.
+    determined by the divs argument. The function takes as input the type of 
+    graphs to make the datasets balanced.
 
     Arguments: 
         divs: number of train/test groups.
+        types: dictionary (key: graph name, value: type)
+
     Returns:
         List of groups
     """
@@ -224,36 +227,63 @@ def split(graphs, divs):
     random.seed(10)
     random.shuffle(names)
 
-    sets = list(chunks(names, divs))
-    nsets = len(sets)
+    sublists = {}
+    for name in names:
+        type = types[name.split('.')[0]]
+        if type not in sublists:
+            sublists[type] = []
+        sublists[type].append(name)
 
-    datasets = []    
+
+    subsets = {}
+    for sublist_n, sublist_v in sublists.items():
+        subsets[sublist_n] = list(chunks(sublist_v, divs))
+        nsets = len(subsets[sublist_n])
+        # we distribute the last sets among the first n-1
+        if nsets != divs:
+            for i, graph in enumerate(subsets[sublist_n][-1]):
+                subsets[sublist_n][i % divs] += [graph]
+            del subsets[sublist_n][-1]
+        nsets = len(subsets[sublist_n])
+
+    datasets = [] 
 
     for i in range(1):
-        newdata = {'test': sets[i]}
+        cur_set = []
+        for _, subset_v in subsets.items():
+            cur_set = cur_set + subset_v[i]
+    
+        newdata = {'test': cur_set}
         train_s = []
         for j in range(nsets):
             if j != i:
-                train_s = train_s + sets[j]
+                cur_set = []
+                for _, subset_v in subsets.items():
+                    cur_set = cur_set + subset_v[j]
+                train_s = train_s + cur_set
         newdata['train'] = train_s
         datasets.append(newdata)
 
     return datasets
 
-def generate_dataset(graphs, params):
+def generate_dataset(graphs, params, types):
     """
     Generate a list of datasets
 
-    The listis composed of dictionary containing train and test Datasets.
+    The returned list is composed of dictionary containing train and test 
+    Datasets. The function takes as input the type of graphs to make the
+    datasets balanced.
 
     Arguments: 
+        graphs: list of graphs
         params: dictionary of parameters
+        types: dictionary (key: graph name, value: type)
 
     Returns:
         List of datasets
     """
     dataset_list = []
-    datasets = split(graphs, nchunks)    
+    datasets = split(graphs, nchunks, types)    
     for dataset in datasets:
         train_graphs = [graphs[gname] for gname in dataset['train']]
         train_dataset = Dataset(train_graphs, params, dataset['train'])

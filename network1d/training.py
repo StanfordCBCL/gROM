@@ -358,7 +358,9 @@ if __name__ == "__main__":
     norm_type = {'features': 'normal', 'labels': label_normalization}
     graphs, params  = gng.generate_normalized_graphs(input_dir, norm_type, 
                                                      'full_dirichlet')
-    datasets = dset.generate_dataset(graphs, params)
+    
+    types = json.load(open(input_dir + '/types.json'))
+    datasets = dset.generate_dataset(graphs, params, types)
     print(datasets[0]['train'])
     print(params)
 
