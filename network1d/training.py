@@ -356,13 +356,16 @@ if __name__ == "__main__":
     data_location = io.data_location()
     input_dir = data_location + 'graphs/'
     norm_type = {'features': 'normal', 'labels': label_normalization}
-    graphs, params  = gng.generate_normalized_graphs(input_dir, norm_type, 
-                                                     'full_dirichlet')
-    
+
     types = json.load(open(input_dir + '/types.json'))
+
+    t2k = ['aorta']
+    graphs, params  = gng.generate_normalized_graphs(input_dir, norm_type, 
+                                                     'full_dirichlet',
+                                                     {'types' : types,
+                                                     'types_to_keep': t2k})
+    
     datasets = dset.generate_dataset(graphs, params, types)
-    print(datasets[0]['train'])
-    print(params)
 
     graph = graphs[list(graphs)[0]]
 

@@ -846,7 +846,7 @@ and generate DGL graphs. The graphs are saved in output_dir.
 """
 if __name__ == "__main__":
     data_location = io.data_location()
-    input_dir = data_location + 'vtps_aortas/'
+    input_dir = data_location + 'vtps/'
     output_dir = data_location + 'graphs/'
 
     # if we provide timestep file then we need to rescale time in vtp
@@ -864,10 +864,11 @@ if __name__ == "__main__":
     for file in tqdm(files, desc = 'Generating graphs', colour='green'):
         if '.vtp' in file:
             point_data, points, edges1, edges2 = load_vtp(file, input_dir)
-
-            point_data['tangent'] = generate_tangents(points, 
+            try:
+                point_data['tangent'] = generate_tangents(points, 
                                                       point_data['BranchIdTmp'])
-
+            except Exception as e:
+                continue
             inlet = [0]
             outlets = find_outlets(edges1, edges2)
 

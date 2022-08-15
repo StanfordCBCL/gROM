@@ -298,7 +298,8 @@ def save_parameters(params, output_dir):
     with open(output_dir + '/parameters.json', 'w') as outfile:
         json.dump(params, outfile, indent=4)
 
-def generate_normalized_graphs(input_dir, norm_type, bc_type):
+def generate_normalized_graphs(input_dir, norm_type, bc_type, 
+                               types_to_keep = None):
     """
     Generate normalized graphs.
 
@@ -310,6 +311,13 @@ def generate_normalized_graphs(input_dir, norm_type, bc_type):
                  (pressure and flowrate imposed at boundary nodes) and 
                  realistic dirichlet (flowrate imposed at inlet, pressure
                  imposed at outlets)
+        types_to_keep: dictionary containing all graphs types, and list
+                       containing types we want to keep. If None, keep all 
+                       types. Default value -> None.
+    
+    Return:
+        List of normalized graphs
+        Dictionary of parameters
 
     """
     fields_to_normalize = {'node': ['area', 'pressure', 
@@ -317,6 +325,16 @@ def generate_normalized_graphs(input_dir, norm_type, bc_type):
                        'edge': ['distance']}
     statistics = {'normalization_type': norm_type}
     graphs = load_all_graphs(input_dir)
+
+    if types_to_keep != None:
+        selected_graphs = {}
+        types = types_to_keep['types']
+        types_to_keep = types_to_keep['types_to_keep']
+        for graph in graphs:
+            if types[graph.split('.')[0]] in types_to_keep:
+                selected_graphs[graph] = graphs[graph]
+        graphs = selected_graphs
+
     compute_statistics(graphs, fields_to_normalize, statistics)
     normalize_graphs(graphs, fields_to_normalize, statistics, 'features')
     add_deltas(graphs)

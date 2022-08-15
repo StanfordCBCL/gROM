@@ -211,9 +211,10 @@ def split(graphs, divs, types):
         List of groups
     """
     def chunks(lst, n):
-        n = int(np.floor(len(lst)/n))
-        for i in range(0, len(lst), n):
-            yield lst[i:i + n]
+        retlist = [[] for l in range(n)]
+        for i, el in enumerate(lst):
+            retlist[i % n].append(el)
+        return retlist
 
     names = [graph_name for graph_name in graphs]
 
@@ -233,7 +234,6 @@ def split(graphs, divs, types):
         if type not in sublists:
             sublists[type] = []
         sublists[type].append(name)
-
 
     subsets = {}
     for sublist_n, sublist_v in sublists.items():
@@ -292,5 +292,10 @@ def generate_dataset(graphs, params, types):
         test_dataset = Dataset(test_graphs, params, dataset['test'])
 
         dataset_list.append({'train': train_dataset, 'test': test_dataset})
+
+    print('Generated {:} datasets'.format(len(dataset_list)))
+    for dataset in dataset_list:
+        print('Train size = {:}'.format(len(dataset['train'].graph_names)))
+        print('Test size = {:}'.format(len(dataset['test'].graph_names)))
 
     return dataset_list
