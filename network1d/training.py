@@ -324,7 +324,7 @@ if __name__ == "__main__":
 
     parser.add_argument('--bs', help='batch size', type=int, default=100)
     parser.add_argument('--epochs', help='total number of epochs', type=int,
-                        default=5000)
+                        default=100)
     parser.add_argument('--lr_decay', help='learning rate decay', type=float,
                         default=0.1)
     parser.add_argument('--lr', help='learning rate', type=float, default=0.005)
@@ -344,14 +344,18 @@ if __name__ == "__main__":
                         default=1)
     parser.add_argument('--continuity_coeff', help='continuity coefficient',
                         type=float, default=1)
-    parser.add_argument('--label_norm', help='0: min_max, 1: normal',
+    parser.add_argument('--label_norm', help='0: min_max, 1: normal, 2: none',
+                        type=int, default=2)
+    parser.add_argument('--stride', help='stride for multistep training',
                         type=int, default=1)
     args = parser.parse_args()
 
     if args.label_norm == 0:
         label_normalization = 'min_max'
-    else:
+    elif args.label_norm == 1:
         label_normalization = 'normal'
+    elif args.label_norm == 2:
+        label_normalization = 'none'
 
     data_location = io.data_location()
     input_dir = data_location + 'graphs/'
@@ -387,7 +391,8 @@ if __name__ == "__main__":
                 'weight_decay': args.weight_decay,
                 'rate_noise': args.rate_noise,
                 'rate_noise_features': args.rate_noise_features,
-                'continuity_coeff': args.continuity_coeff}
+                'continuity_coeff': args.continuity_coeff,
+                'stride': args.stride}
     params.update(t_params)
 
     start = time.time()

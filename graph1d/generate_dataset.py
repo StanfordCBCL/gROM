@@ -113,6 +113,9 @@ class Dataset(DGLDataset):
 
         Arguments:
             i: index of the graph
+
+        Returns:
+            The DGL graph
         """
         indices = self.index_map[i,:]
 
