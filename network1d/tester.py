@@ -63,13 +63,17 @@ if __name__ == '__main__':
     gnn_model.load_state_dict(th.load(path + '/trained_gnn.pms'))
 
     data_location = io.data_location()
+    types = json.load(open(data_location + 'graphs/types.json'))
+    t2k = ['aorta']
     graphs, _  = gng.generate_normalized_graphs(data_location + 'graphs/', 
                                                 params['statistics']['normalization_type'], 
-                                                params['bc_type'])
-    datasets = dset.generate_dataset(graphs, params)
+                                                params['bc_type'],
+                                                 {'types' : types,
+                                                'types_to_keep': t2k})
+    datasets = dset.generate_dataset(graphs, params, types)
 
     if os.path.exists('results'):
         shutil.rmtree('results')
     
-    # evaluate_all_models(datasets[0], 'train', gnn_model, params)
+    evaluate_all_models(datasets[0], 'train', gnn_model, params)
     evaluate_all_models(datasets[0], 'test', gnn_model, params)

@@ -206,45 +206,18 @@ def add_features(graphs, params):
     """
     for graph_n in tqdm(graphs, desc = 'Add features', colour='green'):
         graph = graphs[graph_n]
-        ntimes = graph.ndata['dp'].shape[2]
+        ntimes = graph.ndata['pressure'].shape[2]
 
         dt = graph.ndata['dt'].repeat(1, 1, ntimes)
         area = graph.ndata['area'].repeat(1, 1, ntimes)
-        tangent = graph.ndata['area'].repeat(1, 1, ntimes)
+        tangent = graph.ndata['tangent'].repeat(1, 1, ntimes)
         type = graph.ndata['type'].repeat(1, 1, ntimes)
 
-        p = graph.ndata['pressure'][:,:,:-1].clone()
-        q = graph.ndata['flowrate'][:,:,:-1].clone()
-
-        dp = graph.ndata['dp'].clone()
-        dq = graph.ndata['dq'].clone()
-
-        # set boundary conditions
-        if params['bc_type'] == 'realistic_dirichlet':
-            p[graph.ndata['outlet_mask'].bool(),:,:] = \
-                graph.ndata['pressure'][graph.ndata['outlet_mask'].bool(),:,1:]
-            q[graph.ndata['inlet_mask'].bool(),:,:] = \
-                graph.ndata['flowrate'][graph.ndata['inlet_mask'].bool(),:,1:]
-            # mask out labels at boundary nodes
-            dp[graph.ndata['outlet_mask'].bool(),:,:] = 0
-            dq[graph.ndata['inlet_mask'].bool(),:,:] = 0
-        elif params['bc_type'] == 'full_dirichlet':
-            p[graph.ndata['inlet_mask'].bool(),:,:] = \
-                graph.ndata['pressure'][graph.ndata['inlet_mask'].bool(),:,1:]
-            p[graph.ndata['outlet_mask'].bool(),:,:] = \
-                graph.ndata['pressure'][graph.ndata['outlet_mask'].bool(),:,1:]
-            q[graph.ndata['inlet_mask'].bool(),:,:] = \
-                graph.ndata['flowrate'][graph.ndata['inlet_mask'].bool(),:,1:]
-            q[graph.ndata['outlet_mask'].bool(),:,:] = \
-                graph.ndata['flowrate'][graph.ndata['outlet_mask'].bool(),:,1:]
-            dp[graph.ndata['inlet_mask'].bool(),:,:] = 0
-            dp[graph.ndata['outlet_mask'].bool(),:,:] = 0
-            dq[graph.ndata['inlet_mask'].bool(),:,:] = 0
-            dq[graph.ndata['outlet_mask'].bool(),:,:] = 0
+        p = graph.ndata['pressure'].clone()
+        q = graph.ndata['flowrate'].clone()
 
         graph.ndata['nfeatures'] = th.cat((p, q, area, tangent, 
                                            type, dt), axis = 1)
-        graph.ndata['nlabels'] = th.cat((dp, dq), axis = 1)
 
         rp = graph.edata['rel_position']
         rpn = graph.edata['distance']

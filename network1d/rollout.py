@@ -7,6 +7,30 @@ import torch as th
 import copy
 import time
 
+def perform_timestep(gnn_model, params, graph, bcs, time_index):
+    gf = graph.ndata['nfeatures']
+
+    # set boundary conditions
+    if params['bc_type'] == 'realistic_dirichlet':
+        gf[graph.ndata['outlet_mask'].bool(), 0] = bcs[graph.ndata['outlet_mask'].bool(), 0, time_index]
+        gf[graph.ndata['inlet_mask'].bool(), 1] = bcs[graph.ndata['inlet_mask'].bool(), 1, time_index]
+    elif params['bc_type'] == 'full_dirichlet':
+        gf[graph.ndata['inlet_mask'].bool(), 0] = bcs[graph.ndata['inlet_mask'].bool(), 0, time_index]
+        gf[graph.ndata['outlet_mask'].bool(), 0] = bcs[graph.ndata['outlet_mask'].bool(), 0, time_index]
+        gf[graph.ndata['inlet_mask'].bool(), 1] = bcs[graph.ndata['inlet_mask'].bool(), 1, time_index]
+        gf[graph.ndata['outlet_mask'].bool(), 1] = bcs[graph.ndata['outlet_mask'].bool(), 1, time_index]
+
+    graph.ndata['nfeatures'] = gf
+
+    delta = gnn_model(graph)
+    delta[:,0] = nz.invert_normalize(delta[:,0], 'dp', params['statistics'],
+                                     'labels')
+    delta[:,1] = nz.invert_normalize(delta[:,1], 'dq', params['statistics'],
+                                     'labels')
+    gf[:,0:2] = gf[:,0:2] + delta
+
+    return gf[:,0:2]
+
 def rollout(gnn_model, params, graph):
     gnn_model.eval()
     times = graph.ndata['nfeatures'].shape[2]
@@ -20,28 +44,12 @@ def rollout(gnn_model, params, graph):
     r_features = graph.ndata['nfeatures'][:,0:2].unsqueeze(axis = 2).clone()
     start = time.time()
     for it in range(times-1):
-        delta = gnn_model(graph)
-        delta[:,0] = nz.invert_normalize(delta[:,0], 'dp', params['statistics'],
-                                         'labels')
-        delta[:,1] = nz.invert_normalize(delta[:,1], 'dq', params['statistics'],
-                                         'labels')
-        # delta = tfc[:,0:2,it + 1] - tfc[:,0:2,it]
-        gf = graph.ndata['nfeatures'][:,0:2].clone()
-        gf = gf + delta
-        # set boundary conditions
-        if params['bc_type'] == 'realistic_dirichlet':
-            gf[graph.ndata['outlet_mask'].bool(), 0] = tfc[graph.ndata['outlet_mask'].bool(), 0, it + 1]
-            gf[graph.ndata['inlet_mask'].bool(), 1] = tfc[graph.ndata['inlet_mask'].bool(), 1, it + 1]
-        elif params['bc_type'] == 'full_dirichlet':
-            gf[graph.ndata['inlet_mask'].bool(), 0] = tfc[graph.ndata['inlet_mask'].bool(), 0, it + 1]
-            gf[graph.ndata['outlet_mask'].bool(), 0] = tfc[graph.ndata['outlet_mask'].bool(), 0, it + 1]
-            gf[graph.ndata['inlet_mask'].bool(), 1] = tfc[graph.ndata['inlet_mask'].bool(), 1, it + 1]
-            gf[graph.ndata['outlet_mask'].bool(), 1] = tfc[graph.ndata['outlet_mask'].bool(), 1, it + 1]
+        gf = perform_timestep(gnn_model, params, graph, tfc, it + 1)
 
         graph.ndata['nfeatures'][:,0:2] = gf
+        r_features = th.cat((r_features, gf.unsqueeze(axis = 2)), axis = 2)
         # set next conditions to exact for debug
         # graph.ndata['nfeatures'][:,0:2] = tfc[:,0:2,it + 1].clone()
-        r_features = th.cat((r_features, gf.unsqueeze(axis = 2)), axis = 2)
 
     end = time.time()
     tfc = true_graph.ndata['nfeatures'][:,0:2,:].clone()

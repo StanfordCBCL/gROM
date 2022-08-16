@@ -16,6 +16,7 @@ from torch.utils.data.sampler import SubsetRandomSampler
 from dgl.dataloading import GraphDataLoader
 from tqdm import tqdm
 from rollout import rollout
+from rollout import perform_timestep
 import json
 import tools.plot_tools as ptools
 import pickle
@@ -52,8 +53,10 @@ def evaluate_model(gnn_model, train_dataloader, test_dataloader, optimizer,
         count = 0
 
         def iteration(batched_graph, c_optimizer):
-            pred = gnn_model(batched_graph)
-            mask = th.ones(batched_graph.ndata['nlabels'].shape)
+            ns = batched_graph.ndata['next_steps']
+            loss_v = 0
+            metric_v = 0
+            mask = th.ones(ns[:,:,0].shape)
             if params['bc_type'] == 'realistic_dirichlet':
                 mask[:,0] = mask[:,0] - batched_graph.ndata['outlet_mask']
                 mask[:,1] = mask[:,1] - batched_graph.ndata['inlet_mask']
@@ -62,20 +65,50 @@ def evaluate_model(gnn_model, train_dataloader, test_dataloader, optimizer,
                 mask[:,0] = mask[:,0] - batched_graph.ndata['outlet_mask']
                 mask[:,1] = mask[:,1] - batched_graph.ndata['inlet_mask']
                 mask[:,1] = mask[:,1] - batched_graph.ndata['outlet_mask']
+            for istride in range(params['stride']):
+                nf = perform_timestep(gnn_model, params, batched_graph, ns, 
+                                      istride)
 
-            loss_v = mse(pred, batched_graph.ndata['nlabels'], mask)
-            flowrate = batched_graph.ndata['nfeatures'][:,1]
-            try:
-                c_loss = gnn_model.compute_continuity_loss(batched_graph,
-                                                            flowrate,
-                                                            pred[:,1])
-            except Exception as e:
-                c_loss = gnn_model.module.compute_continuity_loss(batched_graph,
-                                                                  flowrate,
-                                                                  pred[:,1])
-            loss_v = loss_v + params['continuity_coeff'] * c_loss
+                batched_graph.ndata['nfeatures'][:,0:2] = nf
 
-            metric_v = mae(pred, batched_graph.ndata['nlabels'], mask)
+                # we follow https://arxiv.org/pdf/2206.07680.pdf for the
+                # coefficient
+                coeff = 0.1
+                if istride == 0:
+                    coeff = 1  
+
+                curstride = ns[:,:,istride].clone()
+
+                curstride[:,0] = gng.invert_normalize(curstride[:,0], 
+                                                      'pressure',
+                                                      params['statistics'],
+                                                      'labels')
+
+                loss_v = loss_v + coeff * mse(nf[:,0:2], ns[:,:,istride], mask)
+                metric_v = metric_v + coeff * mae(nf[:,0:2], ns[:,:,istride], mask)
+
+                # try:
+                # c_loss = gnn_model.compute_continuity_loss(batched_graph,
+                #                                             flowrate,
+                #                                             pred[:,1])
+                # except Exception as e:
+                # c_loss = gnn_model.module.compute_continuity_loss(batched_graph,
+                #                                                   flowrate,
+                #                                                   pred[:,1])             
+
+            # loss_v = 
+            # flowrate = batched_graph.ndata['nfeatures'][:,1]
+            # try:
+            #     c_loss = gnn_model.compute_continuity_loss(batched_graph,
+            #                                                 flowrate,
+            #                                                 pred[:,1])
+            # except Exception as e:
+            #     c_loss = gnn_model.module.compute_continuity_loss(batched_graph,
+            #                                                       flowrate,
+            #                                                       pred[:,1])
+            # loss_v = loss_v + params['continuity_coeff'] * c_loss
+
+            # metric_v = mae(pred, batched_graph.ndata['nlabels'], mask)
 
             if c_optimizer != None:
                 optimizer.zero_grad()
@@ -345,9 +378,9 @@ if __name__ == "__main__":
     parser.add_argument('--continuity_coeff', help='continuity coefficient',
                         type=float, default=1)
     parser.add_argument('--label_norm', help='0: min_max, 1: normal, 2: none',
-                        type=int, default=2)
-    parser.add_argument('--stride', help='stride for multistep training',
                         type=int, default=1)
+    parser.add_argument('--stride', help='stride for multistep training',
+                        type=int, default=3)
     args = parser.parse_args()
 
     if args.label_norm == 0:
@@ -368,14 +401,12 @@ if __name__ == "__main__":
                                                      'full_dirichlet',
                                                      {'types' : types,
                                                      'types_to_keep': t2k})
-    
-    datasets = dset.generate_dataset(graphs, params, types)
 
     graph = graphs[list(graphs)[0]]
 
     infeat_nodes = graph.ndata['nfeatures'].shape[1]
     infeat_edges = graph.edata['efeatures'].shape[1]
-    nout = graph.ndata['nlabels'].shape[1]
+    nout = 2
 
     t_params = {'infeat_nodes': infeat_nodes,
                 'infeat_edges': infeat_edges,
@@ -394,6 +425,8 @@ if __name__ == "__main__":
                 'continuity_coeff': args.continuity_coeff,
                 'stride': args.stride}
     params.update(t_params)
+
+    datasets = dset.generate_dataset(graphs, params, types)
 
     start = time.time()
     for dataset in datasets:

@@ -59,15 +59,19 @@ class Dataset(DGLDataset):
         """
         i = 0
         offset = 0
-        self.index_map = np.zeros((self.total_times, 2))
+        ngraphs = len(self.times)
+        stride = self.params['stride']
+        self.index_map = np.zeros((self.total_times - stride * ngraphs, 2))
         for t in self.times:
-            graph_index = np.ones((t, 1)) * i
-            time_index = np.expand_dims(np.arange(0, t), axis = 1)
-            self.index_map[offset:t + offset,:] = np.concatenate((graph_index, 
-                                                                  time_index),
-                                                                  axis = 1)
+            # actual time (minus stride)
+            at = t - stride
+            graph_index = np.ones((at, 1)) * i
+            time_index = np.expand_dims(np.arange(0, at), axis = 1)
+            self.index_map[offset:at + offset,:] = np.concatenate((graph_index, 
+                                                                   time_index),
+                                                                   axis = 1)
             i = i + 1
-            offset = offset + t
+            offset = offset + at
         self.index_map = np.array(self.index_map, dtype = int)
             
     def process(self):
@@ -118,43 +122,40 @@ class Dataset(DGLDataset):
             The DGL graph
         """
         indices = self.index_map[i,:]
+        igraph = indices[0]
+        itime = indices[1]
 
-        nf = self.graphs[indices[0]].ndata['nfeatures'][:,:,indices[1]].clone()
+        features = self.graphs[igraph].ndata['nfeatures'].clone()
+
+        nf = features[:,:,itime].clone()
         nfsize = nf[:,:2].shape
 
-        dt = nz.invert_normalize(self.graphs[indices[0]].ndata['dt'][0], 'dt',
+        dt = nz.invert_normalize(self.graphs[igraph].ndata['dt'][0], 'dt',
                                  self.params['statistics'], 'features')
         curnoise = np.random.normal(0, self.params['rate_noise'] * dt, nfsize)
-        # we don't add noise to boundary nodes
-        if self.params['bc_type'] == 'realistic_dirichlet':
-            curnoise[self.graphs[indices[0]].ndata['outlet_mask'].bool(),0] = 0
-            curnoise[self.graphs[indices[0]].ndata['inlet_mask'].bool(),1] = 0
-        elif self.params['bc_type'] == 'full_dirichlet':
-            curnoise[self.graphs[indices[0]].ndata['inlet_mask'].bool(),0] = 0
-            curnoise[self.graphs[indices[0]].ndata['outlet_mask'].bool(),0] = 0
-            curnoise[self.graphs[indices[0]].ndata['inlet_mask'].bool(),1] = 0
-            curnoise[self.graphs[indices[0]].ndata['outlet_mask'].bool(),1] = 0
-
         nf[:,:2] = nf[:,:2] + curnoise
 
-        # add regular noise rest of the features to prevent overfitting
         fnoise = np.random.normal(0, self.params['rate_noise_features'], 
                                   nf[:,2:].shape)
         nf[:,2:] = nf[:,2:] + fnoise
 
-        self.lightgraphs[indices[0]].ndata['nfeatures'] = nf
+        self.lightgraphs[igraph].ndata['nfeatures'] = nf
 
-        nl = self.graphs[indices[0]].ndata['nlabels'][:,:,indices[1]].clone()
-        nl[:,0] = nz.invert_normalize(nl[:,0], 'dp', self.params['statistics'],
-                                      'labels')
-        nl[:,1] = nz.invert_normalize(nl[:,1], 'dq', self.params['statistics'],
-                                      'labels')
-        nl[:,:2] = nl[:,:2] - curnoise
-        nl[:,0] = nz.normalize(nl[:,0], 'dp', self.params['statistics'],
-                               'labels')
-        nl[:,1] = nz.normalize(nl[:,1], 'dq', self.params['statistics'],
-                              'labels')
-        self.lightgraphs[indices[0]].ndata['nlabels'] = nl
+        ns = features[:,0:2,itime + 1:itime + 1 + self.params['stride']].clone()
+
+        self.lightgraphs[indices[0]].ndata['next_steps'] = ns
+
+        # nl = self.graphs[indices[0]].ndata['nlabels'][:,:,indices[1]].clone()
+        # nl[:,0] = nz.invert_normalize(nl[:,0], 'dp', self.params['statistics'],
+        #                               'labels')
+        # nl[:,1] = nz.invert_normalize(nl[:,1], 'dq', self.params['statistics'],
+        #                               'labels')
+        # nl[:,:2] = nl[:,:2] - curnoise
+        # nl[:,0] = nz.normalize(nl[:,0], 'dp', self.params['statistics'],
+        #                        'labels')
+        # nl[:,1] = nz.normalize(nl[:,1], 'dq', self.params['statistics'],
+        #                       'labels')
+        # self.lightgraphs[indices[0]].ndata['nlabels'] = nl
 
         ef = self.graphs[indices[0]].edata['efeatures']
 
@@ -182,12 +183,12 @@ class Dataset(DGLDataset):
         """
         Length of the dataset
 
-        Length of the dataset is the total number of timesteps.
+        Length of the dataset is the total number of timesteps (minus stride).
 
         Returns:
             length of the Dataset
         """
-        return self.total_times
+        return self.index_map.shape[0]
 
     def __str__(self):
         """

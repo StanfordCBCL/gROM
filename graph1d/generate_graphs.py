@@ -674,8 +674,8 @@ def generate_graph(point_data, points, edges1, edges2,
     graph = dgl.graph((edges1, edges2), idtype = th.int32)
 
     graph.ndata['x'] = th.tensor(points, dtype = th.float32)
-    graph.ndata['tangent'] = th.tensor(point_data['tangent'], 
-                                       dtype = th.float32)
+    tangent = th.tensor(point_data['tangent'], dtype = th.float32)
+    graph.ndata['tangent'] = th.unsqueeze(tangent, 2)
     graph.ndata['area'] = th.reshape(th.tensor(area, dtype = th.float32), 
                                      (-1,1,1))
     continuity_mask = create_continuity_mask(types)
@@ -875,7 +875,7 @@ if __name__ == "__main__":
             indices = {'inlet': inlet,
                     'outlets': outlets}
 
-            resample_perc = 0.06
+            resample_perc = 0.20
             success = False
 
             while not success:
