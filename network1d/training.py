@@ -77,38 +77,15 @@ def evaluate_model(gnn_model, train_dataloader, test_dataloader, optimizer,
                 if istride == 0:
                     coeff = 1  
 
-                curstride = ns[:,:,istride].clone()
-
-                curstride[:,0] = gng.invert_normalize(curstride[:,0], 
-                                                      'pressure',
-                                                      params['statistics'],
-                                                      'labels')
-
+                try:
+                    c_loss = gnn_model.continuity_loss(batched_graph,
+                                                       nf[:,2])
+                except Exception as e:
+                    c_loss = gnn_model.module.continuity_loss(batched_graph,
+                                                              nf[:,2])             
+                loss_v = loss_v + params['continuity_coeff'] * c_loss 
                 loss_v = loss_v + coeff * mse(nf[:,0:2], ns[:,:,istride], mask)
                 metric_v = metric_v + coeff * mae(nf[:,0:2], ns[:,:,istride], mask)
-
-                # try:
-                # c_loss = gnn_model.compute_continuity_loss(batched_graph,
-                #                                             flowrate,
-                #                                             pred[:,1])
-                # except Exception as e:
-                # c_loss = gnn_model.module.compute_continuity_loss(batched_graph,
-                #                                                   flowrate,
-                #                                                   pred[:,1])             
-
-            # loss_v = 
-            # flowrate = batched_graph.ndata['nfeatures'][:,1]
-            # try:
-            #     c_loss = gnn_model.compute_continuity_loss(batched_graph,
-            #                                                 flowrate,
-            #                                                 pred[:,1])
-            # except Exception as e:
-            #     c_loss = gnn_model.module.compute_continuity_loss(batched_graph,
-            #                                                       flowrate,
-            #                                                       pred[:,1])
-            # loss_v = loss_v + params['continuity_coeff'] * c_loss
-
-            # metric_v = mae(pred, batched_graph.ndata['nlabels'], mask)
 
             if c_optimizer != None:
                 optimizer.zero_grad()
@@ -376,7 +353,7 @@ if __name__ == "__main__":
     parser.add_argument('--hl_mlp', help='hidden layers mlps', type=int,
                         default=1)
     parser.add_argument('--continuity_coeff', help='continuity coefficient',
-                        type=float, default=1)
+                        type=float, default=1e-3)
     parser.add_argument('--label_norm', help='0: min_max, 1: normal, 2: none',
                         type=int, default=1)
     parser.add_argument('--stride', help='stride for multistep training',

@@ -220,7 +220,7 @@ class MeshGraphNet(Module):
         h = self.output(nodes.data['proc_node'])
         return {'pred_labels': h}
 
-    def compute_continuity_loss(self, g, flowrate, delta_flowrate):
+    def continuity_loss(self, g, flowrate):
         """
         Compute contiuity loss
 
@@ -230,15 +230,12 @@ class MeshGraphNet(Module):
         Arguments:
             g: graph
             flowrate: tensor containing nodal values of flowrate
-            delta_flowrate: tensor containing nodal flowrate update
 
         Returns: 
             sum of mass loss occurring at branches and at junctions
 
         """
-        scaled_delta = nz.invert_normalize(delta_flowrate, 'dq', 
-                                           self.params['statistics'], 'labels')
-        g.ndata['next_flowrate'] = flowrate + scaled_delta
+        g.ndata['next_flowrate'] = flowrate 
 
         # we zero-out inlet and outlet flowrate (otherwise they would send
         # their flowrate to branch and junction nodes)

@@ -875,7 +875,7 @@ if __name__ == "__main__":
             indices = {'inlet': inlet,
                     'outlets': outlets}
 
-            resample_perc = 0.20
+            resample_perc = 0.06
             success = False
 
             while not success:
@@ -955,9 +955,9 @@ if __name__ == "__main__":
                         c_pressure[t] = pressure[t][part['sampling_indices']]
                         c_flowrate[t] = flowrate[t][part['sampling_indices']]
 
-                    do_resample_time = False
+                    do_resample_time = True
                     if do_resample_time:
-                        dt = 0.001
+                        dt = 0.002
                         c_pressure = resample_time(c_pressure, timestep = dt)
                         c_flowrate = resample_time(c_flowrate, timestep = dt)
 
