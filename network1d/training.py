@@ -23,6 +23,7 @@ import pickle
 import signal
 import graph1d.generate_normalized_graphs as gng
 import random
+from torch.optim.optimizer import Optimizer
 
 class SignalHandler(object):
     def __init__(self):
@@ -79,13 +80,13 @@ def evaluate_model(gnn_model, train_dataloader, test_dataloader, optimizer,
 
                 try:
                     c_loss = gnn_model.continuity_loss(batched_graph,
-                                                       nf[:,2])
+                                                       nf[:,1])
                 except Exception as e:
                     c_loss = gnn_model.module.continuity_loss(batched_graph,
-                                                              nf[:,2])             
+                                                              nf[:,1])             
                 loss_v = loss_v + params['continuity_coeff'] * c_loss 
-                loss_v = loss_v + coeff * mse(nf[:,0:2], ns[:,:,istride], mask)
-                metric_v = metric_v + coeff * mae(nf[:,0:2], ns[:,:,istride], mask)
+                loss_v = loss_v + coeff * mse(nf, ns[:,:,istride], mask)
+                metric_v = metric_v + coeff * mae(nf, ns[:,:,istride], mask)
 
             if c_optimizer != None:
                 optimizer.zero_grad()
@@ -108,12 +109,6 @@ def evaluate_model(gnn_model, train_dataloader, test_dataloader, optimizer,
                 global_loss = global_loss + loss_v
                 global_metric = global_metric + metric_v
                 count = count + 1
-                # total_norm = 0
-                # for p in gnn_model.parameters():
-                #     param_norm = p.grad.detach().data.norm(2)
-                #     total_norm += param_norm.item() ** 2
-                # total_norm = total_norm ** 0.5
-                # print(total_norm)
 
         return {'loss': global_loss / count, 'metric': global_metric / count}
 
@@ -150,6 +145,8 @@ def compute_rollout_errors(gnn_model, params, dataset, idxs_train, idxs_test):
 
 def train_gnn_model(gnn_model, dataset, params, parallel, rank0,
                     checkpoint_fct = None):
+
+    batch_size = params['batch_size']
     if parallel:
         train_sampler = DistributedSampler(dataset['train'], 
                                            num_replicas = dist.get_world_size(),
@@ -157,6 +154,8 @@ def train_gnn_model(gnn_model, dataset, params, parallel, rank0,
         test_sampler = DistributedSampler(dataset['test'],      
                                           num_replicas=dist.get_world_size(), 
                                           rank=dist.get_rank())
+        # get smaller batch size to preserve scaling when parallel
+        batch_size = int(np.floor(batch_size / dist.get_world_size()))
     else: 
         num_train = int(len(dataset['train']))
         train_sampler = SubsetRandomSampler(th.arange(num_train))
@@ -165,26 +164,28 @@ def train_gnn_model(gnn_model, dataset, params, parallel, rank0,
     
     train_dataloader = GraphDataLoader(dataset['train'], 
                                        sampler = train_sampler,
-                                       batch_size = params['batch_size'],
+                                       batch_size = batch_size,
                                        drop_last = False)
 
     test_dataloader = GraphDataLoader(dataset['test'], 
                                       sampler = test_sampler,
-                                      batch_size = params['batch_size'],
+                                      batch_size = batch_size,
                                       drop_last = False)
 
+    lr = params['learning_rate']
     if parallel:
         print("my rank = %d, world = %d, train_dataloader_len = %d." \
         % (dist.get_rank(), dist.get_world_size(), len(train_dataloader)),\
         flush=True)
+        # lr = params['learning_rate'] / dist.get_world_size()
     
     optimizer = th.optim.Adam(gnn_model.parameters(),
-                              params['learning_rate'],
-                              weight_decay = params['weight_decay'])
+                            lr,
+                            weight_decay = params['weight_decay'])
 
     nepochs = params['nepochs']
 
-    eta_min = params['learning_rate'] * params['lr_decay']
+    eta_min = lr * params['lr_decay']
     scheduler = th.optim.lr_scheduler.CosineAnnealingLR(optimizer,
                                                         T_max = nepochs,
                                                         eta_min = eta_min)
@@ -326,6 +327,7 @@ if __name__ == "__main__":
         dist.init_process_group(backend='mpi')
         rank = dist.get_rank()
         print("my rank = %d, world = %d." % (rank, dist.get_world_size()), flush=True)
+        th.backends.cudnn.enabled = False
     except RuntimeError:
         parallel = False
         print("MPI not supported. Running serially.")
@@ -373,7 +375,7 @@ if __name__ == "__main__":
 
     types = json.load(open(input_dir + '/types.json'))
 
-    t2k = ['aorta']
+    t2k = ['aorta', 'aortofemoral']
     graphs, params  = gng.generate_normalized_graphs(input_dir, norm_type, 
                                                      'full_dirichlet',
                                                      {'types' : types,

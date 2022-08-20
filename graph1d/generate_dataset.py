@@ -11,7 +11,7 @@ import copy
 import torch as th
 from tqdm import tqdm
 
-nchunks = 5
+nchunks = 10
 
 class Dataset(DGLDataset):
     """
@@ -303,3 +303,33 @@ def generate_dataset(graphs, params, types):
         print('Test size = {:}'.format(len(dataset['test'].graph_names)))
 
     return dataset_list
+
+def generate_dataset_from_params(graphs, params):
+    """
+    Generate a dataset from parameters
+
+    The dictionary of parameters must contain information about train-test 
+    split.
+
+    Arguments: 
+        graphs: list of graphs
+        params: dictionary of parameters
+
+    Returns:
+        Dataset
+
+    """
+
+    train = [graphs[train_graph] for train_graph in params['train_split']]
+    test = [graphs[test_graph] for test_graph in params['test_split']]
+
+    train_dataset = Dataset(train, params, params['train_split'])
+    test_dataset = Dataset(test, params, params['test_split'])
+
+
+    dataset = {'train': train_dataset, 'test': test_dataset}
+
+    print('Train size = {:}'.format(len(dataset['train'].graph_names)))
+    print('Test size = {:}'.format(len(dataset['test'].graph_names)))
+
+    return dataset

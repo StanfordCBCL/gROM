@@ -29,6 +29,9 @@ if __name__ == '__main__':
     print('Test rollout')
     print(history['test_rollout'][1][-1])
 
+    pt.plot_history(history['train_loss'], history['test_loss'], 'loss', '.')
+    pt.plot_history(history['train_rollout'], history['test_rollout'], 'relative rollout error', '.')
+
     data_location = io.data_location()
     graphs, _  = gng.generate_normalized_graphs(data_location + 'graphs/', 
                                                 params['statistics']['normalization_type'], 
@@ -40,6 +43,4 @@ if __name__ == '__main__':
 
     pt.plot_curves(features, real_features, graphs[model_name].ndata['type'],
                    graphs[model_name].ndata['x'], 5, params, '.')
-    pt.plot_history(history['train_loss'], history['test_loss'], 'loss', '.')
-    pt.plot_history(history['train_rollout'], history['test_rollout'], 'relative rollout error', '.')
-
+    

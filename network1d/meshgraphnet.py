@@ -235,7 +235,7 @@ class MeshGraphNet(Module):
             sum of mass loss occurring at branches and at junctions
 
         """
-        g.ndata['next_flowrate'] = flowrate 
+        g.ndata['next_flowrate'] = flowrate.clone()
 
         # we zero-out inlet and outlet flowrate (otherwise they would send
         # their flowrate to branch and junction nodes)
