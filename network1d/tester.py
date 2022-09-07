@@ -27,21 +27,25 @@ def evaluate_all_models(dataset, split_name, gnn_model, params):
     total_time = 0
     tot_errs_normalized = 0
     tot_errs = 0
+    tot_cont_loss = 0
     for i in range(len(dataset.graphs)):
         print('model name = {}'.format(dataset.graph_names[i]))
         fdr = 'results/' + split_name + '/' + dataset.graph_names[i] + '/'
         pathlib.Path(fdr).mkdir(parents=True, exist_ok=True)
         r_features, errs_normalized, \
-        errs, elaps = rollout(gnn_model, params, dataset.graphs[i])
+        errs, cont_loss, elaps = rollout(gnn_model, params, dataset.graphs[i])
         total_time = total_time + elaps
         total_timesteps = total_timesteps + r_features.shape[2]
         print('Errors normalized')
         print_rollout_errors(errs_normalized)
         print('Errors')
         print_rollout_errors(errs)
+        print('Continuity loss')
+        print(cont_loss)
         # plot_rollout(r_features, dataset.graphs[i], params, fdr)
         tot_errs_normalized = tot_errs_normalized + errs_normalized
         tot_errs = tot_errs + errs
+        tot_cont_loss = tot_cont_loss + cont_loss
 
     print('-------------------------------------')
     print('Global statistics')
@@ -50,6 +54,8 @@ def evaluate_all_models(dataset, split_name, gnn_model, params):
     print(tot_errs_normalized / N)
     print('Errors')
     print(tot_errs / N)
+    print('Continuity loss')
+    print(tot_cont_loss / N)
     print('Average time = {:.2f}'.format(total_time / N))
     print('Average n timesteps = {:.2f}'.format(total_timesteps / N))
 

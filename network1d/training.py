@@ -79,12 +79,15 @@ def evaluate_model(gnn_model, train_dataloader, test_dataloader, optimizer,
                 if istride == 0:
                     coeff = 1  
 
+                a_flowrate = gng.invert_normalize(nf[:,1], 'flowrate', 
+                                            params['statistics'], 'features')
+
                 try:
                     c_loss = gnn_model.continuity_loss(batched_graph,
-                                                       ns[:,1,istride])
+                                                       a_flowrate)
                 except Exception as e:
                     c_loss = gnn_model.module.continuity_loss(batched_graph,
-                                                              nf[:,1])             
+                                                              a_flowrate)      
                 loss_v = loss_v + params['continuity_coeff'] * c_loss 
                 loss_v = loss_v + coeff * mse(nf, ns[:,:,istride], mask)
                 metric_v = metric_v + coeff * mae(nf, ns[:,:,istride], mask)
@@ -129,7 +132,7 @@ def evaluate_model(gnn_model, train_dataloader, test_dataloader, optimizer,
 def compute_rollout_errors(gnn_model, params, dataset, idxs_train, idxs_test):
     train_errs = np.zeros(2)
     for idx in idxs_train:
-        _, cur_train_errs, _, _ = rollout(gnn_model, params, 
+        _, cur_train_errs, _, _, _ = rollout(gnn_model, params, 
                                        dataset['train'].graphs[idx])
         train_errs = cur_train_errs + train_errs
     
@@ -137,7 +140,7 @@ def compute_rollout_errors(gnn_model, params, dataset, idxs_train, idxs_test):
 
     test_errs = np.zeros(2)
     for idx in idxs_test:
-        _, cur_test_errs, _, _ = rollout(gnn_model, params, dataset['test'].graphs[idx])
+        _, cur_test_errs, _, _, _ = rollout(gnn_model, params, dataset['test'].graphs[idx])
         test_errs = cur_test_errs + test_errs
     #     print(dataset['test'].graph_names[idx])
     #     print(cur_test_errs)
@@ -310,8 +313,6 @@ def launch_training(dataset, params, parallel, out_dir = 'models/',
     if save_data:
         final_rollout = history['test_rollout'][1][-1]
         print('Final rollout error on test = ' + str(final_rollout))
-    else:
-        sys.exit()
 
     if save_data:
         ptools.plot_history(history['train_loss'],
@@ -347,7 +348,7 @@ if __name__ == "__main__":
 
     parser = argparse.ArgumentParser(description='Graph Reduced Order Models')
 
-    parser.add_argument('--bs', help='batch size', type=int, default=100)
+    parser.add_argument('--bs', help='batch size', type=int, default=300)
     parser.add_argument('--epochs', help='total number of epochs', type=int,
                         default=100)
     parser.add_argument('--lr_decay', help='learning rate decay', type=float,
@@ -368,7 +369,7 @@ if __name__ == "__main__":
     parser.add_argument('--hl_mlp', help='hidden layers mlps', type=int,
                         default=1)
     parser.add_argument('--continuity_coeff', help='continuity coefficient',
-                        type=float, default=1)
+                        type=float, default=1e-6)
     parser.add_argument('--label_norm', help='0: min_max, 1: normal, 2: none',
                         type=int, default=1)
     parser.add_argument('--stride', help='stride for multistep training',
@@ -388,47 +389,49 @@ if __name__ == "__main__":
 
     types = json.load(open(input_dir + '/types.json'))
 
-    t2k = ['aorta', 'aortofemoral']
-    graphs, params  = gng.generate_normalized_graphs(input_dir, norm_type, 
-                                                     'full_dirichlet',
-                                                     {'types' : types,
-                                                     'types_to_keep': t2k})
-    
-    print(params['statistics'])
+    for geoms in [160, 80, 40, 20, 10]:
+        t2k = ['aorta', 'aortofemoral']
+        graphs, params  = gng.generate_normalized_graphs(input_dir, norm_type, 
+                                                        'full_dirichlet',
+                                                        {'types' : types,
+                                                        'types_to_keep': t2k},
+                                                         geoms)
+        
+        print(params['statistics'])
 
-    graph = graphs[list(graphs)[0]]
+        graph = graphs[list(graphs)[0]]
 
-    infeat_nodes = graph.ndata['nfeatures'].shape[1]
-    infeat_edges = graph.edata['efeatures'].shape[1]
-    nout = 2
+        infeat_nodes = graph.ndata['nfeatures'].shape[1]
+        infeat_edges = graph.edata['efeatures'].shape[1]
+        nout = 2
 
-    t_params = {'infeat_nodes': infeat_nodes,
-                'infeat_edges': infeat_edges,
-                'latent_size_gnn': args.ls_gnn,
-                'latent_size_mlp': args.ls_mlp,
-                'out_size': nout,
-                'process_iterations': args.process_iterations,
-                'number_hidden_layers_mlp': args.hl_mlp,
-                'learning_rate': args.lr,
-                'batch_size': args.bs,
-                'lr_decay': args.lr_decay,
-                'nepochs': args.epochs,
-                'weight_decay': args.weight_decay,
-                'rate_noise': args.rate_noise,
-                'rate_noise_features': args.rate_noise_features,
-                'continuity_coeff': args.continuity_coeff,
-                'stride': args.stride}
-    params.update(t_params)
+        t_params = {'infeat_nodes': infeat_nodes,
+                    'infeat_edges': infeat_edges,
+                    'latent_size_gnn': args.ls_gnn,
+                    'latent_size_mlp': args.ls_mlp,
+                    'out_size': nout,
+                    'process_iterations': args.process_iterations,
+                    'number_hidden_layers_mlp': args.hl_mlp,
+                    'learning_rate': args.lr,
+                    'batch_size': args.bs,
+                    'lr_decay': args.lr_decay,
+                    'nepochs': args.epochs,
+                    'weight_decay': args.weight_decay,
+                    'rate_noise': args.rate_noise,
+                    'rate_noise_features': args.rate_noise_features,
+                    'continuity_coeff': args.continuity_coeff,
+                    'stride': args.stride}
+        params.update(t_params)
 
-    datasets = dset.generate_dataset(graphs, params, types)
+        datasets = dset.generate_dataset(graphs, params, types)
 
-    start = time.time()
-    for dataset in datasets:
-        params['train_split'] = dataset['train'].graph_names
-        params['test_split'] = dataset['test'].graph_names
-        gnn_model = launch_training(dataset, params, parallel)
-    end = time.time()
-    elapsed_time = end - start
+        start = time.time()
+        for dataset in datasets:
+            params['train_split'] = dataset['train'].graph_names
+            params['test_split'] = dataset['test'].graph_names
+            gnn_model = launch_training(dataset, params, parallel)
+        end = time.time()
+        elapsed_time = end - start
 
     if rank == 0:
         print('Training time = ' + str(elapsed_time))

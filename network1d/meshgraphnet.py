@@ -243,17 +243,17 @@ class MeshGraphNet(Module):
         g.ndata['next_flowrate'][g.ndata['inlet_mask'].bool()] = 0
         g.ndata['next_flowrate'][g.ndata['outlet_mask'].bool()] = 0
 
-        # we send flowrate through branches, compute the mean
-        # of neighboring nodes, and compute the diff with our estimate
-        g.update_all(fn.copy_u('next_flowrate', 'm'), 
-                     fn.sum('m', 'sum_flowrate'))
-        # branch nodes have only two neighbors
-        diff = th.abs(2 * g.ndata['next_flowrate'] - g.ndata['sum_flowrate'])
-        diff = diff * g.ndata['continuity_mask']
-        if take_mean:
-            branch_continuity = th.mean(diff)
-        else:
-            branch_continuity = th.sum(diff)
+        # # we send flowrate through branches, compute the mean
+        # # of neighboring nodes, and compute the diff with our estimate
+        # g.update_all(fn.copy_u('next_flowrate', 'm'), 
+        #              fn.sum('m', 'sum_flowrate'))
+        # # branch nodes have only two neighbors
+        # diff = th.abs(2 * g.ndata['next_flowrate'] - g.ndata['sum_flowrate'])
+        # diff = diff * g.ndata['continuity_mask']
+        # if take_mean:
+        #     branch_continuity = th.mean(diff)
+        # else:
+        #     branch_continuity = th.sum(diff)
 
         # we keep flowrate at inlet and outlets of junctions
         g.ndata['flow_junction'] = g.ndata['next_flowrate'] * \
@@ -267,11 +267,12 @@ class MeshGraphNet(Module):
         diff = diff * g.ndata['jun_inlet_mask']
 
         if take_mean:
-            junction_continuity = th.mean(diff)
+            junction_continuity = th.sum(diff) / \
+                                th.sum(g.ndata['jun_inlet_mask'])
         else:
             junction_continuity = th.sum(diff)
 
-        return branch_continuity + junction_continuity
+        return junction_continuity
 
     def forward(self, g):
         """

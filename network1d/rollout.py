@@ -33,13 +33,33 @@ def perform_timestep(gnn_model, params, graph, bcs, time_index):
 
 def compute_continuity_loss(gnn_model, graph, rec_features):
     sum = 0
+    parallel = True 
+    try: 
+        c_loss = gnn_model.module.continuity_loss
+    except:
+        parallel = False
+
     for itime in range(rec_features.shape[2]):
+        if parallel:
+            c_loss = gnn_model.module.continuity_loss(graph, rec_features[:,1,
+                                                      itime],
+                                                      take_mean = False)
+        else:
+            c_loss = gnn_model.continuity_loss(graph, rec_features[:,1,itime],
+                                               take_mean = False)
         # to compute total loss we want to consider the sum of flowrate loss
-        sum = sum + gnn_model.continuity_loss(graph, rec_features[:,1,itime],
-                                              take_mean = False)
+        sum = sum + c_loss
     return sum
 
-def rollout(gnn_model, params, graph):
+def compute_average_branches(graph, flowrate):
+    branch_id = graph.ndata['branch_id'].detach().numpy()
+    bmax = np.max(branch_id)
+    for i in range(bmax + 1):
+        idxs = np.where(branch_id == i)[0]
+        rflowrate = th.mean(flowrate[idxs])
+        flowrate[idxs] = rflowrate
+
+def rollout(gnn_model, params, graph, average_branches = True):
     gnn_model.eval()
     times = graph.ndata['nfeatures'].shape[2]
     graph = copy.deepcopy(graph)
@@ -48,14 +68,19 @@ def rollout(gnn_model, params, graph):
     tfc = true_graph.ndata['nfeatures'].clone()
     graph.ndata['nfeatures'] = tfc[:,:,0].clone()
     graph.edata['efeatures'] = true_graph.edata['efeatures'].squeeze().clone()
+        
 
     r_features = graph.ndata['nfeatures'][:,0:2].unsqueeze(axis = 2).clone()
     start = time.time()
     for it in range(times-1):
         gf = perform_timestep(gnn_model, params, graph, tfc, it + 1)
 
+        if average_branches:
+            compute_average_branches(graph, gf[:,1])
+
         graph.ndata['nfeatures'][:,0:2] = gf
         r_features = th.cat((r_features, gf.unsqueeze(axis = 2)), axis = 2)
+
         # set next conditions to exact for debug
         # graph.ndata['nfeatures'][:,0:2] = tfc[:,0:2,it + 1].clone()
 
@@ -93,12 +118,10 @@ def rollout(gnn_model, params, graph):
     errs = th.sqrt(errs)
 
     con_loss = compute_continuity_loss(gnn_model, graph, tfc)
-    print(con_loss)
-    print(th.sum(rfc[0,1,:]))
-    print(con_loss / th.sum(rfc[0,1,:]) )
 
     return r_features.detach().numpy(), errs_normalized.detach().numpy(), \
-           errs.detach().numpy(), end - start
+           errs.detach().numpy(), \
+           (con_loss / th.sum(rfc[0,1,:])).detach().numpy(), end - start
 
     
 

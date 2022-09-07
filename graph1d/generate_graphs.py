@@ -688,6 +688,8 @@ def generate_graph(point_data, points, edges1, edges2,
     graph.ndata['jun_mask'] = th.tensor(jmasks['all'], dtype = th.int8)
     graph.ndata['branch_mask'] = th.tensor(types[:,0].detach().numpy() == 1,
                                            dtype = th.int8)
+    graph.ndata['branch_id'] = th.tensor(point_data['BranchId'],
+                                         dtype = th.int8)
 
     graph.edata['rel_position'] = th.unsqueeze(th.tensor(rel_position,
                                                dtype = th.float32), 2)
@@ -846,7 +848,7 @@ and generate DGL graphs. The graphs are saved in output_dir.
 """
 if __name__ == "__main__":
     data_location = io.data_location()
-    input_dir = data_location + 'vtps_synthetic_aortas/'
+    input_dir = data_location + 'vtps/'
     output_dir = data_location + 'graphs/'
 
     # if we provide timestep file then we need to rescale time in vtp

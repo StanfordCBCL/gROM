@@ -93,6 +93,14 @@ def load_graphs(input_dir, n_graphs_to_keep = -1):
     files = os.listdir(input_dir)
     random.seed(10)
     random.shuffle(files)
+    
+    actual_files = []
+    for file in files:
+        print(file)
+        if '.grph' in file:
+            actual_files.append(file)
+
+    files = actual_files
     if n_graphs_to_keep != -1:
         files = files[0:n_graphs_to_keep]
     graphs = {}
