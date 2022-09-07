@@ -37,10 +37,10 @@ if __name__ == '__main__':
                                                 params['statistics']['normalization_type'], 
                                                 params['bc_type'])
     
-    model_name = sys.argv[2]
-    features, _, _ = rollout(gnn_model, params, graphs[model_name])
+    model_name = '0090_0001.31.0.grph' # sys.argv[2]
+    features, _, _, _ = rollout(gnn_model, params, graphs[model_name])
     real_features = graphs[model_name].ndata['nfeatures']
 
     pt.plot_curves(features, real_features, graphs[model_name].ndata['type'],
-                   graphs[model_name].ndata['x'], 5, params, '.')
+                   graphs[model_name].ndata['x'], 3, params, '.')
     

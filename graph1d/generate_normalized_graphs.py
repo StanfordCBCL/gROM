@@ -33,7 +33,7 @@ def normalize(field, field_name, statistics, norm_dict_label):
             field = field * 0
     elif statistics['normalization_type'][norm_dict_label] == 'normal':
         delta = statistics[field_name]['stdv']
-        if np.abs(delta) > 1e-5:
+        if np.abs(delta) > 1e-5 and not np.isnan(delta):
             field = (field - statistics[field_name]['mean']) / delta
         else:
             field = field * 0
@@ -64,7 +64,10 @@ def invert_normalize(field, field_name, statistics, norm_dict_label):
         field = statistics[field_name]['min'] + delta * field
     elif statistics['normalization_type'][norm_dict_label] == 'normal':
         delta = statistics[field_name]['stdv']
-        field = statistics[field_name]['mean'] + delta * field
+        if np.abs(delta) > 1e-5 and not np.isnan(delta):
+            field = statistics[field_name]['mean'] + delta * field
+        else:
+            field = statistics[field_name]['mean']
     elif statistics['normalization_type'][norm_dict_label] == 'none':
         pass
     else:

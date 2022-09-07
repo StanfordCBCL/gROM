@@ -18,6 +18,7 @@ import matplotlib.cm as cm
 from stl import mesh
 from mpl_toolkits import mplot3d
 from matplotlib import pyplot
+import matplotlib.ticker as ticker
 
 Cardinal_red = "#8F353C"
 Cardinal_blue = "#54A0C0"
@@ -182,46 +183,79 @@ def video_all_nodes(features, graph, params, time,
 def plot_curves(features, real_features, type, points, npoints, params, folder):
     branch_idxs = list(np.where(type[:,0] == 1)[0])
     idx_points = sample(branch_idxs, npoints)
+    idx_points.sort()
+
+    idx_points = [10, 80, 230]
+    print(idx_points)
+
 
     dt = nz.invert_normalize(real_features[0,-1,0], 'dt', params['statistics'],
                              'features')
     times = dt * np.arange(0, real_features.shape[2])
+    
+    fig, ax = plt.subplots(nrows=2, ncols = npoints, figsize=(12,8))
 
+    prange = np.array([np.min(real_features[:,0,:].detach().numpy()), 
+              np.max(real_features[:,0,:].detach().numpy())])
+    qrange = np.array([np.min(real_features[:,1,:].detach().numpy()), 
+              np.max(real_features[:,1,:].detach().numpy())])
+
+    prange = nz.invert_normalize(prange, 'pressure', 
+                                 params['statistics'], 'features')
+    qrange = nz.invert_normalize(qrange, 'flowrate', 
+                                 params['statistics'], 'features')
+
+    colors = ['#ff0000', '#0000FF', '#00FF00']
     for i, point in enumerate(idx_points):
         print('Current point = ' + str(points[point,:]))
-        fig, ax = plt.subplots(2, figsize=(8,8))
 
-        p = nz.invert_normalize(real_features[point,0,:], 'pressure', 
-                            params['statistics'], 'features')
-        ax[0].plot(times, p, linewidth = 3, label = 'ground truth')
         p = nz.invert_normalize(features[point,0,:], 'pressure', 
                             params['statistics'], 'features')
-        ax[0].plot(times, p, linewidth = 3, label = 'GNN')
-
-        q = nz.invert_normalize(real_features[point,1,:], 'flowrate', 
+        ax[0][i].plot(times, p, linewidth = 3, label = 'GNN',
+                   color = colors[i])
+                
+        p = nz.invert_normalize(real_features[point,0,:], 'pressure', 
                             params['statistics'], 'features')
-        ax[1].plot(times, q, linewidth = 3, label = 'ground truth')
+        ax[0][i].plot(times, p, '--', linewidth = 2, label = 'ground truth',
+                   color = 'k')
+
         q = nz.invert_normalize(features[point,1,:], 'flowrate', 
                             params['statistics'], 'features')
-        ax[1].plot(times, q, linewidth = 3, label = 'GNN')
+        ax[1][i].plot(times, q, linewidth = 3, label = 'GNN', 
+                      color = colors[i])
 
-        ax[0].set_xlim((times[0],times[-1]))
-        ax[1].set_xlim((times[0],times[-1]))
-        ax[0].legend()
+        q = nz.invert_normalize(real_features[point,1,:], 'flowrate', 
+                                params['statistics'], 'features')
+        ax[1][i].plot(times, q, '--', linewidth = 2, label = 'ground truth',
+                      color = 'k')
 
-        ax[0].set_ylabel('pressure [mmHg]')
-        ax[1].set_xlabel('time [s]')
-        ax[1].set_ylabel('flowrate [cm^3/s]')
+        ax[0][i].set_xlim((times[0],times[-1]))
+        ax[1][i].set_xlim((times[0],times[-1]))
+        ax[0][i].set_ylim(prange)
+        ax[1][i].set_ylim(qrange)
+        ax[0][i].set_xticklabels([])
 
-        ax[0].legend(frameon=False)
-        ax[1].legend(frameon=False)
-
-        plt.tight_layout()
-
-        if folder != None:
-            plt.savefig(folder + '/curve' + str(i) + '.eps')
+        if i == 0:
+            ax[0][i].set_ylabel('pressure [mmHg]')
+            ax[1][i].set_ylabel('flowrate [cm^3/s]')
         else:
-            plt.show()
+            ax[0][i].set_yticklabels([])
+            ax[1][i].set_yticklabels([])
+
+        ax[1][i].set_xlabel('time [s]')
+
+        ax[1][i].xaxis.set_ticks(np.arange(times[0], times[-1] + 1e-3, 
+                                 (times[-1] - times[0])/3))
+        ax[1][i].xaxis.set_major_formatter(ticker.FormatStrFormatter('%0.1f'))
+        # ax[0][i].legend(frameon=False)
+        # ax[1][i].legend(frameon=False)
+
+        # plt.tight_layout()
+
+    if folder != None:
+        plt.savefig(folder + '/curves.eps')
+    else:
+        plt.show()
 
     fig, ax = plt.subplots(1, figsize=(8,8))
     ax = plt.axes(projection='3d')

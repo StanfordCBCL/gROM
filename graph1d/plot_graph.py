@@ -23,7 +23,7 @@ This function plots a graph and saves it to file.
 """
 if __name__ == "__main__":
     data_location = io.data_location()
-    input_dir = data_location + 'vtps_aortas'
+    input_dir = data_location + 'vtps_synthetic_aortas'
     input_dir_mesh = data_location + 'stls/'
     output_dir = data_location + 'graphs/'
 

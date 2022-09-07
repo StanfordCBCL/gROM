@@ -846,7 +846,7 @@ and generate DGL graphs. The graphs are saved in output_dir.
 """
 if __name__ == "__main__":
     data_location = io.data_location()
-    input_dir = data_location + 'vtps/'
+    input_dir = data_location + 'vtps_synthetic_aortas/'
     output_dir = data_location + 'graphs/'
 
     # if we provide timestep file then we need to rescale time in vtp
@@ -944,11 +944,11 @@ if __name__ == "__main__":
                                                     part['edges2'], 
                                                     add_boundary_edges,
                                                     add_junction_edges)
-                    pathlib.Path('images').mkdir(parents=True, exist_ok=True)
-                    pt.plot_graph(points, bif_id, indices, edges1, edges2)
-                    plt.savefig('images/' + filename + '.eps', 
-                                format='eps',
-                                bbox_inches='tight')
+                    # pathlib.Path('images').mkdir(parents=True, exist_ok=True)
+                    # pt.plot_graph(points, bif_id, indices, edges1, edges2)
+                    # plt.savefig('images/' + filename + '.eps', 
+                    #             format='eps',
+                    #             bbox_inches='tight')
                     c_pressure = {}
                     c_flowrate = {}
                     for t in pressure:

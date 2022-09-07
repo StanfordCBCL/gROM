@@ -132,6 +132,7 @@ class Dataset(DGLDataset):
 
         dt = nz.invert_normalize(self.graphs[igraph].ndata['dt'][0], 'dt',
                                  self.params['statistics'], 'features')
+
         curnoise = np.random.normal(0, self.params['rate_noise'] * dt, nfsize)
         nf[:,:2] = nf[:,:2] + curnoise
 

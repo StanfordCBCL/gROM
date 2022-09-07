@@ -51,6 +51,7 @@ def evaluate_model(gnn_model, train_dataloader, test_dataloader, optimizer,
     def loop_over(dataloader, label, c_optimizer = None):
         global_loss = 0
         global_metric = 0
+        global_cont = 0
         count = 0
 
         def iteration(batched_graph, c_optimizer):
@@ -80,7 +81,7 @@ def evaluate_model(gnn_model, train_dataloader, test_dataloader, optimizer,
 
                 try:
                     c_loss = gnn_model.continuity_loss(batched_graph,
-                                                       nf[:,1])
+                                                       ns[:,1,istride])
                 except Exception as e:
                     c_loss = gnn_model.module.continuity_loss(batched_graph,
                                                               nf[:,1])             
@@ -93,24 +94,29 @@ def evaluate_model(gnn_model, train_dataloader, test_dataloader, optimizer,
                 loss_v.backward()
                 optimizer.step()
             
-            return loss_v.detach().numpy(), metric_v.detach().numpy()
+            return loss_v.detach().numpy(), metric_v.detach().numpy(), \
+                   c_loss.detach().numpy()
 
 
         if not print_progress:
             for batched_graph in dataloader:
-                loss_v, metric_v = iteration(batched_graph, c_optimizer)
+                loss_v, metric_v, cont_v = iteration(batched_graph, c_optimizer)
                 global_loss = global_loss + loss_v
                 global_metric = global_metric + metric_v
+                global_cont = global_cont + cont_v
                 count = count + 1
         else:
             for batched_graph in tqdm(dataloader, 
                                     desc = label, colour='green'):
-                loss_v, metric_v = iteration(batched_graph, c_optimizer)
+                loss_v, metric_v, cont_v = iteration(batched_graph, c_optimizer)
                 global_loss = global_loss + loss_v
                 global_metric = global_metric + metric_v
+                global_cont = global_cont + cont_v
                 count = count + 1
 
-        return {'loss': global_loss / count, 'metric': global_metric / count}
+        return {'loss': global_loss / count, 
+                'metric': global_metric / count,
+                'continuity': global_cont / count}
 
     gnn_model.train()
     start = time.time()
@@ -133,11 +139,11 @@ def compute_rollout_errors(gnn_model, params, dataset, idxs_train, idxs_test):
     for idx in idxs_test:
         _, cur_test_errs, _, _ = rollout(gnn_model, params, dataset['test'].graphs[idx])
         test_errs = cur_test_errs + test_errs
-        print(dataset['test'].graph_names[idx])
-        print(cur_test_errs)
+    #     print(dataset['test'].graph_names[idx])
+    #     print(cur_test_errs)
 
-    print(test_errs)
-    print(len(idxs_test))
+    # print(test_errs)
+    # print(len(idxs_test))
 
     test_errs = test_errs / (len(idxs_test))
 
@@ -201,9 +207,11 @@ def train_gnn_model(gnn_model, dataset, params, parallel, rank0,
     history['train_loss'] = [[], []]
     history['train_metric'] = [[], []]
     history['train_rollout'] = [[], []]
+    history['train_cont'] = [[], []]
     history['test_loss'] = [[], []]
     history['test_metric'] = [[], []]
-    history['test_rollout'] = [[], []]         
+    history['test_rollout'] = [[], []]  
+    history['test_cont'] = [[], []]       
     for epoch in range(nepochs):
         if rank0:
             print('================{}================'.format(epoch))
@@ -215,12 +223,13 @@ def train_gnn_model(gnn_model, dataset, params, parallel, rank0,
                                                               rank0,
                                                               params)
 
-        msg = '{:.0f}\t'.format(epoch)
-        msg = msg + 'train_loss = {:.2e} '.format(train_results['loss'])
-        msg = msg + 'train_mae = {:.2e} '.format(train_results['metric'])
-        msg = msg + 'test_loss = {:.2e} '.format(test_results['loss'])
-        msg = msg + 'test_mae = {:.2e} '.format(test_results['metric'])
-        msg = msg + 'time = {:.2f} s'.format(elapsed)
+        msg = 'epoch {:.0f}, time = {:.2f} s \n'.format(epoch, elapsed)
+        msg = msg + '\ttrain:\tloss = {:.2e}\t'.format(train_results['loss'])
+        msg = msg + 'mae = {:.2e}\t'.format(train_results['metric'])
+        msg = msg + 'continuity = {:.2e}\n'.format(train_results['continuity'])
+        msg = msg + '\ttest:\tloss = {:.2e}\t'.format(test_results['loss'])
+        msg = msg + 'mae = {:.2e}\t'.format(test_results['metric'])
+        msg = msg + 'continuity = {:.2e}'.format(test_results['continuity'])
 
         if rank0:
             print("", flush = True)
@@ -230,11 +239,15 @@ def train_gnn_model(gnn_model, dataset, params, parallel, rank0,
         history['train_loss'][1].append(float(train_results['loss']))
         history['train_metric'][0].append(epoch)
         history['train_metric'][1].append(float(train_results['metric']))
+        history['train_cont'][0].append(epoch)
+        history['train_cont'][1].append(float(train_results['continuity']))
 
         history['test_loss'][0].append(epoch)
         history['test_loss'][1].append(float(test_results['loss']))
         history['test_metric'][0].append(epoch)
         history['test_metric'][1].append(float(test_results['metric']))
+        history['test_cont'][0].append(epoch)
+        history['test_cont'][1].append(float(test_results['continuity']))
 
         if rank0:
             if epoch % np.floor(nepochs / 10) == 0 or epoch == (nepochs - 1):
@@ -338,7 +351,7 @@ if __name__ == "__main__":
     parser.add_argument('--epochs', help='total number of epochs', type=int,
                         default=100)
     parser.add_argument('--lr_decay', help='learning rate decay', type=float,
-                        default=0.1)
+                        default=0.001)
     parser.add_argument('--lr', help='learning rate', type=float, default=0.005)
     parser.add_argument('--rate_noise', help='rate noise', type=float,
                         default=100)
@@ -355,7 +368,7 @@ if __name__ == "__main__":
     parser.add_argument('--hl_mlp', help='hidden layers mlps', type=int,
                         default=1)
     parser.add_argument('--continuity_coeff', help='continuity coefficient',
-                        type=float, default=1e-3)
+                        type=float, default=1)
     parser.add_argument('--label_norm', help='0: min_max, 1: normal, 2: none',
                         type=int, default=1)
     parser.add_argument('--stride', help='stride for multistep training',
@@ -380,6 +393,8 @@ if __name__ == "__main__":
                                                      'full_dirichlet',
                                                      {'types' : types,
                                                      'types_to_keep': t2k})
+    
+    print(params['statistics'])
 
     graph = graphs[list(graphs)[0]]
 

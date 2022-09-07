@@ -39,7 +39,7 @@ def evaluate_all_models(dataset, split_name, gnn_model, params):
         print_rollout_errors(errs_normalized)
         print('Errors')
         print_rollout_errors(errs)
-        plot_rollout(r_features, dataset.graphs[i], params, fdr)
+        # plot_rollout(r_features, dataset.graphs[i], params, fdr)
         tot_errs_normalized = tot_errs_normalized + errs_normalized
         tot_errs = tot_errs + errs
 
@@ -61,6 +61,9 @@ if __name__ == '__main__':
 
     gnn_model = MeshGraphNet(params)
     gnn_model.load_state_dict(th.load(path + '/trained_gnn.pms'))
+    # pytorch_total_params = sum(p.numel() for p in gnn_model.parameters() if p.requires_grad)
+
+    # print(pytorch_total_params)
 
     data_location = io.data_location()
     types = json.load(open(data_location + 'graphs/types.json'))

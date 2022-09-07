@@ -31,6 +31,14 @@ def perform_timestep(gnn_model, params, graph, bcs, time_index):
 
     return gf[:,0:2]
 
+def compute_continuity_loss(gnn_model, graph, rec_features):
+    sum = 0
+    for itime in range(rec_features.shape[2]):
+        # to compute total loss we want to consider the sum of flowrate loss
+        sum = sum + gnn_model.continuity_loss(graph, rec_features[:,1,itime],
+                                              take_mean = False)
+    return sum
+
 def rollout(gnn_model, params, graph):
     gnn_model.eval()
     times = graph.ndata['nfeatures'].shape[2]
@@ -83,6 +91,11 @@ def rollout(gnn_model, params, graph):
     errs = th.sum(th.sum(diff**2, dim = 0), dim = 1)
     errs = errs / th.sum(th.sum(tfc**2, dim = 0), dim = 1)
     errs = th.sqrt(errs)
+
+    con_loss = compute_continuity_loss(gnn_model, graph, tfc)
+    print(con_loss)
+    print(th.sum(rfc[0,1,:]))
+    print(con_loss / th.sum(rfc[0,1,:]) )
 
     return r_features.detach().numpy(), errs_normalized.detach().numpy(), \
            errs.detach().numpy(), end - start

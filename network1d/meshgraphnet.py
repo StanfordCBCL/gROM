@@ -220,7 +220,7 @@ class MeshGraphNet(Module):
         h = self.output(nodes.data['proc_node'])
         return {'pred_labels': h}
 
-    def continuity_loss(self, g, flowrate):
+    def continuity_loss(self, g, flowrate, take_mean = True):
         """
         Compute contiuity loss
 
@@ -230,7 +230,8 @@ class MeshGraphNet(Module):
         Arguments:
             g: graph
             flowrate: tensor containing nodal values of flowrate
-
+            take_mean: if True, take mean of branch and junction losses. If 
+                       False, take sum. Default -> True.
         Returns: 
             sum of mass loss occurring at branches and at junctions
 
@@ -249,7 +250,10 @@ class MeshGraphNet(Module):
         # branch nodes have only two neighbors
         diff = th.abs(2 * g.ndata['next_flowrate'] - g.ndata['sum_flowrate'])
         diff = diff * g.ndata['continuity_mask']
-        branch_continuity = th.mean(diff)
+        if take_mean:
+            branch_continuity = th.mean(diff)
+        else:
+            branch_continuity = th.sum(diff)
 
         # we keep flowrate at inlet and outlets of junctions
         g.ndata['flow_junction'] = g.ndata['next_flowrate'] * \
@@ -261,7 +265,11 @@ class MeshGraphNet(Module):
         # we use the inlet to compute the difference
         diff = th.abs(g.ndata['sum_flowrate'] - g.ndata['next_flowrate'])
         diff = diff * g.ndata['jun_inlet_mask']
-        junction_continuity = th.mean(diff)
+
+        if take_mean:
+            junction_continuity = th.mean(diff)
+        else:
+            junction_continuity = th.sum(diff)
 
         return branch_continuity + junction_continuity
 
