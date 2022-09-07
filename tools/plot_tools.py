@@ -15,7 +15,7 @@ from vtk.util.numpy_support import vtk_to_numpy
 from random import sample
 import graph1d.generate_normalized_graphs as nz
 import matplotlib.cm as cm
-from stl import mesh
+# from stl import mesh
 from mpl_toolkits import mplot3d
 from matplotlib import pyplot
 

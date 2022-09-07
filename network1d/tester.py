@@ -39,7 +39,7 @@ def evaluate_all_models(dataset, split_name, gnn_model, params):
         print_rollout_errors(errs_normalized)
         print('Errors')
         print_rollout_errors(errs)
-        plot_rollout(r_features, dataset.graphs[i], params, fdr)
+        # plot_rollout(r_features, dataset.graphs[i], params, fdr)
         tot_errs_normalized = tot_errs_normalized + errs_normalized
         tot_errs = tot_errs + errs
 
@@ -65,15 +65,16 @@ if __name__ == '__main__':
     data_location = io.data_location()
     types = json.load(open(data_location + 'graphs/types.json'))
     t2k = ['aorta', 'aortofemoral']
-    graphs, _  = gng.generate_normalized_graphs(data_location + 'graphs/', 
-                                                params['statistics']['normalization_type'], 
+    graphs, _  = gng.generate_normalized_graphs(data_location + 'graphs/',
+                                                params['statistics']['normalization_type'],
                                                 params['bc_type'],
                                                  {'types' : types,
                                                 'types_to_keep': t2k})
+
     dataset = dset.generate_dataset_from_params(graphs, params)
 
     if os.path.exists('results'):
         shutil.rmtree('results')
-    
+
     evaluate_all_models(dataset, 'train', gnn_model, params)
     evaluate_all_models(dataset, 'test', gnn_model, params)
