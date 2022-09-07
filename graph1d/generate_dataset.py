@@ -16,30 +16,30 @@ nchunks = 10
 class Dataset(DGLDataset):
     """
     Class to store and traverse a DGL dataset.
-    
+
     Attributes:
         graphs: list of graphs in the dataset
         params: dictionary containing parameters of the problem
         times: array containing number of times for each graph in the dataset
         lightgraphs: list of graphs, without edge and node features
-        graph_names: n x 2 array (n is the total number of timesteps in the 
+        graph_names: n x 2 array (n is the total number of timesteps in the
                      dataset) mapping a graph index (first column) to the
                      timestep index (second column).
-  
+
     """
     def __init__(self, graphs, params, graph_names):
         """
         Init Dataset.
-        
-        Init Dataset with list of graphs, dictionary of parameters, and list of 
+
+        Init Dataset with list of graphs, dictionary of parameters, and list of
         graph names.
 
         Arguments:
             graphs: lift of graphs
             params: dictionary of parameters
             graph_names: list of graph names
-            index_map: 
-    
+            index_map:
+
         """
         self.graphs = graphs
         self.params = params
@@ -51,11 +51,11 @@ class Dataset(DGLDataset):
     def create_index_map(self):
         """
         Create index map.
-        
-        Index map is a n x 2 array (n is the total number of timesteps in the 
-        dataset) mapping a graph index (first column) to the timestep index 
+
+        Index map is a n x 2 array (n is the total number of timesteps in the
+        dataset) mapping a graph index (first column) to the timestep index
         (second column).
-    
+
         """
         i = 0
         offset = 0
@@ -67,24 +67,24 @@ class Dataset(DGLDataset):
             at = t - stride
             graph_index = np.ones((at, 1)) * i
             time_index = np.expand_dims(np.arange(0, at), axis = 1)
-            self.index_map[offset:at + offset,:] = np.concatenate((graph_index, 
+            self.index_map[offset:at + offset,:] = np.concatenate((graph_index,
                                                                    time_index),
                                                                    axis = 1)
             i = i + 1
             offset = offset + at
         self.index_map = np.array(self.index_map, dtype = int)
-            
+
     def process(self):
         """
         Process Dataset.
 
         This function creates lightgraphs, the index map, and collects all times
         from the graphs.
-    
+
         """
         start = time.time()
 
-        for graph in tqdm(self.graphs, desc = 'Processing dataset', 
+        for graph in tqdm(self.graphs, desc = 'Processing dataset',
                           colour='green'):
 
             lightgraph = copy.deepcopy(graph)
@@ -136,7 +136,7 @@ class Dataset(DGLDataset):
         curnoise = np.random.normal(0, self.params['rate_noise'] * dt, nfsize)
         nf[:,:2] = nf[:,:2] + curnoise
 
-        fnoise = np.random.normal(0, self.params['rate_noise_features'], 
+        fnoise = np.random.normal(0, self.params['rate_noise_features'],
                                   nf[:,2:].shape)
         nf[:,2:] = nf[:,2:] + fnoise
 
@@ -161,7 +161,7 @@ class Dataset(DGLDataset):
         ef = self.graphs[indices[0]].edata['efeatures']
 
         # add regular noise to the edge features to prevent overfitting
-        fnoise = np.random.normal(0, self.params['rate_noise_features'], 
+        fnoise = np.random.normal(0, self.params['rate_noise_features'],
                                   ef[:,2:].shape)
         ef[:,2:] = ef[:,2:] + fnoise
         self.lightgraphs[indices[0]].edata['efeatures'] = ef.squeeze()
@@ -174,7 +174,7 @@ class Dataset(DGLDataset):
 
         Arguments:
             i: index of the lightgraph
-        
+
         Returns:
             ith lightgraph
         """
@@ -204,11 +204,11 @@ def split(graphs, divs, types):
     """
     Split a list of graphs.
 
-    The graphs are split into multiple train/test groups. Number of groups is 
-    determined by the divs argument. The function takes as input the type of 
+    The graphs are split into multiple train/test groups. Number of groups is
+    determined by the divs argument. The function takes as input the type of
     graphs to make the datasets balanced.
 
-    Arguments: 
+    Arguments:
         divs: number of train/test groups.
         types: dictionary (key: graph name, value: type)
 
@@ -251,13 +251,13 @@ def split(graphs, divs, types):
             del subsets[sublist_n][-1]
         nsets = len(subsets[sublist_n])
 
-    datasets = [] 
+    datasets = []
 
     for i in range(1):
         cur_set = []
         for _, subset_v in subsets.items():
             cur_set = cur_set + subset_v[i]
-    
+
         newdata = {'test': cur_set}
         train_s = []
         for j in range(nsets):
@@ -275,11 +275,11 @@ def generate_dataset(graphs, params, types):
     """
     Generate a list of datasets
 
-    The returned list is composed of dictionary containing train and test 
+    The returned list is composed of dictionary containing train and test
     Datasets. The function takes as input the type of graphs to make the
     datasets balanced.
 
-    Arguments: 
+    Arguments:
         graphs: list of graphs
         params: dictionary of parameters
         types: dictionary (key: graph name, value: type)
@@ -288,7 +288,7 @@ def generate_dataset(graphs, params, types):
         List of datasets
     """
     dataset_list = []
-    datasets = split(graphs, nchunks, types)    
+    datasets = split(graphs, nchunks, types)
     for dataset in datasets:
         train_graphs = [graphs[gname] for gname in dataset['train']]
         train_dataset = Dataset(train_graphs, params, dataset['train'])
@@ -309,10 +309,10 @@ def generate_dataset_from_params(graphs, params):
     """
     Generate a dataset from parameters
 
-    The dictionary of parameters must contain information about train-test 
+    The dictionary of parameters must contain information about train-test
     split.
 
-    Arguments: 
+    Arguments:
         graphs: list of graphs
         params: dictionary of parameters
 

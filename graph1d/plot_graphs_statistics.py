@@ -17,7 +17,6 @@ import tools.plot_tools as pt
 import matplotlib.pyplot as plt
 import generate_graphs as gg
 import generate_normalized_graphs as gng
-from stl import mesh
 from mpl_toolkits import mplot3d
 import math
 

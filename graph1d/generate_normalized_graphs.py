@@ -5,25 +5,26 @@ import tools.io_utils as io
 import dgl
 import torch as th
 from tqdm import tqdm
-from dgl.data.utils import load_graphs
+from dgl.data.utils import load_graphs as lg
 import numpy as np
 import json
+import random
 
 def normalize(field, field_name, statistics, norm_dict_label):
     """
     Normalize field.
-  
+
     Normalize a field using statistics provided as input.
-  
+
     Arguments:
         field: the field to normalize
         field_name (string): name of field
-        statistics: dictionary containining statistics 
+        statistics: dictionary containining statistics
                     (key: statistics name, value: value)
         norm_dict_label (string): 'features' or 'labels'
     Returns:
         normalized field
-  
+
     """
     if statistics['normalization_type'][norm_dict_label] == 'min_max':
         delta = (statistics[field_name]['max'] - statistics[field_name]['min'])
@@ -52,7 +53,7 @@ def invert_normalize(field, field_name, statistics, norm_dict_label):
     Arguments:
         field: the field to normalize
         field_name (string): name of field
-        statistics: dictionary containining statistics 
+        statistics: dictionary containining statistics
                     (key: statistics name, value: value)
         norm_dict_label (string): 'feature' or 'label'
     Returns:
@@ -74,7 +75,7 @@ def invert_normalize(field, field_name, statistics, norm_dict_label):
         raise Exception('Normalization type not implemented')
     return field
 
-def load_all_graphs(input_dir):
+def load_graphs(input_dir, n_graphs_to_keep = -1):
     """
     Load all graphs in directory.
 
@@ -82,16 +83,22 @@ def load_all_graphs(input_dir):
 
     Arguments:
         input_dir (string): input directory path
+        n_graphs_to_keep: number of graphs to keep. If -1, keep all graphs.
+                          Default value -> -1.
+
     Returns:
         list of DGL graphs
 
     """
-    files = os.listdir(input_dir) 
-
+    files = os.listdir(input_dir)
+    random.seed(10)
+    random.shuffle(files)
+    if n_graphs_to_keep != -1:
+        files = files[0:n_graphs_to_keep]
     graphs = {}
     for file in tqdm(files, desc = 'Loading graphs', colour='green'):
         if 'grph' in file:
-            graphs[file] = load_graphs(input_dir + file)[0][0]
+            graphs[file] = lg(input_dir + file)[0][0]
 
     return graphs
 
@@ -99,14 +106,14 @@ def compute_statistics(graphs, fields, statistics):
     """
     Compute statistics on a list of graphs.
 
-    The computet statistics are: min value, max value, mean, and standard 
+    The computet statistics are: min value, max value, mean, and standard
     deviation.
 
     Arguments:
         graphs: list of graphs
         fields: dictionary containing field names, divided into node and edge
                 fields
-        statistics: dictionary containining statistics 
+        statistics: dictionary containining statistics
                     (key: statistics name, value: value)
     Returns:
         dictionary containining statistics (key: statistics name, value: value).
@@ -172,7 +179,7 @@ def normalize_graphs(graphs, fields, statistics, norm_dict_label):
         graphs: list of graphs
         fields: dictionary containing field names, divided into node and edge
                 fields
-        statistics: dictionary containining statistics 
+        statistics: dictionary containining statistics
                     (key: statistics name, value: value)
         norm_dict_label (string): 'features' or 'labels'
 
@@ -180,15 +187,15 @@ def normalize_graphs(graphs, fields, statistics, norm_dict_label):
     print('Normalize graphs')
     for etype in fields:
             for field_name in fields[etype]:
-                for graph_n in tqdm(graphs, desc = field_name, 
+                for graph_n in tqdm(graphs, desc = field_name,
                                     colour='green'):
                     graph = graphs[graph_n]
                     if etype == 'node':
                         d = graph.ndata[field_name]
                         graph.ndata[field_name] = normalize(d, field_name,
                                                             statistics,
-                                                            norm_dict_label)    
-                                
+                                                            norm_dict_label)
+
                     if etype == 'edge':
                         d = graph.edata[field_name]
                         graph.edata[field_name] = normalize(d, field_name,
@@ -199,7 +206,7 @@ def add_features(graphs, params):
     """
     Add features to graphs.
 
-    This function adds node and edge features to all graphs in 
+    This function adds node and edge features to all graphs in
     the input list.
 
     Arguments:
@@ -219,7 +226,7 @@ def add_features(graphs, params):
         p = graph.ndata['pressure'].clone()
         q = graph.ndata['flowrate'].clone()
 
-        graph.ndata['nfeatures'] = th.cat((p, q, area, tangent, 
+        graph.ndata['nfeatures'] = th.cat((p, q, area, tangent,
                                            type, dt), axis = 1)
 
         rp = graph.edata['rel_position']
@@ -274,34 +281,36 @@ def save_parameters(params, output_dir):
     with open(output_dir + '/parameters.json', 'w') as outfile:
         json.dump(params, outfile, indent=4)
 
-def generate_normalized_graphs(input_dir, norm_type, bc_type, 
-                               types_to_keep = None):
+def generate_normalized_graphs(input_dir, norm_type, bc_type,
+                               types_to_keep = None,
+                               n_graphs_to_keep = -1):
     """
     Generate normalized graphs.
 
     Arguments:
         input_dir: path to input directory
-        norm_type: dictionary with keys: features/labels, 
+        norm_type: dictionary with keys: features/labels,
                    values: min_max/normal
-        bc_type: boundary condition type. Currently supported: full_dirichlet 
-                 (pressure and flowrate imposed at boundary nodes) and 
+        bc_type: boundary condition type. Currently supported: full_dirichlet
+                 (pressure and flowrate imposed at boundary nodes) and
                  realistic dirichlet (flowrate imposed at inlet, pressure
                  imposed at outlets)
         types_to_keep: dictionary containing all graphs types, and list
-                       containing types we want to keep. If None, keep all 
+                       containing types we want to keep. If None, keep all
                        types. Default value -> None.
-    
+        n_graphs_to_keep: number of graphs to keep. If -1, keep all graphs.
+                          Default value -> -1.
+
     Return:
         List of normalized graphs
         Dictionary of parameters
 
     """
-    fields_to_normalize = {'node': ['area', 'pressure', 
-                                'flowrate', 'dt'], 
+    fields_to_normalize = {'node': ['area', 'pressure',
+                                'flowrate', 'dt'],
                        'edge': ['distance']}
     statistics = {'normalization_type': norm_type}
-    graphs = load_all_graphs(input_dir)
-
+    graphs = load_graphs(input_dir, n_graphs_to_keep)
     if types_to_keep != None:
         selected_graphs = {}
         types = types_to_keep['types']
@@ -319,9 +328,9 @@ def generate_normalized_graphs(input_dir, norm_type, bc_type,
     params = {'bc_type': bc_type}
     params['statistics'] = statistics
     add_features(graphs, params)
-    
+
     return graphs, params
-    
+
 # if __name__ == "__main__":
 #     data_location = io.data_location()
 #     norm_type_features = 'normal'
