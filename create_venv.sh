@@ -13,6 +13,3 @@ pip install scipy
 pip install dgl
 pip install torch
 pip install tqdm
-pip install sigopt
-
-sigopt config
