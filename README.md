@@ -2,6 +2,11 @@
 
 In this repository we implement reduced order models for cardiovascular simulations using Graph Neural Networks (GNNs).
 
+<p  align="center">
+    <img src="https://github.com/lucapegolotti/gROM/blob/main/.repo/aortofemoral_simulation.gif" alt="Simulation">
+</p>
+
+
 ### Install the virtual environment ###
 
 Let us first install `virtualenv`:
@@ -35,11 +40,11 @@ The parameters of the trained model and hyperparameters will be saved in `networ
 
 Within the directory `graphs`, type
 
-    python tester.py $NETWORKPATH
+    python network1d/tester.py $NETWORKPATH
 
 For example,
 
-    python tester.py models/01.01.1990_00.00.00
+    python network1d/tester.py models/01.01.1990_00.00.00
 
 This will save comparative plots in the same directory.
 In the example, `models/01.01.1990_00.00.00` is a model generated after training (see Train a GNN).
