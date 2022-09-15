@@ -8,6 +8,20 @@ import copy
 import time
 
 def set_boundary_conditions(matrix, graph, params, bcs, time_index):
+    """
+    Set boundary conditions to a matrix.
+
+    Arguments:
+        matrix: the 2D array
+        graph: DGL graph
+        params: dictionary of parameters
+        bcs: 3D array containing the boundary conditions. 
+             dim 1: node index, dim 2: pressure (0) and flow rate (1),
+             dim 3: timesteps
+        time index (int): index of timestep where we have to take the boundary
+                          conditions from
+
+    """
     # set boundary conditions
     if params['bc_type'] == 'realistic_dirichlet':
         matrix[graph.ndata['outlet_mask'].bool(), 0] = bcs[graph.ndata['outlet_mask'].bool(), 0, time_index]
@@ -19,6 +33,23 @@ def set_boundary_conditions(matrix, graph, params, bcs, time_index):
         matrix[graph.ndata['outlet_mask'].bool(), 1] = bcs[graph.ndata['outlet_mask'].bool(), 1, time_index]
 
 def perform_timestep(gnn_model, params, graph, bcs, time_index):
+    """
+    Performs a single timestep of the rollout phase.
+
+    Arguments:
+        gnn_model: the GNN model
+        params: dictionary of parameters
+        graph: DGL graph
+        bcs: 3D array containing the boundary conditions. 
+             dim 1: node index, dim 2: pressure (0) and flow rate (1),
+             dim 3: timesteps
+        time index (int): index of timestep where we have to take the boundary
+                          conditions from
+    Returns:
+        2D array where dim 1 corresponds to node indices, and dim 2 corresponds 
+            to pressure (0) and flow rate (1)
+
+    """
     gf = graph.ndata['nfeatures']
 
     set_boundary_conditions(gf, graph, params, bcs, time_index)
@@ -35,6 +66,19 @@ def perform_timestep(gnn_model, params, graph, bcs, time_index):
     return gf[:,0:2]
 
 def compute_continuity_loss(gnn_model, graph, rec_features):
+    """
+    Compute continuity loss.
+
+    Arguments:
+        gnn_model: the GNN model
+        graph: DGL graph
+        rec_features: 3D array where dim 1 corresponds to node indices,  
+                      dim 2 corresponds to pressure (0) and flow rate (1), 
+                      and dim 3 corresponds to the timestep index.
+    Returns:
+        Sum of continuity loss over all timesteps
+
+    """
     sum = 0
     parallel = True 
     try: 
@@ -55,6 +99,14 @@ def compute_continuity_loss(gnn_model, graph, rec_features):
     return sum
 
 def compute_average_branches(graph, flowrate):
+    """
+    Average flowrate over branch nodes
+
+    Arguments:
+        graph: DGL graph
+        flowrate: 1D tensor containing nodal flow rate values
+
+    """
     branch_id = graph.ndata['branch_id'].detach().numpy()
     bmax = np.max(branch_id)
     for i in range(bmax + 1):
@@ -63,6 +115,26 @@ def compute_average_branches(graph, flowrate):
         flowrate[idxs] = rflowrate
 
 def rollout(gnn_model, params, graph, average_branches = True):
+    """
+    Performs rollout phase.
+
+    Arguments:
+        gnn_model: the GNN
+        params: dictionary of parameters
+        graph: DGL graph
+        average_branches: if Trues, averages flowrate over branch nodes.
+                          Default -> True
+
+    Returns:
+        2D array of reconstructed features, where dim 1 corresponds to node 
+            indices and dim 2 corresponds to pressure (0) and flow rate (1),
+        2D array containing normalized pressure and flow rate relative errors
+        2D array containing pressure and flow rate relative errors
+        2D array containing the difference of reconstructed and actual features
+        Relative continuity loss
+        Elapsed time in seconds
+
+    """
     gnn_model.eval()
     times = graph.ndata['nfeatures'].shape[2]
     graph = copy.deepcopy(graph)
