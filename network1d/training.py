@@ -23,12 +23,31 @@ import pickle
 import signal
 import graph1d.generate_normalized_graphs as gng
 import random
-from torch.optim.optimizer import Optimizer
 
 class SignalHandler(object):
+    """
+    Signal handler. 
+
+    We use the signal handler to listen for ctrl-c during training. When 
+    triggered, we asked the user if training should be stopped and, if so,
+    the current model is saved.
+
+    """
     def __init__(self):
+        """
+        Constructor
+
+        """
         self.should_exit = False
     def handle(self, sig, frm):
+        """
+        Handle the signals
+
+        Arguments:
+            sig: unused argument from overwritten method
+            frm: unused argument from overwritten method
+
+        """
         res = input("Do you want to exit training?" + \
                         "Model and statistics will be saved (y/n)")
         if res == "y":
@@ -37,24 +56,101 @@ class SignalHandler(object):
             pass
 
 def mse(input, target, mask = None):
+    """
+    Mean square error.
+
+    This is defined as the ((input - target)**2).mean()
+
+    Arguments:
+        input: first tensor
+        target: second tensor (ideally, the result we are trying to match)
+        mask: tensor of 1 and 0 with same size as input and target. If not 
+              None, selects only components for which it equals 1. 
+              Default -> None
+    
+    Returns:
+        The mean square error
+
+    """
     if mask == None:
         return ((input - target) ** 2).mean()
     return (mask * (input - target) ** 2).mean() 
 
 def mae(input, target, mask = None):
+    """
+    Mean average error.
+
+    This is defined as the (abs(input - target)).mean()
+
+    Arguments:
+        input: first tensor
+        target: second tensor (ideally, the result we are trying to match)
+        mask: tensor of 1 and 0 with same size as input and target. If not 
+              None, selects only components for which it equals 1. 
+              Default -> None
+    
+    Returns:
+        The mean average error
+
+    """
     if mask == None:
         return (th.abs(input - target)).mean()
     return (mask * (th.abs(input - target))).mean()
 
 def evaluate_model(gnn_model, train_dataloader, test_dataloader, optimizer,     
                    print_progress, params):
+    """
+    Evaluates and train a GNN model.
+
+    Arguments:
+        gnn_model: the GNN to train
+        train_dataloader: dataloader containing train graphs
+        test_dataloader: dataloader containing test graphs
+        optimizer: a Pytorch optimizer
+        print_progress: if True, prints the progress bar during epochs.
+        params: dictionary of parameters
+    
+    Returns:
+        Dictionary containing train results
+        Dictionary containing test results
+        Elapsed time in seconds
+
+    """
     def loop_over(dataloader, label, c_optimizer = None):
+        """
+        Performs one epoch by looping over all batches in the dataloader.
+
+        Arguments:
+            dataloader: a DGL dataloader
+            label (string): either 'test' or 'train' (used for progress bar)
+            c_optimizer: pytorch optimizer. If not none, performs optimization
+                         of the GNN. Default -> None.
+        
+        Returns:
+            Dictionary containing values of loss, train metric, and continuity
+                loss
+
+        """
         global_loss = 0
         global_metric = 0
         global_cont = 0
         count = 0
 
         def iteration(batched_graph, c_optimizer):
+            """
+            Performs one train iteration
+
+            Arguments:
+                batched_graph: a DGL batched graph
+                c_optimizer: pytorch optimizer. If not None, performs
+                             optimization of the GNN. Default -> None.
+            
+            Returns:
+                Loss value
+                Metric value
+                Continuity loss value
+
+            """
             ns = batched_graph.ndata['next_steps']
             loss_v = 0
             metric_v = 0
@@ -130,6 +226,21 @@ def evaluate_model(gnn_model, train_dataloader, test_dataloader, optimizer,
     return train_results, test_results, end - start
 
 def compute_rollout_errors(gnn_model, params, dataset, idxs_train, idxs_test):
+    """
+    Compute rollout errors
+
+    Arguments:
+        gnn_model: the GNN
+        params: dictionary of parameters
+        dataset: the dataset over which the errors are computed
+        idxs_train: indices of graphs to use to evaluating the training
+        idxs_test: indices of graphs to use to evaluate the test
+    
+    Returns:
+        2D array containing the error for pressure and flow rate (train)
+        2D array containing the error for pressure and flow rate (test)
+
+    """
     train_errs = np.zeros(2)
     for idx in idxs_train:
         _, cur_train_errs, _, _, _ = rollout(gnn_model, params, 
@@ -147,17 +258,37 @@ def compute_rollout_errors(gnn_model, params, dataset, idxs_train, idxs_test):
 
     return train_errs, test_errs
 
-def train_gnn_model(gnn_model, dataset, params, parallel, rank0,
-                    checkpoint_fct = None):
+def train_gnn_model(gnn_model, dataset, params, parallel, doprint = True):
+    """
+    Train GNN model
 
+    Arguments:
+        gnn_model: the GNN
+        params: dictionary of parameters
+        dataset: the dataset over which the errors are computed
+        parallel (bool): must be set to True if we are using distributed 
+                         training and false otherwise
+        print (bool): if True, prints metrics during training. Default -> True.
+    
+    Returns:
+        The trained GNN model
+        Dictionary containing array with the training history of various 
+            quantities. Keys: train_loss, train_metric, train_rollout, 
+            train_cont, test_loss, test_metric, test_rollout, test_cont
+
+    """
     batch_size = params['batch_size']
+    rank = 0
     if parallel:
+        rank = dist.get_rank()
+        if rank != 0:
+            doprint == False
         train_sampler = DistributedSampler(dataset['train'], 
                                            num_replicas = dist.get_world_size(),
-                                           rank = dist.get_rank())
+                                           rank = rank)
         test_sampler = DistributedSampler(dataset['test'],      
-                                          num_replicas=dist.get_world_size(), 
-                                          rank=dist.get_rank())
+                                          num_replicas = dist.get_world_size(), 
+                                          rank = rank)
         # get smaller batch size to preserve scaling when parallel
         batch_size = int(np.floor(batch_size / dist.get_world_size()))
     else: 
@@ -183,9 +314,8 @@ def train_gnn_model(gnn_model, dataset, params, parallel, rank0,
         flush=True)
         # lr = params['learning_rate'] / dist.get_world_size()
     
-    optimizer = th.optim.Adam(gnn_model.parameters(),
-                            lr,
-                            weight_decay = params['weight_decay'])
+    optimizer = th.optim.Adam(gnn_model.parameters(), lr,
+                              weight_decay = params['weight_decay'])
 
     nepochs = params['nepochs']
 
@@ -210,9 +340,10 @@ def train_gnn_model(gnn_model, dataset, params, parallel, rank0,
     history['test_rollout'] = [[], []]  
     history['test_cont'] = [[], []]       
     for epoch in range(nepochs):
-        if rank0:
+        if doprint:
             print('================{}================'.format(epoch))
 
+        signal.signal(signal.SIGINT, s.handle)
         train_results, test_results, elapsed = evaluate_model(gnn_model,
                                                               train_dataloader,
                                                               test_dataloader,
@@ -229,7 +360,7 @@ def train_gnn_model(gnn_model, dataset, params, parallel, rank0,
         msg = msg + 'mae = {:.2e}\t'.format(test_results['metric'])
         msg = msg + 'continuity = {:.2e}'.format(test_results['continuity'])
 
-        if rank0:
+        if doprint:
             print("", flush = True)
             print(msg, flush = True)
 
@@ -247,7 +378,7 @@ def train_gnn_model(gnn_model, dataset, params, parallel, rank0,
         history['test_cont'][0].append(epoch)
         history['test_cont'][1].append(float(test_results['continuity']))
 
-        if rank0:
+        if rank == 0:
             if epoch % np.floor(nepochs / 10) == 0 or epoch == (nepochs - 1):
                 e_train, e_test = compute_rollout_errors(gnn_model, 
                                                         params, dataset, 
@@ -258,7 +389,7 @@ def train_gnn_model(gnn_model, dataset, params, parallel, rank0,
                 history['test_rollout'][0].append(epoch)
                 history['test_rollout'][1].append(float(np.mean(e_test)))
 
-        if rank0:
+        if doprint:
             msg = 'Rollout: {:.0f}\t'.format(epoch)
             print(msg, flush = True)
             print(history['train_rollout'][1])
@@ -266,15 +397,27 @@ def train_gnn_model(gnn_model, dataset, params, parallel, rank0,
 
         scheduler.step()
 
-        signal.signal(signal.SIGINT, s.handle)
-
         if s.should_exit:
             return gnn_model, history            
 
     return gnn_model, history
 
-def launch_training(dataset, params, parallel, out_dir = 'models/', 
-                    checkpoint_fct = None):
+def launch_training(dataset, params, parallel, out_dir = 'models/'):
+    """
+    Launch training
+
+    Arguments:
+        dataset: dataset containing the graphs
+        params: dictionary of parameters
+        parallel (bool): must be set to True if we are using distributed 
+                         training and false otherwise
+        out_dir (bool): path of folder where data should be saved. 
+                        Default-> 'models/'
+    
+    Returns:
+        The trained GNN model
+
+    """
     now = datetime.now()
     folder = out_dir + now.strftime("%d.%m.%Y_%H.%M.%S")
 
@@ -303,7 +446,7 @@ def launch_training(dataset, params, parallel, out_dir = 'models/',
         save_model('initial_gnn.pms')
 
     gnn_model, history = train_gnn_model(gnn_model, dataset, params, 
-                                         parallel, save_data, checkpoint_fct)
+                                         parallel, save_data)
 
     if save_data:
         final_rollout = history['test_rollout'][1][-1]
@@ -329,6 +472,11 @@ def launch_training(dataset, params, parallel, out_dir = 'models/',
 
     return gnn_model
 
+"""
+The main function launches the training by reading the graphs contained into 
+data_location/graphs. The trained model is saved by default in a folder called 
+'models'.
+"""
 if __name__ == "__main__":
     rank = 0
     try:
@@ -396,6 +544,7 @@ if __name__ == "__main__":
     infeat_edges = graph.edata['efeatures'].shape[1]
     nout = 2
 
+    # we create a dictionary with all the parameters
     t_params = {'infeat_nodes': infeat_nodes,
                 'infeat_edges': infeat_edges,
                 'latent_size_gnn': args.ls_gnn,
