@@ -85,7 +85,7 @@ def evaluate_model(gnn_model, train_dataloader, test_dataloader, optimizer,
                 try:
                     c_loss = gnn_model.continuity_loss(batched_graph,
                                                        a_flowrate)
-                except Exception as e:
+                except Exception:
                     c_loss = gnn_model.module.continuity_loss(batched_graph,
                                                               a_flowrate)      
                 loss_v = loss_v + params['continuity_coeff'] * c_loss 

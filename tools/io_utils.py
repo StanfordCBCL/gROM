@@ -31,7 +31,7 @@ def create_directory(fdr_name):
     """
     try:
         os.mkdir(fdr_name)
-    except OSError as error:
+    except OSError:
         print('Directory ' + fdr_name + ' exists')
 
 def collect_arrays(celldata, components = None):

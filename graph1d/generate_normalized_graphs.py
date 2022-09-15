@@ -236,7 +236,7 @@ def add_features(graphs, params):
         graph = graphs[graph_n]
         ntimes = graph.ndata['pressure'].shape[2]
 
-        dt = graph.ndata['dt'].repeat(1, 1, ntimes)
+        graph.ndata['dt'].repeat(1, 1, ntimes)
         area = graph.ndata['area'].repeat(1, 1, ntimes)
         tangent = graph.ndata['tangent'].repeat(1, 1, ntimes)
         type = graph.ndata['type'].repeat(1, 1, ntimes)

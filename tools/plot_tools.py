@@ -7,7 +7,6 @@ import graph1d.generate_normalized_graphs as gng
 import matplotlib
 from matplotlib import animation
 import torch as th
-from typing import Any
 import os
 import plotly.graph_objects as go
 import vtk
@@ -41,12 +40,12 @@ plt.rcParams['axes.prop_cycle'] = plt.cycler(color=color_list)
 
 def plot_graph(points, bif_id, indices, edges1, edges2, 
                stl_mesh = None, linewidth = 0.3, s = 1):
-    fig = plt.figure()
+    plt.figure()
     ax = plt.axes(projection='3d')
     ax._axis3don = False
 
-    minc = np.min(bif_id)
-    maxc = np.max(bif_id)
+    np.min(bif_id)
+    np.max(bif_id)
 
     branch_nodes = np.where(bif_id == -1)[0]
     branch_nodes = branch_nodes[1:]
@@ -89,7 +88,7 @@ def plot_graph(points, bif_id, indices, edges1, edges2,
 
 def plot_graph_and_sections(graph, bif_id, edges1, edges2, values, 
                             cmap = cm.get_cmap('viridis')):
-    fig = plt.figure()
+    plt.figure()
     ax = plt.axes(projection='3d')
     ax._axis3don = False
 

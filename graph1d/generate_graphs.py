@@ -1,4 +1,3 @@
-from ast import Num
 import sys
 import os
 sys.path.append(os.getcwd())
@@ -11,7 +10,6 @@ import torch as th
 from tqdm import tqdm
 import json
 import random
-import pathlib
 import tools.plot_tools as pt
 import matplotlib.pyplot as plt
 import shutil
@@ -317,7 +315,7 @@ def dijkstra_algorithm(nodes, edges1, edges2, index):
                     dists[neib] = alt
                     prevs[neib] = curindex
     if np.max(dists) == np.infty:
-        fig = plt.figure()
+        plt.figure()
         ax = plt.axes(projection='3d')
         ax.scatter(nodes[:,0], nodes[:,1], nodes[:,2], s = 0.5, c = 'black')
         idx = np.where(dists > 1e30)[0]
@@ -627,7 +625,7 @@ def generate_graph(point_data, points, edges1, edges2,
 
     try:
         area = list(io.gather_array(point_data, 'area').values())[0]
-    except Exception as e:
+    except Exception:
         area = point_data['area']
 
     # we manually make the graph bidirected in order to have the relative
@@ -873,7 +871,7 @@ if __name__ == "__main__":
             try:
                 point_data['tangent'] = generate_tangents(points,
                                                       point_data['BranchIdTmp'])
-            except Exception as e:
+            except Exception:
                 continue
             inlet = [0]
             outlets = find_outlets(edges1, edges2)
