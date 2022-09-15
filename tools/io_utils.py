@@ -5,9 +5,7 @@ from vtk.util.numpy_support import vtk_to_numpy as v2n
 
 def data_location():
     """
-    Return data location.
-  
-    Returns data location, which by default needs to be stored in 
+    Return data location, which by default needs to be stored in 
     data_location.txt
   
     Returns:
@@ -22,9 +20,7 @@ def data_location():
 def create_directory(fdr_name):
     """
     Create a directory.
-  
-    Create a directory.
-  
+    
     Arguments:
         fdr_name (string): Name of the directory
   
@@ -35,9 +31,7 @@ def create_directory(fdr_name):
         print('Directory ' + fdr_name + ' exists')
 
 def collect_arrays(celldata, components = None):
-    """
-    Collect arrays.
-  
+    """  
     Collect arrays from a cell data or point data object.
   
     Arguments:
@@ -60,8 +54,6 @@ def collect_arrays(celldata, components = None):
 
 def collect_points(celldata, components = None):
     """
-    Collect points.
-  
     Collect points from a cell data object.
   
     Arguments:
@@ -80,8 +72,6 @@ def collect_points(celldata, components = None):
 
 def get_all_arrays(geo, components = None):
     """
-    Get arrays.
-  
     Get arrays from geometry file.
   
     Arguments:
@@ -102,8 +92,6 @@ def get_all_arrays(geo, components = None):
 
 def get_edges(geo):
     """
-    Get edges.
-  
     Get edges from geometry file.
   
     Arguments:
@@ -125,8 +113,6 @@ def get_edges(geo):
 
 def read_geo(fname):
     """
-    Read geometry.
-  
     Read geometry from file.
   
     Arguments:
@@ -149,6 +135,7 @@ def read_geo(fname):
 def write_geo(fname, input):
     """
     Write geometry to file
+
     Arguments:
         fname: file name
     """
@@ -166,8 +153,6 @@ def write_geo(fname, input):
 
 def gather_array(arrays, arrayname, mintime = 1e-12):
     """
-    Gather arrays.
-  
     Given a dictionary of numpy arrays, this method gathers all the arrays
     containing a certain substring in the array name.
   
