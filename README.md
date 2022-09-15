@@ -1,5 +1,7 @@
 ## Graph Reduced Order Models ##
 
+![](https://github.com/lucapegolotti/gROM/blob/main/.repo/aortofemoral_simulation.gif)
+
 In this repository we implement reduced order models for cardiovascular simulations using Graph Neural Networks (GNNs).
 
 ### Install the virtual environment ###
