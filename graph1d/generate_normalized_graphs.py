@@ -75,16 +75,12 @@ def invert_normalize(field, field_name, statistics, norm_dict_label):
         raise Exception('Normalization type not implemented')
     return field
 
-def load_graphs(input_dir, n_graphs_to_keep = -1):
+def load_graphs(input_dir):
     """
     Load all graphs in directory.
 
-    Load all graphs in input_dir.
-
     Arguments:
         input_dir (string): input directory path
-        n_graphs_to_keep: number of graphs to keep. If -1, keep all graphs.
-                          Default value -> -1.
 
     Returns:
         list of DGL graphs
@@ -341,8 +337,8 @@ def generate_normalized_graphs(input_dir, norm_type, bc_type,
                           Default value -> -1.
 
     Return:
-        list of normalized graphs
-        dictionary of parameters
+        List of normalized graphs
+        Dictionary of parameters
 
     """
     fields_to_normalize = {'node': ['area', 'pressure',
