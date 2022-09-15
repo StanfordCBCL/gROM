@@ -1,1 +1,1 @@
-/home/gROM_data
+/path/to/gromdata
