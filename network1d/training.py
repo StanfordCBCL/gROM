@@ -348,7 +348,7 @@ def train_gnn_model(gnn_model, dataset, params, parallel, doprint = True):
                                                               train_dataloader,
                                                               test_dataloader,
                                                               optimizer,
-                                                              rank0,
+                                                              rank == 0,
                                                               params)
 
 

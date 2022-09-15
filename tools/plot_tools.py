@@ -19,6 +19,7 @@ from mpl_toolkits import mplot3d
 from matplotlib import pyplot
 import matplotlib.ticker as ticker
 
+# some colors
 Cardinal_red = "#8F353C"
 Cardinal_blue = "#54A0C0"
 Gray = "#c5c7c5"
@@ -28,11 +29,6 @@ CB91_Pink = '#F3A0F2'
 CB91_Purple = '#9D2EC5'
 CB91_Violet = '#661D98'
 CB91_Amber = '#F5B14C'
-
-
-font = {'size'   : 20}
-
-matplotlib.rc('font', **font)
 
 color_list = [Cardinal_red, Cardinal_blue, CB91_Violet, CB91_Green, CB91_Pink,
               CB91_Amber, CB91_Purple]
