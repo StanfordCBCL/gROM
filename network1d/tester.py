@@ -49,7 +49,8 @@ def evaluate_all_models(dataset, split_name, gnn_model, params, doplot = False):
     """
     print('==========' + split_name + '==========')
     dataset = dataset[split_name]
-    pathlib.Path('results/' + split_name).mkdir(parents=True, exist_ok=True)
+    if doplot:
+        pathlib.Path('results/' + split_name).mkdir(parents=True, exist_ok=True)
 
     total_timesteps = 0
     total_time = 0
