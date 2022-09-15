@@ -316,7 +316,6 @@ def generate_dataset_from_params(graphs, params):
     train_dataset = Dataset(train, params, params['train_split'])
     test_dataset = Dataset(test, params, params['test_split'])
 
-
     dataset = {'train': train_dataset, 'test': test_dataset}
 
     print('Train size = {:}'.format(len(dataset['train'].graph_names)))

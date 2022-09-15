@@ -312,12 +312,11 @@ def restrict_graphs(graphs, types, types_to_keep):
         restricted list of DGL graphs
 
     """
-    if types_to_keep != None:
-        selected_graphs = {}
-        for graph in graphs:
-            if types[graph.split('.')[0]] in types_to_keep:
-                selected_graphs[graph] = graphs[graph]
-        graphs = selected_graphs
+    selected_graphs = {}
+    for graph in graphs:
+        if types[graph.split('.')[0]] in types_to_keep:
+            selected_graphs[graph] = graphs[graph]
+    graphs = selected_graphs
     return graphs
 
 def generate_normalized_graphs(input_dir, norm_type, bc_type,
@@ -358,8 +357,9 @@ def generate_normalized_graphs(input_dir, norm_type, bc_type,
         statistics = {'normalization_type': norm_type}
     graphs = load_graphs(input_dir, n_graphs_to_keep)
 
-    graphs = restrict_graphs(graphs, types_to_keep['types'], 
-                             types_to_keep['types_to_keep'])
+    if types_to_keep != None:
+        graphs = restrict_graphs(graphs, types_to_keep['types'], 
+                                types_to_keep['types_to_keep'])
 
     if n_graphs_to_keep != -1:
         graphs_ = {}

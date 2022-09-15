@@ -28,7 +28,7 @@ def evaluate_all_models(dataset, split_name, gnn_model, params, doplot=False):
     tot_errs_normalized = 0
     tot_errs = 0
     tot_cont_loss = 0
-    for i in range(len(dataset.graphs)-1,len(dataset.graphs)):
+    for i in range(0,len(dataset.graphs)):
         print('model name = {}'.format(dataset.graph_names[i]))
         fdr = 'results/' + split_name + '/' + dataset.graph_names[i] + '/'
         pathlib.Path(fdr).mkdir(parents=True, exist_ok=True)
@@ -75,6 +75,7 @@ def get_dataset_and_gnn(path, data_location = None):
                                                 params['statistics']['normalization_type'],
                                                 params['bc_type'],
                                                 statistics = params['statistics'])
+
 
     dataset = dset.generate_dataset_from_params(graphs, params)
     return dataset, gnn_model, params
