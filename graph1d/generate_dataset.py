@@ -146,18 +146,6 @@ class Dataset(DGLDataset):
 
         self.lightgraphs[indices[0]].ndata['next_steps'] = ns
 
-        # nl = self.graphs[indices[0]].ndata['nlabels'][:,:,indices[1]].clone()
-        # nl[:,0] = nz.invert_normalize(nl[:,0], 'dp', self.params['statistics'],
-        #                               'labels')
-        # nl[:,1] = nz.invert_normalize(nl[:,1], 'dq', self.params['statistics'],
-        #                               'labels')
-        # nl[:,:2] = nl[:,:2] - curnoise
-        # nl[:,0] = nz.normalize(nl[:,0], 'dp', self.params['statistics'],
-        #                        'labels')
-        # nl[:,1] = nz.normalize(nl[:,1], 'dq', self.params['statistics'],
-        #                       'labels')
-        # self.lightgraphs[indices[0]].ndata['nlabels'] = nl
-
         ef = self.graphs[indices[0]].edata['efeatures']
 
         # add regular noise to the edge features to prevent overfitting
@@ -198,6 +186,7 @@ class Dataset(DGLDataset):
         Returns:
             graph names
         """
+        print('Total number of graphs: {:}'.format(self.__len__()))
         return 'Dataset = ' + ', '.join(self.graph_names)
 
 def split(graphs, divs, types):

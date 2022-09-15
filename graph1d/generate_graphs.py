@@ -572,7 +572,7 @@ def generate_tangents(points, branch_id):
     """
     tangents = np.zeros(points.shape)
     maxbid = int(np.max(branch_id))
-    for bid in range(maxbid):
+    for bid in range(maxbid + 1):
         point_idxs = np.where(branch_id == bid)[0]
 
         tck, u = scipy.interpolate.splprep([points[point_idxs, 0],
@@ -587,6 +587,10 @@ def generate_tangents(points, branch_id):
 
     # make sure tangents are unitary
     tangents = tangents / np.linalg.norm(tangents, axis = 0)
+
+    for i in range(tangents.shape[0]):
+        tangents[i] = tangents[i] / np.linalg.norm(tangents[i])
+
     return tangents
 
 def generate_graph(point_data, points, edges1, edges2,
@@ -877,7 +881,7 @@ if __name__ == "__main__":
             indices = {'inlet': inlet,
                     'outlets': outlets}
 
-            resample_perc = 0.06
+            resample_perc = 0.12
             success = False
 
             while not success:
@@ -957,7 +961,7 @@ if __name__ == "__main__":
                         c_pressure[t] = pressure[t][part['sampling_indices']]
                         c_flowrate[t] = flowrate[t][part['sampling_indices']]
 
-                    do_resample_time = True
+                    do_resample_time = False
                     if do_resample_time:
                         dt = 0.002
                         c_pressure = resample_time(c_pressure, timestep = dt)

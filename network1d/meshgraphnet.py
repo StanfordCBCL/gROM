@@ -224,13 +224,12 @@ class MeshGraphNet(Module):
         """
         Compute contiuity loss
 
-        Continuity loss is defined as a combination of the mass loss occurring
-        at branches and at junctions.
+        Continuity loss as the mass loss occurring  at junctions.
 
         Arguments:
             g: graph
             flowrate: tensor containing nodal values of flowrate
-            take_mean: if True, take mean of branch and junction losses. If 
+            take_mean: if True, take mean of junction losses. If 
                        False, take sum. Default -> True.
         Returns: 
             sum of mass loss occurring at branches and at junctions

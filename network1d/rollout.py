@@ -7,18 +7,21 @@ import torch as th
 import copy
 import time
 
+def set_boundary_conditions(matrix, graph, params, bcs, time_index):
+    # set boundary conditions
+    if params['bc_type'] == 'realistic_dirichlet':
+        matrix[graph.ndata['outlet_mask'].bool(), 0] = bcs[graph.ndata['outlet_mask'].bool(), 0, time_index]
+        matrix[graph.ndata['inlet_mask'].bool(), 1] = bcs[graph.ndata['inlet_mask'].bool(), 1, time_index]
+    elif params['bc_type'] == 'full_dirichlet':
+        matrix[graph.ndata['inlet_mask'].bool(), 0] = bcs[graph.ndata['inlet_mask'].bool(), 0, time_index]
+        matrix[graph.ndata['outlet_mask'].bool(), 0] = bcs[graph.ndata['outlet_mask'].bool(), 0, time_index]
+        matrix[graph.ndata['inlet_mask'].bool(), 1] = bcs[graph.ndata['inlet_mask'].bool(), 1, time_index]
+        matrix[graph.ndata['outlet_mask'].bool(), 1] = bcs[graph.ndata['outlet_mask'].bool(), 1, time_index]
+
 def perform_timestep(gnn_model, params, graph, bcs, time_index):
     gf = graph.ndata['nfeatures']
 
-    # set boundary conditions
-    if params['bc_type'] == 'realistic_dirichlet':
-        gf[graph.ndata['outlet_mask'].bool(), 0] = bcs[graph.ndata['outlet_mask'].bool(), 0, time_index]
-        gf[graph.ndata['inlet_mask'].bool(), 1] = bcs[graph.ndata['inlet_mask'].bool(), 1, time_index]
-    elif params['bc_type'] == 'full_dirichlet':
-        gf[graph.ndata['inlet_mask'].bool(), 0] = bcs[graph.ndata['inlet_mask'].bool(), 0, time_index]
-        gf[graph.ndata['outlet_mask'].bool(), 0] = bcs[graph.ndata['outlet_mask'].bool(), 0, time_index]
-        gf[graph.ndata['inlet_mask'].bool(), 1] = bcs[graph.ndata['inlet_mask'].bool(), 1, time_index]
-        gf[graph.ndata['outlet_mask'].bool(), 1] = bcs[graph.ndata['outlet_mask'].bool(), 1, time_index]
+    set_boundary_conditions(gf, graph, params, bcs, time_index)
 
     graph.ndata['nfeatures'] = gf
 
@@ -74,7 +77,7 @@ def rollout(gnn_model, params, graph, average_branches = True):
     start = time.time()
     for it in range(times-1):
         gf = perform_timestep(gnn_model, params, graph, tfc, it + 1)
-
+        set_boundary_conditions(gf, graph, params, tfc, it+1)
         if average_branches:
             compute_average_branches(graph, gf[:,1])
 
@@ -120,7 +123,7 @@ def rollout(gnn_model, params, graph, average_branches = True):
     con_loss = compute_continuity_loss(gnn_model, graph, tfc)
 
     return r_features.detach().numpy(), errs_normalized.detach().numpy(), \
-           errs.detach().numpy(), \
+           errs.detach().numpy(), np.abs(diff.detach().numpy()), \
            (con_loss / th.sum(rfc[0,1,:])).detach().numpy(), end - start
 
     

@@ -93,16 +93,7 @@ def load_graphs(input_dir, n_graphs_to_keep = -1):
     files = os.listdir(input_dir)
     random.seed(10)
     random.shuffle(files)
-    
-    actual_files = []
-    for file in files:
-        print(file)
-        if '.grph' in file:
-            actual_files.append(file)
 
-    files = actual_files
-    if n_graphs_to_keep != -1:
-        files = files[0:n_graphs_to_keep]
     graphs = {}
     for file in tqdm(files, desc = 'Loading graphs', colour='green'):
         if 'grph' in file:
@@ -177,6 +168,25 @@ def compute_statistics(graphs, fields, statistics):
                 cur_statistics['mean'] = float(mean)
                 cur_statistics['stdv'] = float(np.sqrt(meansq - mean**2))
                 statistics[field_name] = cur_statistics
+
+    graph_sts = {'nodes': [], 'edges': [], 'tsteps': []}
+
+    for graph_n in graphs:
+        graph = graphs[graph_n]
+        graph_sts['nodes'].append(graph.ndata['x'].shape[0])
+        graph_sts['edges'].append(graph.edata['distance'].shape[0])
+        graph_sts['tsteps'].append(graph.ndata['pressure'].shape[2])
+
+    for name in graph_sts:
+        cur_statistics = {}
+
+        cur_statistics['min'] = np.min(graph_sts[name])
+        cur_statistics['max'] = np.max(graph_sts[name])
+        cur_statistics['mean'] = np.mean(graph_sts[name])
+        cur_statistics['stdv'] = np.std(graph_sts[name])
+
+        statistics[name] = cur_statistics
+
     return statistics
 
 def normalize_graphs(graphs, fields, statistics, norm_dict_label):
@@ -235,7 +245,7 @@ def add_features(graphs, params):
         q = graph.ndata['flowrate'].clone()
 
         graph.ndata['nfeatures'] = th.cat((p, q, area, tangent,
-                                           type, dt), axis = 1)
+                                           type), axis = 1)
 
         rp = graph.edata['rel_position']
         rpn = graph.edata['distance']
@@ -289,9 +299,31 @@ def save_parameters(params, output_dir):
     with open(output_dir + '/parameters.json', 'w') as outfile:
         json.dump(params, outfile, indent=4)
 
+def restrict_graphs(graphs, types, types_to_keep):
+    """
+    Restrict the list of graphs to the types that we are interested in.
+
+    Arguments:
+        graphs: list of graphs
+        types: dictionary with all types (key: model name, value: type)
+        types_to_keep: list with types to keep:
+    
+    Returns:
+        restricted list of DGL graphs
+
+    """
+    if types_to_keep != None:
+        selected_graphs = {}
+        for graph in graphs:
+            if types[graph.split('.')[0]] in types_to_keep:
+                selected_graphs[graph] = graphs[graph]
+        graphs = selected_graphs
+    return graphs
+
 def generate_normalized_graphs(input_dir, norm_type, bc_type,
                                types_to_keep = None,
-                               n_graphs_to_keep = -1):
+                               n_graphs_to_keep = -1,
+                               statistics = None):
     """
     Generate normalized graphs.
 
@@ -310,42 +342,44 @@ def generate_normalized_graphs(input_dir, norm_type, bc_type,
                           Default value -> -1.
 
     Return:
-        List of normalized graphs
-        Dictionary of parameters
+        list of normalized graphs
+        dictionary of parameters
 
     """
     fields_to_normalize = {'node': ['area', 'pressure',
                                 'flowrate', 'dt'],
                        'edge': ['distance']}
-    statistics = {'normalization_type': norm_type}
-    graphs = load_graphs(input_dir, n_graphs_to_keep)
-    if types_to_keep != None:
-        selected_graphs = {}
-        types = types_to_keep['types']
-        types_to_keep = types_to_keep['types_to_keep']
-        for graph in graphs:
-            if types[graph.split('.')[0]] in types_to_keep:
-                selected_graphs[graph] = graphs[graph]
-        graphs = selected_graphs
 
-    compute_statistics(graphs, fields_to_normalize, statistics)
+    docompute_statistics = True
+    if statistics != None:
+        docompute_statistics = False
+
+    if docompute_statistics:
+        statistics = {'normalization_type': norm_type}
+    graphs = load_graphs(input_dir, n_graphs_to_keep)
+
+    graphs = restrict_graphs(graphs, types_to_keep['types'], 
+                             types_to_keep['types_to_keep'])
+
+    if n_graphs_to_keep != -1:
+        graphs_ = {}
+        count = 0
+        for key, value in graphs.items():
+            if count == n_graphs_to_keep:
+                break
+            graphs_[key] = value
+            count = count + 1
+        graphs = graphs_
+
+    if docompute_statistics:
+        compute_statistics(graphs, fields_to_normalize, statistics)
     normalize_graphs(graphs, fields_to_normalize, statistics, 'features')
     add_deltas(graphs)
-    compute_statistics(graphs, {'node' : ['dp', 'dq']}, statistics)
+    if docompute_statistics:
+        compute_statistics(graphs, {'node' : ['dp', 'dq']}, statistics)
     normalize_graphs(graphs, {'node' : ['dp', 'dq']}, statistics, 'labels')
     params = {'bc_type': bc_type}
     params['statistics'] = statistics
     add_features(graphs, params)
 
     return graphs, params
-
-# if __name__ == "__main__":
-#     data_location = io.data_location()
-#     norm_type_features = 'normal'
-#     norm_type_labels = 'min_max'
-
-#     norm_type = {'features': norm_type_features, 'labels': norm_type_labels}
-#     graphs, params = generate_normalized_graphs(data_location + '/graphs/',
-#                                                 norm_type, 'full_dirichlet')
-#     save_graphs(graphs, data_location + '/normalized_graphs/')
-#     save_parameters(params, data_location + '/normalized_graphs/')

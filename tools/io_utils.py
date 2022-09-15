@@ -146,6 +146,24 @@ def read_geo(fname):
     reader.Update()
     return reader
 
+def write_geo(fname, input):
+    """
+    Write geometry to file
+    Arguments:
+        fname: file name
+    """
+    _, ext = os.path.splitext(fname)
+    if ext == '.vtp':
+        writer = vtk.vtkXMLPolyDataWriter()
+    elif ext == '.vtu':
+        writer = vtk.vtkXMLUnstructuredGridWriter()
+    else:
+        raise ValueError('File extension ' + ext + ' unknown.')
+    writer.SetFileName(fname)
+    writer.SetInputData(input)
+    writer.Update()
+    writer.Write()
+
 def gather_array(arrays, arrayname, mintime = 1e-12):
     """
     Gather arrays.
