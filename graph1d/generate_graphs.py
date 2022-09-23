@@ -814,7 +814,7 @@ def resample_time(field, timestep):
         timestep (float): the new timestep
 
     Returns:
-        dictionary containing the field for all resampled timesteps
+        Dictionary containing the field for all resampled timesteps
             (key: timestep, value: n-dimensional numpy array)
     """
     original_timesteps = [t for t in field]
