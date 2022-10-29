@@ -592,7 +592,8 @@ def generate_tangents(points, branch_id):
     return tangents
 
 def generate_graph(point_data, points, edges1, edges2,
-                   add_boundary_edges, add_junction_edges):
+                   add_boundary_edges, add_junction_edges,
+                   rcr_values):
     """
     Generate graph.
 
@@ -605,6 +606,8 @@ def generate_graph(point_data, points, edges1, edges2,
         edges2: numpy array containing indices of dest nodes for every edge
         add_boundary_edges (bool): decide whether to add boundary edges
         add_junction_edges (bool): decide whether to add junction edges
+        rcr_values: dictionary associating each branch id outlet to values 
+                    of RCR boundary conditions
 
     Returns:
         DGL graph
@@ -640,6 +643,12 @@ def generate_graph(point_data, points, edges1, edges2,
     types, inlet_mask, \
     outlet_mask = generate_types(bif_id, indices)
 
+    npoints = points.shape[0]
+    rcr = np.zeros((npoints,3))
+    branch_id = point_data['BranchId']
+    for ipoint in range(npoints):
+        if outlet_mask[ipoint] == 1:
+            rcr[ipoint,:] = rcr_values['{:.0f}'.format(branch_id[ipoint])]
     etypes = [0] * edges1.size
     # we set etype to 1 if either of the nodes is a junction
     for iedge in range(edges1.size):
@@ -692,6 +701,8 @@ def generate_graph(point_data, points, edges1, edges2,
                                            dtype = th.int8)
     graph.ndata['branch_id'] = th.tensor(point_data['BranchId'],
                                          dtype = th.int8)
+
+    graph.ndata['rcr'] = th.tensor(rcr, dtype=th.float32)
 
     graph.edata['rel_position'] = th.unsqueeze(th.tensor(rel_position,
                                                dtype = th.float32), 2)
@@ -853,6 +864,8 @@ if __name__ == "__main__":
     input_dir = data_location + 'vtps/'
     output_dir = data_location + 'graphs/'
 
+    rcr_values = json.load(open(input_dir + '/rcr_values.json'))
+
     # if we provide timestep file then we need to rescale time in vtp
     try:
         rescale_time = True
@@ -867,6 +880,7 @@ if __name__ == "__main__":
     print(files)
     for file in tqdm(files, desc = 'Generating graphs', colour='green'):
         if '.vtp' in file:
+            print(file)
             point_data, points, edges1, edges2 = load_vtp(file, input_dir)
             try:
                 point_data['tangent'] = generate_tangents(points,
@@ -879,7 +893,7 @@ if __name__ == "__main__":
             indices = {'inlet': inlet,
                     'outlets': outlets}
 
-            resample_perc = 0.12
+            resample_perc = 0.06
             success = False
 
             while not success:
@@ -939,7 +953,8 @@ if __name__ == "__main__":
                 filename = file.replace('.vtp','.' + str(i) + '.grph')
                 add_boundary_edges = True
                 add_junction_edges = True
-                try:
+                # try:
+                if 1:
                     graph, indices, \
                     points, bif_id, \
                     edges1, edges2 = generate_graph(part['point_data'],
@@ -947,7 +962,8 @@ if __name__ == "__main__":
                                                     part['edges1'],
                                                     part['edges2'],
                                                     add_boundary_edges,
-                                                    add_junction_edges)
+                                                    add_junction_edges,
+                                                    rcr_values[file])
                     # pathlib.Path('images').mkdir(parents=True, exist_ok=True)
                     # pt.plot_graph(points, bif_id, indices, edges1, edges2)
                     # plt.savefig('images/' + filename + '.eps', 
@@ -969,7 +985,7 @@ if __name__ == "__main__":
                     add_fields(graph, c_flowrate, 'flowrate')
 
                     dgl.save_graphs(output_dir + filename, graph)
-                except Exception as e:
-                    print(e)
+                # except Exception as e:
+                #     print(e)
 
     shutil.copy(input_dir + 'types.json',  output_dir + 'types.json')
