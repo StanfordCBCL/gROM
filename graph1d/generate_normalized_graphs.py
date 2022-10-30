@@ -130,8 +130,11 @@ def compute_statistics(graphs, fields, statistics):
                     graph = graphs[graph_n]
                     if etype == 'node':
                         d = graph.ndata[field_name]
-                    if etype == 'edge':
+                    elif etype == 'edge':
                         d = graph.edata[field_name]
+                    elif etype == 'outlet_node':
+                        mask = graph.ndata['outlet_mask'].bool()
+                        d = graph.ndata[field_name][mask]
 
                     # number of nodes
                     N = d.shape[0]
@@ -209,10 +212,14 @@ def normalize_graphs(graphs, fields, statistics, norm_dict_label):
                         graph.ndata[field_name] = normalize(d, field_name,
                                                             statistics,
                                                             norm_dict_label)
-
-                    if etype == 'edge':
+                    elif etype == 'edge':
                         d = graph.edata[field_name]
                         graph.edata[field_name] = normalize(d, field_name,
+                                                            statistics,
+                                                            norm_dict_label)
+                    elif etype == 'outlet_node':
+                        d = graph.ndata[field_name]
+                        graph.ndata[field_name] = normalize(d, field_name,
                                                             statistics,
                                                             norm_dict_label)
 
@@ -343,7 +350,10 @@ def generate_normalized_graphs(input_dir, norm_type, bc_type,
     """
     fields_to_normalize = {'node': ['area', 'pressure',
                                 'flowrate', 'dt'],
-                       'edge': ['distance']}
+                           'edge': ['distance'],
+                           'outlet_node': ['resistance1',
+                                           'capacitance',
+                                           'resistance2']}
 
     docompute_statistics = True
     if statistics != None:
@@ -351,7 +361,7 @@ def generate_normalized_graphs(input_dir, norm_type, bc_type,
 
     if docompute_statistics:
         statistics = {'normalization_type': norm_type}
-    graphs = load_graphs(input_dir, n_graphs_to_keep)
+    graphs = load_graphs(input_dir)
 
     if types_to_keep != None:
         graphs = restrict_graphs(graphs, types_to_keep['types'], 

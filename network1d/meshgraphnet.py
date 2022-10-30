@@ -139,19 +139,33 @@ class MeshGraphNet(Module):
                           params['number_hidden_layers_mlp'],
                           False)
 
-    def encode_nodes(self, nodes):
+        if params['bc_type'] == 'physiological':
+            self.inlet_encoder = MLP(4,
+                                     params['latent_size_gnn'],
+                                     params['latent_size_mlp'],
+                                     params['number_hidden_layers_mlp'])
+            self.outlet_RCR_encoder = MLP(6,
+                                          params['latent_size_gnn'],
+                                          params['latent_size_mlp'],
+                                          params['number_hidden_layers_mlp'])
+
+    def encode_nodes(self, g):
         """
         Encode graph nodes
 
         Arguments:
-            nodes: graph nodes
-
-        Returns:
-            dictionary (key: 'proc_node', value: encoded features)
+            g: the graph
 
         """
-        enc_features = self.encoder_nodes(nodes.data['nfeatures'])
-        return {'proc_node': enc_features}
+        if self.params['bc_type'] == 'physiological':
+            inmask = g.ndata['inlet_mask']
+            outmask = g.ndata['outlet_mask']
+            mask = (th.ones(inmask.shape) - inmask - outmask).bool()
+            enc_features = self.encoder_nodes(g.ndata['nfeatures'][mask,:])
+            g.ndata['proc_node'][mask,:] = enc_features
+        else:
+            enc_features = self.encoder_nodes(g.ndata['nfeatures'])
+            g.ndata['proc_node'] = enc_features
 
     def encode_edges(self, edges):
         """
@@ -273,6 +287,34 @@ class MeshGraphNet(Module):
 
         return junction_continuity
 
+    def encode_inlet(self, g):
+        """
+        Encode inlet using next_flowrate value
+
+        Arguments:
+            g: the graph
+        """
+        in_mask = g.ndata['inlet_mask']
+        curvalues = g.ndata['nfeatures'][in_mask.bool(),0:3]
+        nf = th.unsqueeze(g.ndata['next_flowrate'][in_mask.bool()],1)
+        h = self.inlet_encoder(th.cat((curvalues, nf), 1))
+        g.ndata['proc_node'][in_mask.bool(),0:] = h
+
+    def encode_outlets(self, g):
+        """
+        Encode outlets using rcr values
+
+        Arguments:
+            g: the graph
+        """
+        out_mask = g.ndata['outlet_mask']
+        curvalues = g.ndata['nfeatures'][out_mask.bool(),0:3]
+        r1 = th.reshape(g.ndata['resistance1'][out_mask.bool()],(-1,1))
+        c = th.reshape(g.ndata['capacitance'][out_mask.bool()],(-1,1))
+        r2 = th.reshape(g.ndata['resistance2'][out_mask.bool()],(-1,1))
+        h = self.outlet_RCR_encoder(th.cat((curvalues, r1, c, r2), 1))
+        g.ndata['proc_node'][out_mask.bool(),:] = h
+
     def forward(self, g):
         """
         Forward step
@@ -286,7 +328,17 @@ class MeshGraphNet(Module):
                 (second column)
 
         """
-        g.apply_nodes(self.encode_nodes)
+        if 'proc_node' not in g.ndata:
+            nnodes = g.ndata['nfeatures'].shape[0]
+            size = self.params['latent_size_gnn']
+            g.ndata['proc_node'] = th.zeros((nnodes, size))
+            
+        if self.params['bc_type'] == 'physiological':
+            self.encode_inlet(g)
+            self.encode_outlets(g)
+
+        # g.apply_nodes(self.encode_nodes)
+        self.encode_nodes(g)
         g.apply_edges(self.encode_edges)
         
         for index in range(self.process_iters):

@@ -7,7 +7,7 @@ import torch as th
 import copy
 import time
 
-def set_boundary_conditions(matrix, graph, params, bcs, time_index):
+def set_boundary_conditions_dirichlet(matrix, graph, params, bcs, time_index):
     """
     Set boundary conditions to a matrix.
 
@@ -32,6 +32,22 @@ def set_boundary_conditions(matrix, graph, params, bcs, time_index):
         matrix[graph.ndata['inlet_mask'].bool(), 1] = bcs[graph.ndata['inlet_mask'].bool(), 1, time_index]
         matrix[graph.ndata['outlet_mask'].bool(), 1] = bcs[graph.ndata['outlet_mask'].bool(), 1, time_index]
 
+def set_boundary_conditions_physiological(graph, params, bcs, time_index):
+    """
+    Set physiological boundary conditions to a graph.
+
+    Arguments:
+        graph: DGL graph
+        params: dictionary of parameters
+        bcs: 3D array containing the boundary conditions. 
+             dim 1: node index, dim 2: pressure (0) and flow rate (1),
+             dim 3: timesteps
+        time index (int): index of timestep where we have to take the boundary
+                          conditions from
+
+    """
+    graph.ndata['next_flowrate'] = bcs[:, 1, time_index]
+
 def perform_timestep(gnn_model, params, graph, bcs, time_index):
     """
     Performs a single timestep of the rollout phase.
@@ -50,11 +66,15 @@ def perform_timestep(gnn_model, params, graph, bcs, time_index):
             to pressure (0) and flow rate (1)
 
     """
+
     gf = graph.ndata['nfeatures']
-
-    set_boundary_conditions(gf, graph, params, bcs, time_index)
-
-    graph.ndata['nfeatures'] = gf
+    if params['bc_type'] == 'physiological':
+        set_boundary_conditions_physiological(graph, params, bcs, time_index)
+    elif params['bc_type'] == 'dirichlet':
+        set_boundary_conditions_dirichlet(gf, graph, params, bcs, time_index)
+        graph.ndata['nfeatures'] = gf
+    else:
+        raise ValueError('BC type' + params['bc_type'] + ' not implemented')
 
     delta = gnn_model(graph)
     delta[:,0] = nz.invert_normalize(delta[:,0], 'dp', params['statistics'],
@@ -62,6 +82,9 @@ def perform_timestep(gnn_model, params, graph, bcs, time_index):
     delta[:,1] = nz.invert_normalize(delta[:,1], 'dq', params['statistics'],
                                      'labels')
     gf[:,0:2] = gf[:,0:2] + delta
+
+    # we impose the exact flow rate at the inlet
+    gf[graph.ndata['inlet_mask'].bool(), 1] = bcs[graph.ndata['inlet_mask'].bool(), 1, time_index]
 
     return gf[:,0:2]
 
@@ -149,7 +172,8 @@ def rollout(gnn_model, params, graph, average_branches = True):
     start = time.time()
     for it in range(times-1):
         gf = perform_timestep(gnn_model, params, graph, tfc, it + 1)
-        set_boundary_conditions(gf, graph, params, tfc, it+1)
+        if params['bc_type'] == 'dirichlet':
+            set_boundary_conditions_dirichlet(gf, graph, params, tfc, it+1)
         if average_branches:
             compute_average_branches(graph, gf[:,1])
 

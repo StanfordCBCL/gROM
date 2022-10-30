@@ -243,15 +243,16 @@ def compute_rollout_errors(gnn_model, params, dataset, idxs_train, idxs_test):
     """
     train_errs = np.zeros(2)
     for idx in idxs_train:
-        _, cur_train_errs, _, _, _ = rollout(gnn_model, params, 
-                                       dataset['train'].graphs[idx])
+        _, cur_train_errs, _, _, _, _ = rollout(gnn_model, params, 
+                                                dataset['train'].graphs[idx])
         train_errs = cur_train_errs + train_errs
     
     train_errs = train_errs / len(idxs_train)
 
     test_errs = np.zeros(2)
     for idx in idxs_test:
-        _, cur_test_errs, _, _, _ = rollout(gnn_model, params, dataset['test'].graphs[idx])
+        _, cur_test_errs, _, _, _, _ = rollout(gnn_model, params, 
+                                               dataset['test'].graphs[idx])
         test_errs = cur_test_errs + test_errs
 
     test_errs = test_errs / (len(idxs_test))
@@ -448,6 +449,8 @@ def launch_training(dataset, params, parallel, out_dir = 'models/'):
     gnn_model, history = train_gnn_model(gnn_model, dataset, params, 
                                          parallel, save_data)
 
+    save_model('trained_gnn.pms')
+
     if save_data:
         final_rollout = history['test_rollout'][1][-1]
         print('Final rollout error on test = ' + str(final_rollout))
@@ -462,7 +465,6 @@ def launch_training(dataset, params, parallel, out_dir = 'models/'):
         ptools.plot_history(history['train_rollout'],
                             history['test_rollout'],
                             'rollout', folder)
-        save_model('trained_gnn.pms')
 
         with open(folder + '/history.bnr', 'wb') as outfile:
             pickle.dump(history, outfile)
@@ -494,7 +496,7 @@ if __name__ == "__main__":
 
     parser.add_argument('--bs', help='batch size', type=int, default=300)
     parser.add_argument('--epochs', help='total number of epochs', type=int,
-                        default=100)
+                        default=500)
     parser.add_argument('--lr_decay', help='learning rate decay', type=float,
                         default=0.001)
     parser.add_argument('--lr', help='learning rate', type=float, default=0.005)
@@ -532,12 +534,14 @@ if __name__ == "__main__":
     norm_type = {'features': 'normal', 'labels': label_normalization}
     types = json.load(open(input_dir + '/types.json'))
 
-    t2k = ['aorta', 'aortofemoral', 'synthetic_aorta']
+    # t2k = ['aorta', 'aortofemoral', 'synthetic_aorta']
+    t2k = ['synthetic_aorta']
     graphs, params  = gng.generate_normalized_graphs(input_dir, norm_type, 
-                                                    'full_dirichlet',
+                                                    'physiological',
                                                     {'types' : types,
-                                                    'types_to_keep': t2k})
-    
+                                                    'types_to_keep': t2k},
+                                                    n_graphs_to_keep=80)
+    print(params)
     graph = graphs[list(graphs)[0]]
 
     infeat_nodes = graph.ndata['nfeatures'].shape[1]

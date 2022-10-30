@@ -3,7 +3,7 @@ gromenv/
 data_location.txt
 .vscode
 __pycache__
-models
+models*
 results*
 images
 *.eps

@@ -702,7 +702,9 @@ def generate_graph(point_data, points, edges1, edges2,
     graph.ndata['branch_id'] = th.tensor(point_data['BranchId'],
                                          dtype = th.int8)
 
-    graph.ndata['rcr'] = th.tensor(rcr, dtype=th.float32)
+    graph.ndata['resistance1'] = th.reshape(th.tensor(rcr[:,0], dtype=th.float32), (-1,1,1))
+    graph.ndata['capacitance'] = th.reshape(th.tensor(rcr[:,1], dtype=th.float32), (-1,1,1))
+    graph.ndata['resistance2'] = th.reshape(th.tensor(rcr[:,2], dtype=th.float32), (-1,1,1))
 
     graph.edata['rel_position'] = th.unsqueeze(th.tensor(rel_position,
                                                dtype = th.float32), 2)
@@ -880,7 +882,6 @@ if __name__ == "__main__":
     print(files)
     for file in tqdm(files, desc = 'Generating graphs', colour='green'):
         if '.vtp' in file:
-            print(file)
             point_data, points, edges1, edges2 = load_vtp(file, input_dir)
             try:
                 point_data['tangent'] = generate_tangents(points,

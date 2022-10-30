@@ -96,6 +96,38 @@ def plot_graph(points, bif_id, indices, edges1, edges2,
                             alpha=0.08))
     plt.box(False)
 
+def plot_history(history_train, history_test, label, folder = None):
+    """
+    Plot a graph along with the corresponding stl (if available)
+
+    Arguments:
+        history_train: list of train metrics. First value: epochs. Second value:
+                        metric
+        history_test: list of test metrics. First value: epochs. Second value:
+                        metric
+        label (string): name of the metric to use for y-axis and plot title
+        folder: output folder. Default -> None
+
+    """
+    fig = plt.figure(figsize=(8,4))
+    ax = plt.gca()
+    ax.set_aspect('auto')
+    ax.plot(history_train[0], history_train[1], linewidth = 3, label='train')
+    ax.plot(history_test[0], history_test[1], linewidth = 3, label='test')
+    ax.legend()
+    ax.set_xlim((history_train[0][0],history_train[0][-1]))
+
+    ax.set_xlabel('epoch')
+    ax.set_ylabel(label)
+    plt.tight_layout()
+
+    plt.legend(frameon=False)
+
+    if folder != None:
+        plt.savefig(folder + '/' + label + '.eps')
+    else:
+        plt.show()
+
 def video_all_nodes(features, graph, params, time, 
                     outfile_name, framerate = 60):
     """

@@ -1,5 +1,6 @@
 import sys
 import os
+from tkinter import XView
 sys.path.append(os.getcwd())
 import tools.io_utils as io
 from dgl.data import DGLDataset
@@ -92,11 +93,16 @@ class Dataset(DGLDataset):
             node_data = [ndata for ndata in lightgraph.ndata]
             edge_data = [edata for edata in lightgraph.edata]
             for ndata in node_data:
-                if 'mask' not in ndata:
+                if 'mask' not in ndata and \
+                   'resistance' not in ndata and \
+                   'capacitance' not in ndata:
                     del lightgraph.ndata[ndata]
             for edata in edge_data:
                 del lightgraph.edata[edata]
 
+            nnodes = lightgraph.ndata['inlet_mask'].shape[0]
+            lightgraph.ndata['proc_node'] = th.zeros((nnodes, 
+                                                self.params['latent_size_gnn']))
             self.times.append(graph.ndata['nfeatures'].shape[2])
             self.lightgraphs.append(lightgraph)
 
@@ -138,6 +144,8 @@ class Dataset(DGLDataset):
 
         fnoise = np.random.normal(0, self.params['rate_noise_features'],
                                   nf[:,2:].shape)
+        # flowrate at inlet is exact
+        fnoise[self.graphs[igraph].ndata['inlet_mask'].bool(),1] = 0
         nf[:,2:] = nf[:,2:] + fnoise
 
         self.lightgraphs[igraph].ndata['nfeatures'] = nf
