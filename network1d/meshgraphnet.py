@@ -164,7 +164,7 @@ class MeshGraphNet(Module):
             enc_features = self.encoder_nodes(g.ndata['nfeatures'][mask,:])
             g.ndata['proc_node'][mask,:] = enc_features
         else:
-            enc_features = self.encoder_nodes(g.ndata['nfeatures'])
+            enc_features = self.encoder_nodes(g.ndata['nfeatures'].clone())
             g.ndata['proc_node'] = enc_features
 
     def encode_edges(self, edges):

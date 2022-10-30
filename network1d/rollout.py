@@ -27,7 +27,7 @@ def set_boundary_conditions_dirichlet(matrix, graph, params, bcs, time_index):
         matrix[graph.ndata['outlet_mask'].bool(), 0] = bcs[graph.ndata['outlet_mask'].bool(), 0, time_index]
         matrix[graph.ndata['inlet_mask'].bool(), 1] = bcs[graph.ndata['inlet_mask'].bool(), 1, time_index]
     elif params['bc_type'] == 'full_dirichlet':
-        matrix[graph.ndata['inlet_mask'].bool(), 0] = bcs[graph.ndata['inlet_mask'].bool(), 0, time_index]
+        # matrix[graph.ndata['inlet_mask'].bool(), 0] = bcs[graph.ndata['inlet_mask'].bool(), 0, time_index]
         matrix[graph.ndata['outlet_mask'].bool(), 0] = bcs[graph.ndata['outlet_mask'].bool(), 0, time_index]
         matrix[graph.ndata['inlet_mask'].bool(), 1] = bcs[graph.ndata['inlet_mask'].bool(), 1, time_index]
         matrix[graph.ndata['outlet_mask'].bool(), 1] = bcs[graph.ndata['outlet_mask'].bool(), 1, time_index]
@@ -70,7 +70,7 @@ def perform_timestep(gnn_model, params, graph, bcs, time_index):
     gf = graph.ndata['nfeatures']
     if params['bc_type'] == 'physiological':
         set_boundary_conditions_physiological(graph, params, bcs, time_index)
-    elif params['bc_type'] == 'dirichlet':
+    elif 'dirichlet' in params['bc_type']:
         set_boundary_conditions_dirichlet(gf, graph, params, bcs, time_index)
         graph.ndata['nfeatures'] = gf
     else:

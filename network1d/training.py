@@ -494,7 +494,7 @@ if __name__ == "__main__":
     # parse arguments from command line
     parser = argparse.ArgumentParser(description='Graph Reduced Order Models')
 
-    parser.add_argument('--bs', help='batch size', type=int, default=300)
+    parser.add_argument('--bs', help='batch size', type=int, default=100)
     parser.add_argument('--epochs', help='total number of epochs', type=int,
                         default=500)
     parser.add_argument('--lr_decay', help='learning rate decay', type=float,
@@ -519,7 +519,7 @@ if __name__ == "__main__":
     parser.add_argument('--label_norm', help='0: min_max, 1: normal, 2: none',
                         type=int, default=1)
     parser.add_argument('--stride', help='stride for multistep training',
-                        type=int, default=3)
+                        type=int, default=1)
     args = parser.parse_args()
 
     if args.label_norm == 0:
@@ -537,7 +537,7 @@ if __name__ == "__main__":
     # t2k = ['aorta', 'aortofemoral', 'synthetic_aorta']
     t2k = ['synthetic_aorta']
     graphs, params  = gng.generate_normalized_graphs(input_dir, norm_type, 
-                                                    'physiological',
+                                                    'full_dirichlet',
                                                     {'types' : types,
                                                     'types_to_keep': t2k},
                                                     n_graphs_to_keep=80)
