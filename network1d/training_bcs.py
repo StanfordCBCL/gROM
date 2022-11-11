@@ -9,21 +9,20 @@ import torch.distributed as dist
 import graph1d.generate_dataset as dset
 import torch as th
 from datetime import datetime
-from meshgraphnet import MeshGraphNet
+from bcsmeshgraphnet import BCSMeshGraphNet
 import pathlib
 from torch.utils.data.distributed import DistributedSampler
 from torch.utils.data.sampler import SubsetRandomSampler
 from dgl.dataloading import GraphDataLoader
 from tqdm import tqdm
-from rollout import rollout
-from rollout import perform_timestep
+from rollout_bcs import rollout
+from rollout_bcs import perform_timestep
 import json
 import tools.plot_tools as ptools
 import pickle
 import signal
 import graph1d.generate_normalized_graphs as gng
 import random
-import copy
 
 class SignalHandler(object):
     """
@@ -75,7 +74,9 @@ def mse(input, target, mask = None):
     """
     if mask == None:
         return ((input - target) ** 2).mean()
-    return (mask * (input - target) ** 2).mean() 
+    diff = ((input - target)**2)[mask,:]
+    diff[0,1] = 0
+    return (diff).mean()
 
 def mae(input, target, mask = None):
     """
@@ -96,7 +97,9 @@ def mae(input, target, mask = None):
     """
     if mask == None:
         return (th.abs(input - target)).mean()
-    return (mask * (th.abs(input - target))).mean()
+    diff = th.abs(input - target)[mask,:]
+    diff[0,1] = 0
+    return (diff).mean()
 
 def evaluate_model(gnn_model, train_dataloader, test_dataloader, optimizer,     
                    print_progress, params):
@@ -134,7 +137,6 @@ def evaluate_model(gnn_model, train_dataloader, test_dataloader, optimizer,
         """
         global_loss = 0
         global_metric = 0
-        global_cont = 0
         count = 0
 
         def iteration(batched_graph, c_optimizer):
@@ -152,68 +154,44 @@ def evaluate_model(gnn_model, train_dataloader, test_dataloader, optimizer,
                 Continuity loss value
 
             """
-            batched_graph_c = copy.deepcopy(batched_graph)
-            ns = batched_graph_c.ndata['next_steps']
+            ns = batched_graph.ndata['next_steps']
             loss_v = 0
             metric_v = 0
-            mask = th.ones(ns[:,:,0].shape)
-            mask[:,0] = mask[:,0] - batched_graph.ndata['inlet_mask']
-            mask[:,0] = mask[:,0] - batched_graph.ndata['outlet_mask']
-            mask[:,1] = mask[:,1] - batched_graph.ndata['inlet_mask']
-            mask[:,1] = mask[:,1] - batched_graph.ndata['outlet_mask']
-            for istride in range(params['stride']):
-                nf = perform_timestep(gnn_model, params, batched_graph_c, ns, 
-                                      istride)
+            mask = th.zeros(ns[:,:,0].shape[0]).bool()
+            inmask = batched_graph.ndata['inlet_mask']
+            outmask = batched_graph.ndata['outlet_mask']
+            mask[inmask.bool()] = True
+            mask[outmask.bool()] = True
 
-                batched_graph_c.ndata['nfeatures'][:,0:2] = nf
+            nf = perform_timestep(gnn_model, params, batched_graph, ns, 0, False)
 
-                # we follow https://arxiv.org/pdf/2206.07680.pdf for the
-                # coefficient
-                coeff = 0.1
-                if istride == 0:
-                    coeff = 1  
-
-                a_flowrate = gng.invert_normalize(nf[:,1], 'flowrate', 
-                                            params['statistics'], 'features')
-
-                try:
-                    c_loss = gnn_model.continuity_loss(batched_graph_c,
-                                                       a_flowrate)
-                except Exception:
-                    c_loss = gnn_model.module.continuity_loss(batched_graph_c,
-                                                              a_flowrate)      
-                loss_v = loss_v + params['continuity_coeff'] * c_loss 
-                loss_v = loss_v + coeff * mse(nf, ns[:,:,istride], mask)
-                metric_v = metric_v + coeff * mae(nf, ns[:,:,istride], mask)
+            loss_v = loss_v + mse(nf, ns[:,:,0], mask)
+            metric_v = metric_v + mae(nf, ns[:,:,0], mask)
 
             if c_optimizer != None:
                 optimizer.zero_grad()
                 loss_v.backward()
                 optimizer.step()
             
-            return loss_v.detach().numpy(), metric_v.detach().numpy(), \
-                   c_loss.detach().numpy()
+            return loss_v.detach().numpy(), metric_v.detach().numpy()
 
 
         if not print_progress:
             for batched_graph in dataloader:
-                loss_v, metric_v, cont_v = iteration(batched_graph, c_optimizer)
+                loss_v, metric_v = iteration(batched_graph, c_optimizer)
                 global_loss = global_loss + loss_v
                 global_metric = global_metric + metric_v
-                global_cont = global_cont + cont_v
                 count = count + 1
         else:
             for batched_graph in tqdm(dataloader, 
                                     desc = label, colour='green'):
-                loss_v, metric_v, cont_v = iteration(batched_graph, c_optimizer)
+                loss_v, metric_v = iteration(batched_graph, c_optimizer)
                 global_loss = global_loss + loss_v
                 global_metric = global_metric + metric_v
-                global_cont = global_cont + cont_v
                 count = count + 1
 
         return {'loss': global_loss / count, 
-                'metric': global_metric / count,
-                'continuity': global_cont / count}
+                'metric': global_metric / count}
 
     gnn_model.train()
     start = time.time()
@@ -344,20 +322,18 @@ def train_gnn_model(gnn_model, dataset, params, parallel, doprint = True):
 
         signal.signal(signal.SIGINT, s.handle)
         train_results, test_results, elapsed = evaluate_model(gnn_model,
-                                                              train_dataloader,
-                                                              test_dataloader,
-                                                              optimizer,
-                                                              rank == 0,
-                                                              params)
+                                                                train_dataloader,
+                                                                test_dataloader,
+                                                                optimizer,
+                                                                rank == 0,
+                                                                params)
 
 
         msg = 'epoch {:.0f}, time = {:.2f} s \n'.format(epoch, elapsed)
         msg = msg + '\ttrain:\tloss = {:.2e}\t'.format(train_results['loss'])
         msg = msg + 'mae = {:.2e}\t'.format(train_results['metric'])
-        msg = msg + 'continuity = {:.2e}\n'.format(train_results['continuity'])
         msg = msg + '\ttest:\tloss = {:.2e}\t'.format(test_results['loss'])
         msg = msg + 'mae = {:.2e}\t'.format(test_results['metric'])
-        msg = msg + 'continuity = {:.2e}'.format(test_results['continuity'])
 
         if doprint:
             print("", flush = True)
@@ -367,15 +343,11 @@ def train_gnn_model(gnn_model, dataset, params, parallel, doprint = True):
         history['train_loss'][1].append(float(train_results['loss']))
         history['train_metric'][0].append(epoch)
         history['train_metric'][1].append(float(train_results['metric']))
-        history['train_cont'][0].append(epoch)
-        history['train_cont'][1].append(float(train_results['continuity']))
 
         history['test_loss'][0].append(epoch)
         history['test_loss'][1].append(float(test_results['loss']))
         history['test_metric'][0].append(epoch)
         history['test_metric'][1].append(float(test_results['metric']))
-        history['test_cont'][0].append(epoch)
-        history['test_cont'][1].append(float(test_results['continuity']))
 
         if rank == 0:
             if epoch % np.floor(nepochs / 10) == 0 or epoch == (nepochs - 1):
@@ -401,7 +373,7 @@ def train_gnn_model(gnn_model, dataset, params, parallel, doprint = True):
 
     return gnn_model, history
 
-def launch_training(dataset, params, parallel, out_dir = 'models/'):
+def launch_training(dataset, params, parallel, out_dir = 'models_bcs/'):
     """
     Launch training
 
@@ -420,7 +392,7 @@ def launch_training(dataset, params, parallel, out_dir = 'models/'):
     now = datetime.now()
     folder = out_dir + now.strftime("%d.%m.%Y_%H.%M.%S")
 
-    gnn_model = MeshGraphNet(params)
+    gnn_model = BCSMeshGraphNet(params)
     def save_model(filename):
         if parallel:
             th.save(gnn_model.module.state_dict(), folder + '/' + filename)
@@ -432,7 +404,8 @@ def launch_training(dataset, params, parallel, out_dir = 'models/'):
             return default(obj.detach().numpy())
         if isinstance(obj, np.ndarray):
             return obj.tolist()
-        print(obj)
+        if isinstance(obj, np.int64):
+            return int(obj)
         raise TypeError('Not serializable')
 
     save_data = True
@@ -449,9 +422,12 @@ def launch_training(dataset, params, parallel, out_dir = 'models/'):
 
     save_model('trained_gnn.pms')
 
-    if save_data:
-        final_rollout = history['test_rollout'][1][-1]
-        print('Final rollout error on test = ' + str(final_rollout))
+
+    with open(folder + '/history.bnr', 'wb') as outfile:
+        pickle.dump(history, outfile)
+    
+    with open(folder + '/parameters.json', 'w') as outfile:
+        json.dump(params, outfile, default=default, indent=4)
 
     if save_data:
         ptools.plot_history(history['train_loss'],
@@ -460,15 +436,6 @@ def launch_training(dataset, params, parallel, out_dir = 'models/'):
         ptools.plot_history(history['train_metric'],
                         history['test_metric'],
                         'metric', folder)
-        ptools.plot_history(history['train_rollout'],
-                            history['test_rollout'],
-                            'rollout', folder)
-
-        with open(folder + '/history.bnr', 'wb') as outfile:
-            pickle.dump(history, outfile)
-        
-        with open(folder + '/parameters.json', 'w') as outfile:
-            json.dump(params, outfile, default=default, indent=4)
 
     return gnn_model
 
@@ -499,27 +466,22 @@ if __name__ == "__main__":
                         default=0.001)
     parser.add_argument('--lr', help='learning rate', type=float, default=0.005)
     parser.add_argument('--rate_noise', help='rate noise', type=float,
-                        default=100)
+                        default=10)
     parser.add_argument('--rate_noise_features', help='rate noise features', 
-                        type=float, default=1e-5)
+                        type=float, default=0)
     parser.add_argument('--weight_decay', help='l2 regularization', 
                         type=float, default=1e-5)
     parser.add_argument('--ls_gnn', help='latent size gnn', type=int,
                         default=16)
     parser.add_argument('--ls_mlp', help='latent size mlps', type=int,
-                        default=64)
+                        default=16)
     parser.add_argument('--process_iterations', help='gnn layers', type=int,
                         default=3)
     parser.add_argument('--hl_mlp', help='hidden layers mlps', type=int,
                         default=1)
-    parser.add_argument('--continuity_coeff', help='continuity coefficient',
-                        type=float, default=1e-6)
     parser.add_argument('--label_norm', help='0: min_max, 1: normal, 2: none',
                         type=int, default=1)
-    parser.add_argument('--stride', help='stride for multistep training',
-                        type=int, default=1)
-    parser.add_argument('--bcs_gnn', help='path to graph for bcs',
-                        type=str, default='models_bcs/31.10.2022_01.35.31')
+
     args = parser.parse_args()
 
     if args.label_norm == 0:
@@ -534,13 +496,12 @@ if __name__ == "__main__":
     norm_type = {'features': 'normal', 'labels': label_normalization}
     types = json.load(open(input_dir + '/types.json'))
 
-    # t2k = ['aorta', 'aortofemoral', 'synthetic_aorta']
     t2k = ['synthetic_aorta']
     graphs, params  = gng.generate_normalized_graphs(input_dir, norm_type, 
                                                     'physiological',
                                                     {'types' : types,
                                                     'types_to_keep': t2k},
-                                                    n_graphs_to_keep=80)
+                                                    n_graphs_to_keep=-1)
     print(params)
     graph = graphs[list(graphs)[0]]
 
@@ -563,9 +524,7 @@ if __name__ == "__main__":
                 'weight_decay': args.weight_decay,
                 'rate_noise': args.rate_noise,
                 'rate_noise_features': args.rate_noise_features,
-                'continuity_coeff': args.continuity_coeff,
-                'stride': args.stride,
-                'bcs_gnn': args.bcs_gnn}
+                'stride': 1}
     params.update(t_params)
 
     datasets = dset.generate_dataset(graphs, params, types)

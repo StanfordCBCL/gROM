@@ -223,7 +223,7 @@ def normalize_graphs(graphs, fields, statistics, norm_dict_label):
                                                             statistics,
                                                             norm_dict_label)
 
-def add_features(graphs, params):
+def add_features(graphs):
     """
     Add features to graphs.
 
@@ -232,7 +232,6 @@ def add_features(graphs, params):
 
     Arguments:
         graphs: list of graphs
-        params: dictionary containing parameters of the normalization
 
     """
     for graph_n in tqdm(graphs, desc = 'Add features', colour='green'):
@@ -244,11 +243,13 @@ def add_features(graphs, params):
         tangent = graph.ndata['tangent'].repeat(1, 1, ntimes)
         type = graph.ndata['type'].repeat(1, 1, ntimes)
 
+        geom_features = area.clone()
+        graph.ndata['geom_features'] = geom_features[:,:,0]
+
         p = graph.ndata['pressure'].clone()
         q = graph.ndata['flowrate'].clone()
 
-        graph.ndata['nfeatures'] = th.cat((p, q, area, tangent,
-                                           type), axis = 1)
+        graph.ndata['nfeatures'] = th.cat((p, q, area, tangent, type), axis = 1)
 
         rp = graph.edata['rel_position']
         rpn = graph.edata['distance']
@@ -386,6 +387,6 @@ def generate_normalized_graphs(input_dir, norm_type, bc_type,
     normalize_graphs(graphs, {'node' : ['dp', 'dq']}, statistics, 'labels')
     params = {'bc_type': bc_type}
     params['statistics'] = statistics
-    add_features(graphs, params)
+    add_features(graphs)
 
     return graphs, params

@@ -70,28 +70,13 @@ def perform_timestep(gnn_model, params, graph, bcs, time_index, set_bcs = True):
 
     gf = graph.ndata['nfeatures']
     set_next_flowrate(graph, bcs, time_index)
-    if 'dirichlet' in params['bc_type']:
-            set_boundary_conditions_dirichlet(gf, graph, params, bcs,
-                                              time_index)
-    if set_bcs and params['bc_type'] == 'physiological':
-        gnn_model.set_bcs(graph)
 
     delta = gnn_model(graph)
     gf[:,0:2] = gf[:,0:2] + delta
 
-    if set_bcs:
-        if 'dirichlet' in params['bc_type']:
-            set_boundary_conditions_dirichlet(gf, graph, params, bcs,
-                                              time_index)
-        elif params['bc_type'] == 'physiological':
-            inmask = graph.ndata['inlet_mask']
-            outmask = graph.ndata['outlet_mask']
-            mask = (inmask + outmask).bool()
-            # print(bcs[mask,:,0])
-            # print(graph.ndata['next_bcs'][mask,0:2])
-            # grqg
-            gf[mask,0:2] = graph.ndata['next_bcs'][mask,0:2]
-            gf[graph.ndata['inlet_mask'].bool(), 1] = bcs[graph.ndata['inlet_mask'].bool(), 1, time_index]
+    inmask = graph.ndata['inlet_mask']
+
+    gf[inmask.bool(), 1] = bcs[inmask.bool(), 1, time_index]
 
     return gf[:,0:2]
 
@@ -174,15 +159,10 @@ def rollout(gnn_model, params, graph, average_branches = True):
     graph.ndata['nfeatures'] = tfc[:,:,0].clone()
     graph.edata['efeatures'] = true_graph.edata['efeatures'].squeeze().clone()
         
-
     r_features = graph.ndata['nfeatures'][:,0:2].unsqueeze(axis = 2).clone()
     start = time.time()
     for it in range(times-1):
         gf = perform_timestep(gnn_model, params, graph, tfc, it + 1)
-        if params['bc_type'] == 'dirichlet':
-            set_boundary_conditions_dirichlet(gf, graph, params, tfc, it+1)
-        if average_branches:
-            compute_average_branches(graph, gf[:,1])
 
         graph.ndata['nfeatures'][:,0:2] = gf
         r_features = th.cat((r_features, gf.unsqueeze(axis = 2)), axis = 2)
@@ -196,12 +176,13 @@ def rollout(gnn_model, params, graph, average_branches = True):
     rfc = r_features.clone()
 
     # we only compute errors on branch nodes
-    branch_mask = th.reshape(graph.ndata['branch_mask'],(-1,1,1))
-    branch_mask = branch_mask.repeat(1,2,tfc.shape[2])
+    inlet_mask = th.reshape(graph.ndata['inlet_mask'],(-1,1,1))
+    outlet_mask = th.reshape(graph.ndata['outlet_mask'],(-1,1,1))
+    mask = (inlet_mask + outlet_mask).repeat(1,2,tfc.shape[2])
 
     # compute error
-    tfc = tfc * branch_mask
-    rfc = rfc * branch_mask
+    tfc = tfc * mask
+    rfc = rfc * mask
     diff = tfc - rfc
 
     errs = th.sum(th.sum(diff**2, dim = 0), dim = 1)
@@ -223,11 +204,8 @@ def rollout(gnn_model, params, graph, average_branches = True):
     errs = errs / th.sum(th.sum(tfc**2, dim = 0), dim = 1)
     errs = th.sqrt(errs)
 
-    con_loss = compute_continuity_loss(gnn_model, graph, tfc)
-
     return r_features.detach().numpy(), errs_normalized.detach().numpy(), \
-           errs.detach().numpy(), np.abs(diff.detach().numpy()), \
-           (con_loss / th.sum(rfc[0,1,:])).detach().numpy(), end - start
+           errs.detach().numpy(), np.abs(diff.detach().numpy()), 0, end - start
 
     
 

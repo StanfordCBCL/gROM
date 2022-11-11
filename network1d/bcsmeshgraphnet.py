@@ -9,8 +9,6 @@ import torch.nn.functional as F
 import numpy as np
 import dgl.function as fn
 import graph1d.generate_normalized_graphs as nz
-from bcsmeshgraphnet import BCSMeshGraphNet
-import json
 
 class MLP(Module):
     """
@@ -82,12 +80,12 @@ class MLP(Module):
 
         return f
 
-class MeshGraphNet(Module):
+class BCSMeshGraphNet(Module):
     """
-    MeshGraphNet
+    MeshGraphNet for boundary conditions
 
     This class computes pressure and flowrate updates given the previous system
-    state.
+    state at the boundary nodes
     
     Attributes:
         params: dictionary of hyperparameters
@@ -96,22 +94,22 @@ class MeshGraphNet(Module):
         processor_nodes: MLP processing nodes in network layers
         processor_edges: MLP processing edges in network layers
         process_iters: number of iterations within the network
-        output: MLP deconing graph nodes
+        output: MLP decoding graph nodes
   
     """
     def __init__(self, params):
         """
-        Init MeshGraphNet
+        Init BCSMeshGraphNet
 
         Arguments:
             params: dictionary of hyperparameters
 
         """
-        super(MeshGraphNet, self).__init__()
+        super(BCSMeshGraphNet, self).__init__()
 
         self.params = params
 
-        self.encoder_nodes = MLP(params['infeat_nodes'], 
+        self.encoder_nodes = MLP(1, 
                                  params['latent_size_gnn'],
                                  params['latent_size_mlp'],
                                  params['number_hidden_layers_mlp'])
@@ -141,32 +139,28 @@ class MeshGraphNet(Module):
                           params['number_hidden_layers_mlp'],
                           False)
 
-        params_bcs = json.load(open(params['bcs_gnn'] + '/parameters.json'))
-        self.bcs_gnn = BCSMeshGraphNet(params_bcs)
-        self.bcs_gnn.load_state_dict(th.load(params['bcs_gnn'] + \
-                                     '/trained_gnn.pms'))
+        self.inlet_encoder = MLP(3,
+                                 params['latent_size_gnn'],
+                                 params['latent_size_mlp'],
+                                 params['number_hidden_layers_mlp'])
+        self.outlet_RCR_encoder = MLP(5,
+                                      params['latent_size_gnn'],
+                                      params['latent_size_mlp'],
+                                      params['number_hidden_layers_mlp'])
 
-    def set_bcs(self, g):
-        update = self.bcs_gnn(g)
-        inmask = g.ndata['inlet_mask']
-        outmask = g.ndata['outlet_mask']
-        mask = (inmask + outmask).bool()
-        g.ndata['nfeatures'][mask,0:2] += update[mask,:]
-        g.ndata['next_bcs'] = g.ndata['nfeatures'][:,0:2].clone()
-
-    def encode_nodes(self, nodes):
+    def encode_nodes(self, g):
         """
         Encode graph nodes
 
         Arguments:
-            edges: graph nodes
-
-        Returns:
-            dictionary (key: 'proc_nodes', value: encoded features)
+            g: the graph
 
         """
-        enc_features = self.encoder_nodes(nodes.data['nfeatures'])
-        return {'proc_node': enc_features}
+        inmask = g.ndata['inlet_mask']
+        outmask = g.ndata['outlet_mask']
+        mask = (th.ones(inmask.shape) - inmask - outmask).bool()
+        enc_features = self.encoder_nodes(g.ndata['geom_features'][mask,:])
+        g.ndata['proc_node_bcs'][mask,:] = enc_features
 
     def encode_edges(self, edges):
         """
@@ -180,7 +174,7 @@ class MeshGraphNet(Module):
 
         """
         enc_features = self.encoder_edges(edges.data['efeatures'])
-        return {'proc_edge': enc_features}
+        return {'proc_edge_bcs': enc_features}
 
     def process_edges(self, edges, index):
         """
@@ -194,13 +188,13 @@ class MeshGraphNet(Module):
             dictionary (key: 'proc_edge', value: processed features)
 
         """
-        f1 = edges.data['proc_edge']
-        f2 = edges.src['proc_node']
-        f3 = edges.dst['proc_node']
+        f1 = edges.data['proc_edge_bcs']
+        f2 = edges.src['proc_node_bcs']
+        f3 = edges.dst['proc_node_bcs']
         proc_edge = self.processor_edges[index](th.cat((f1, f2, f3), 1))
         # add residual connection
         proc_edge = proc_edge + f1
-        return {'proc_edge': proc_edge}
+        return {'proc_edge_bcs': proc_edge}
 
     def process_nodes(self, nodes, index):
         """
@@ -211,15 +205,15 @@ class MeshGraphNet(Module):
             index: iteration index
 
         Returns:
-            dictionary (key: 'proc_node', value: processed features)
+            dictionary (key: 'proc_node_bcs', value: processed features)
 
         """
-        f1 = nodes.data['proc_node']
+        f1 = nodes.data['proc_node_bcs']
         f2 = nodes.data['pe_sum']
         proc_node = self.processor_nodes[index](th.cat((f1, f2), 1))
         # add residual connection
         proc_node = proc_node + f1
-        return {'proc_node': proc_node}
+        return {'proc_node_bcs': proc_node}
 
     def decode_nodes(self, nodes):
         """
@@ -232,61 +226,36 @@ class MeshGraphNet(Module):
             dictionary (key: 'pred_labels', value: decoded features)
 
         """
-        h = self.output(nodes.data['proc_node'])
+        h = self.output(nodes.data['proc_node_bcs'])
         return {'pred_labels': h}
 
-    def continuity_loss(self, g, flowrate, take_mean = True):
+    def encode_inlet(self, g):
         """
-        Compute contiuity loss
-
-        Continuity loss as the mass loss occurring  at junctions.
+        Encode inlet using next_flowrate value
 
         Arguments:
-            g: graph
-            flowrate: tensor containing nodal values of flowrate
-            take_mean: if True, take mean of junction losses. If 
-                       False, take sum. Default -> True.
-        Returns: 
-            sum of mass loss occurring at branches and at junctions
-
+            g: the graph
         """
-        g.ndata['next_flowrate'] = flowrate.clone()
+        in_mask = g.ndata['inlet_mask']
+        curvalues = g.ndata['nfeatures'][in_mask.bool(),0:2]
+        nf = th.unsqueeze(g.ndata['next_flowrate'][in_mask.bool()],1)
+        h = self.inlet_encoder(th.cat((curvalues, nf), 1))
+        g.ndata['proc_node_bcs'][in_mask.bool(),0:] = h
 
-        # we zero-out inlet and outlet flowrate (otherwise they would send
-        # their flowrate to branch and junction nodes)
-        g.ndata['next_flowrate'][g.ndata['inlet_mask'].bool()] = 0
-        g.ndata['next_flowrate'][g.ndata['outlet_mask'].bool()] = 0
+    def encode_outlets(self, g):
+        """
+        Encode outlets using rcr values
 
-        # # we send flowrate through branches, compute the mean
-        # # of neighboring nodes, and compute the diff with our estimate
-        # g.update_all(fn.copy_u('next_flowrate', 'm'), 
-        #              fn.sum('m', 'sum_flowrate'))
-        # # branch nodes have only two neighbors
-        # diff = th.abs(2 * g.ndata['next_flowrate'] - g.ndata['sum_flowrate'])
-        # diff = diff * g.ndata['continuity_mask']
-        # if take_mean:
-        #     branch_continuity = th.mean(diff)
-        # else:
-        #     branch_continuity = th.sum(diff)
-
-        # we keep flowrate at inlet and outlets of junctions
-        g.ndata['flow_junction'] = g.ndata['next_flowrate'] * \
-                                   g.ndata['jun_mask']
-
-        g.update_all(fn.copy_u('flow_junction', 'm'), 
-                     fn.sum('m', 'sum_flowrate'))
-
-        # we use the inlet to compute the difference
-        diff = th.abs(g.ndata['sum_flowrate'] - g.ndata['next_flowrate'])
-        diff = diff * g.ndata['jun_inlet_mask']
-
-        if take_mean:
-            junction_continuity = th.sum(diff) / \
-                                th.sum(g.ndata['jun_inlet_mask'])
-        else:
-            junction_continuity = th.sum(diff)
-
-        return junction_continuity
+        Arguments:
+            g: the graph
+        """
+        out_mask = g.ndata['outlet_mask']
+        curvalues = g.ndata['nfeatures'][out_mask.bool(),0:2]
+        r1 = th.reshape(g.ndata['resistance1'][out_mask.bool()],(-1,1))
+        c = th.reshape(g.ndata['capacitance'][out_mask.bool()],(-1,1))
+        r2 = th.reshape(g.ndata['resistance2'][out_mask.bool()],(-1,1))
+        h = self.outlet_RCR_encoder(th.cat((curvalues, r1, c, r2), 1))
+        g.ndata['proc_node_bcs'][out_mask.bool(),:] = h
 
     def forward(self, g):
         """
@@ -301,7 +270,16 @@ class MeshGraphNet(Module):
                 (second column)
 
         """
-        g.apply_nodes(self.encode_nodes)
+        if 'proc_node_bcs' not in g.ndata:
+            nnodes = g.ndata['nfeatures'].shape[0]
+            size = self.params['latent_size_gnn']
+            g.ndata['proc_node_bcs'] = th.zeros((nnodes, size))
+            
+        self.encode_inlet(g)
+        self.encode_outlets(g)
+
+        # g.apply_nodes(self.encode_nodes)
+        self.encode_nodes(g)
         g.apply_edges(self.encode_edges)
         
         for index in range(self.process_iters):
@@ -311,7 +289,7 @@ class MeshGraphNet(Module):
                 return self.process_nodes(nodes, index)
             # compute junction-branch interactions
             g.apply_edges(process_edges)
-            g.update_all(fn.copy_e('proc_edge', 'm'), 
+            g.update_all(fn.copy_e('proc_edge_bcs', 'm'), 
                          fn.sum('m', 'pe_sum'))
             g.apply_nodes(process_nodes)
 
