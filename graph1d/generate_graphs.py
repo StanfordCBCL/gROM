@@ -404,6 +404,14 @@ def generate_boundary_edges(points, indices, edges1, edges2):
     dists = np.delete(np.array(dists), edges_to_delete)
     types = np.delete(np.array(types), edges_to_delete)
 
+    # make edges bidirectional
+    bedges1_copy = bedges1.copy()
+    bedges1 = np.concatenate((bedges1, bedges2), axis = 0)
+    bedges2 = np.concatenate((bedges2, bedges1_copy), axis = 0)
+    rel_positions = np.concatenate((rel_positions, -rel_positions), axis = 0)
+    dists = np.concatenate((dists, dists))
+    types = np.concatenate((types, types))
+
     # DEBUG: plot all edges
     # fig = plt.figure()
     # ax = plt.axes(projection='3d')
