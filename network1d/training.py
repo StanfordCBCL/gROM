@@ -157,10 +157,13 @@ def evaluate_model(gnn_model, train_dataloader, test_dataloader, optimizer,
             loss_v = 0
             metric_v = 0
             mask = th.ones(ns[:,:,0].shape)
-            mask[:,0] = mask[:,0] - batched_graph.ndata['inlet_mask']
-            mask[:,0] = mask[:,0] - batched_graph.ndata['outlet_mask']
-            mask[:,1] = mask[:,1] - batched_graph.ndata['inlet_mask']
-            mask[:,1] = mask[:,1] - batched_graph.ndata['outlet_mask']
+            inmask = batched_graph.ndata['inlet_mask'].bool()
+            outmask = batched_graph.ndata['outlet_mask'].bool()
+
+            mask[inmask,0] = mask[inmask,0] * 10
+            # flow rate is known
+            mask[outmask,0] = mask[outmask,0] * 10
+            mask[outmask,1] = mask[outmask,1] * 10
             for istride in range(params['stride']):
                 nf = perform_timestep(gnn_model, params, batched_graph_c, ns, 
                                       istride)
@@ -511,7 +514,7 @@ if __name__ == "__main__":
     parser.add_argument('--process_iterations', help='gnn layers', type=int,
                         default=3)
     parser.add_argument('--hl_mlp', help='hidden layers mlps', type=int,
-                        default=1)
+                        default=2)
     parser.add_argument('--continuity_coeff', help='continuity coefficient',
                         type=float, default=1e-6)
     parser.add_argument('--label_norm', help='0: min_max, 1: normal, 2: none',

@@ -111,7 +111,7 @@ class MeshGraphNet(Module):
 
         self.params = params
 
-        self.encoder_nodes = MLP(params['infeat_nodes'], 
+        self.encoder_nodes = MLP(params['infeat_nodes'] + 4, 
                                  params['latent_size_gnn'],
                                  params['latent_size_mlp'],
                                  params['number_hidden_layers_mlp'])
@@ -119,7 +119,6 @@ class MeshGraphNet(Module):
                                  params['latent_size_gnn'],
                                  params['latent_size_mlp'],
                                  params['number_hidden_layers_mlp'])
-
 
         self.processor_nodes = th.nn.ModuleList()
         self.processor_edges = th.nn.ModuleList()
@@ -141,18 +140,50 @@ class MeshGraphNet(Module):
                           params['number_hidden_layers_mlp'],
                           False)
 
-        params_bcs = json.load(open(params['bcs_gnn'] + '/parameters.json'))
-        self.bcs_gnn = BCSMeshGraphNet(params_bcs)
-        self.bcs_gnn.load_state_dict(th.load(params['bcs_gnn'] + \
-                                     '/trained_gnn.pms'))
+        # self.processor_nodes_bcs = MLP(lsgnn * 2,
+        #                                params['latent_size_gnn'],
+        #                                params['latent_size_mlp'],
+        #                                params['number_hidden_layers_mlp'])
 
-    def set_bcs(self, g):
-        update = self.bcs_gnn(g)
-        inmask = g.ndata['inlet_mask']
-        outmask = g.ndata['outlet_mask']
-        mask = (inmask + outmask).bool()
-        g.ndata['nfeatures'][mask,0:2] += update[mask,:]
-        g.ndata['next_bcs'] = g.ndata['nfeatures'][:,0:2].clone()
+        # self.processor_edges_bcs = MLP(lsgnn * 3,
+        #                                params['latent_size_gnn'],
+        #                                params['latent_size_mlp'],
+        #                                params['number_hidden_layers_mlp'])
+
+        # self.encoder_nodes_bcs = MLP(params['infeat_nodes'], 
+        #                              params['latent_size_gnn'],
+        #                              params['latent_size_mlp'],
+        #                              params['number_hidden_layers_mlp'])
+
+        # self.encoder_edges_bcs = MLP(params['infeat_edges'], 
+        #                              params['latent_size_gnn'],
+        #                              params['latent_size_mlp'],
+        #                              params['number_hidden_layers_mlp'])
+
+        self.output_inlet = MLP(params['latent_size_gnn'] + 1,
+                                params['out_size'],
+                                params['latent_size_mlp'],
+                                params['number_hidden_layers_mlp'],
+                                False)
+
+        self.output_outlet = MLP(params['latent_size_gnn'] + 3,
+                        params['out_size'],
+                        params['latent_size_mlp'],
+                        params['number_hidden_layers_mlp'],
+                        False)
+
+        # params_bcs = json.load(open(params['bcs_gnn'] + '/parameters.json'))
+        # self.bcs_gnn = BCSMeshGraphNet(params_bcs)
+        # self.bcs_gnn.load_state_dict(th.load(params['bcs_gnn'] + \
+        #                              '/trained_gnn.pms'))
+
+    # def set_bcs(self, g):
+    #     update = self.bcs_gnn(g)
+    #     inmask = g.ndata['inlet_mask']
+    #     outmask = g.ndata['outlet_mask']
+    #     mask = (inmask + outmask).bool()
+    #     g.ndata['nfeatures'][mask,0:2] += update[mask,:]
+    #     g.ndata['next_bcs'] = g.ndata['nfeatures'][:,0:2].clone()
 
     def encode_nodes(self, nodes):
         """
@@ -165,7 +196,20 @@ class MeshGraphNet(Module):
             dictionary (key: 'proc_nodes', value: encoded features)
 
         """
-        enc_features = self.encoder_nodes(nodes.data['nfeatures'])
+        inmask = nodes.data['inlet_mask'].bool()
+        nnodes = inmask.shape[0]
+        nf = th.zeros((nnodes,1))
+        nf[inmask] = th.unsqueeze(nodes.data['next_flowrate'][inmask],1)
+
+        outmask = nodes.data['outlet_mask'].bool()
+        r1 = th.zeros((nnodes,1))
+        c = th.zeros((nnodes,1))
+        r2 = th.zeros((nnodes,1))
+        r1[outmask] = nodes.data['resistance1'][outmask,0,:]
+        c[outmask] = nodes.data['capacitance'][outmask,0,:]
+        r2[outmask] = nodes.data['resistance2'][outmask,0,:]
+        features = th.cat((nodes.data['nfeatures'], nf, r1, c, r2), 1)
+        enc_features = self.encoder_nodes(features)
         return {'proc_node': enc_features}
 
     def encode_edges(self, edges):
@@ -181,6 +225,54 @@ class MeshGraphNet(Module):
         """
         enc_features = self.encoder_edges(edges.data['efeatures'])
         return {'proc_edge': enc_features}
+
+    # def encode_nodes_bcs(self, nodes):
+    #     """
+    #     Encode graph nodes
+
+    #     Arguments:
+    #         edges: graph nodes
+
+    #     Returns:
+    #         dictionary (key: 'proc_nodes', value: encoded features)
+
+    #     """
+    #     enc_features = self.encoder_nodes(nodes.data['nfeatures'])
+    #     return {'proc_node_bcs': enc_features}
+
+    # def encode_edges_bcs(self, edges):
+    #     """
+    #     Encode graph edges
+
+    #     Arguments:
+    #         edges: graph edges
+
+    #     Returns:
+    #         dictionary (key: 'proc_edge', value: encoded features)
+
+    #     """
+    #     enc_features = self.encoder_edges(edges.data['efeatures'])
+    #     return {'proc_edge_bcs': enc_features}
+
+    # def process_edges_bcs(self, edges, index):
+    #     """
+    #     Process graph edges
+
+    #     Arguments:
+    #         edges: graph edges
+    #         index: iteration index
+
+    #     Returns:
+    #         dictionary (key: 'proc_edge', value: processed features)
+
+    #     """
+    #     f1 = edges.data['proc_edge_bcs']
+    #     f2 = edges.src['proc_node_bcs']
+    #     f3 = edges.dst['proc_node_bcs']
+    #     proc_edge = self.processor_edges[index](th.cat((f1, f2, f3), 1))
+    #     # add residual connection
+    #     proc_edge = proc_edge + f1
+    #     return {'proc_edge_bcs': proc_edge}
 
     def process_edges(self, edges, index):
         """
@@ -221,6 +313,25 @@ class MeshGraphNet(Module):
         proc_node = proc_node + f1
         return {'proc_node': proc_node}
 
+    # def process_nodes_bcs(self, nodes, index):
+    #     """
+    #     Process graph nodes
+
+    #     Arguments:
+    #         nodes: graph nodes
+    #         index: iteration index
+
+    #     Returns:
+    #         dictionary (key: 'proc_node', value: processed features)
+
+    #     """
+    #     f1 = nodes.data['proc_node_bcs']
+    #     f2 = nodes.data['pe_sum_bcs']
+    #     proc_node = self.processor_nodes[index](th.cat((f1, f2), 1))
+    #     # add residual connection
+    #     proc_node = proc_node + f1
+    #     return {'proc_node_bcs': proc_node}
+
     def decode_nodes(self, nodes):
         """
         Decode graph nodes
@@ -234,6 +345,8 @@ class MeshGraphNet(Module):
         """
         h = self.output(nodes.data['proc_node'])
         return {'pred_labels': h}
+
+    # def decode_nodes_bcs(self, nodes):
 
     def continuity_loss(self, g, flowrate, take_mean = True):
         """
@@ -287,6 +400,20 @@ class MeshGraphNet(Module):
             junction_continuity = th.sum(diff)
 
         return junction_continuity
+
+    # def estimate_bcs(self, g):
+    #     g.apply_nodes(self.encode_nodes_bcs)
+    #     g.apply_edges(self.encode_edges_bcs)
+
+    #     g.apply_edges(self.process_edges_bcs)
+    #     g.update_all(fn.copy_e('proc_edge_bcs', 'm'), 
+    #                  fn.sum('m', 'pe_sum_bcs'))
+
+    #     g.apply_nodes(self.process_nodes_bcs)
+
+    #     g.apply_nodes(self.decode_nodes_bcs)
+
+    #     return g.ndata['pred_labels_bcs']
 
     def forward(self, g):
         """

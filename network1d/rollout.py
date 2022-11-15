@@ -73,8 +73,8 @@ def perform_timestep(gnn_model, params, graph, bcs, time_index, set_bcs = True):
     if 'dirichlet' in params['bc_type']:
             set_boundary_conditions_dirichlet(gf, graph, params, bcs,
                                               time_index)
-    if set_bcs and params['bc_type'] == 'physiological':
-        gnn_model.set_bcs(graph)
+    # if set_bcs and params['bc_type'] == 'physiological':
+    #     gnn_model.set_bcs(graph)
 
     delta = gnn_model(graph)
     gf[:,0:2] = gf[:,0:2] + delta
@@ -84,13 +84,13 @@ def perform_timestep(gnn_model, params, graph, bcs, time_index, set_bcs = True):
             set_boundary_conditions_dirichlet(gf, graph, params, bcs,
                                               time_index)
         elif params['bc_type'] == 'physiological':
-            inmask = graph.ndata['inlet_mask']
-            outmask = graph.ndata['outlet_mask']
-            mask = (inmask + outmask).bool()
-            # print(bcs[mask,:,0])
-            # print(graph.ndata['next_bcs'][mask,0:2])
-            # grqg
-            gf[mask,0:2] = graph.ndata['next_bcs'][mask,0:2]
+            # inmask = graph.ndata['inlet_mask']
+            # outmask = graph.ndata['outlet_mask']
+            # mask = (inmask + outmask).bool()
+            # # print(bcs[mask,:,0])
+            # # print(graph.ndata['next_bcs'][mask,0:2])
+            # # grqg
+            # gf[mask,0:2] = graph.ndata['next_bcs'][mask,0:2]
             gf[graph.ndata['inlet_mask'].bool(), 1] = bcs[graph.ndata['inlet_mask'].bool(), 1, time_index]
 
     return gf[:,0:2]
@@ -173,7 +173,6 @@ def rollout(gnn_model, params, graph, average_branches = True):
     tfc = true_graph.ndata['nfeatures'].clone()
     graph.ndata['nfeatures'] = tfc[:,:,0].clone()
     graph.edata['efeatures'] = true_graph.edata['efeatures'].squeeze().clone()
-        
 
     r_features = graph.ndata['nfeatures'][:,0:2].unsqueeze(axis = 2).clone()
     start = time.time()
