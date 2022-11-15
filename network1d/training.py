@@ -160,10 +160,11 @@ def evaluate_model(gnn_model, train_dataloader, test_dataloader, optimizer,
             inmask = batched_graph.ndata['inlet_mask'].bool()
             outmask = batched_graph.ndata['outlet_mask'].bool()
 
-            mask[inmask,0] = mask[inmask,0] * 10
+            bccoeff = 100
+            mask[inmask,0] = mask[inmask,0] * bccoeff
             # flow rate is known
-            mask[outmask,0] = mask[outmask,0] * 10
-            mask[outmask,1] = mask[outmask,1] * 10
+            mask[outmask,0] = mask[outmask,0] * bccoeff
+            mask[outmask,1] = mask[outmask,1] * bccoeff
             for istride in range(params['stride']):
                 nf = perform_timestep(gnn_model, params, batched_graph_c, ns, 
                                       istride)
@@ -435,6 +436,8 @@ def launch_training(dataset, params, parallel, out_dir = 'models/'):
             return default(obj.detach().numpy())
         if isinstance(obj, np.ndarray):
             return obj.tolist()
+        if isinstance(obj, np.int64):
+            return int(obj)
         print(obj)
         raise TypeError('Not serializable')
 
@@ -520,7 +523,7 @@ if __name__ == "__main__":
     parser.add_argument('--label_norm', help='0: min_max, 1: normal, 2: none',
                         type=int, default=1)
     parser.add_argument('--stride', help='stride for multistep training',
-                        type=int, default=1)
+                        type=int, default=3)
     parser.add_argument('--bcs_gnn', help='path to graph for bcs',
                         type=str, default='models_bcs/31.10.2022_01.35.31')
     args = parser.parse_args()

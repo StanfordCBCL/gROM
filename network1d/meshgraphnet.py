@@ -160,18 +160,6 @@ class MeshGraphNet(Module):
         #                              params['latent_size_mlp'],
         #                              params['number_hidden_layers_mlp'])
 
-        self.output_inlet = MLP(params['latent_size_gnn'] + 1,
-                                params['out_size'],
-                                params['latent_size_mlp'],
-                                params['number_hidden_layers_mlp'],
-                                False)
-
-        self.output_outlet = MLP(params['latent_size_gnn'] + 3,
-                        params['out_size'],
-                        params['latent_size_mlp'],
-                        params['number_hidden_layers_mlp'],
-                        False)
-
         # params_bcs = json.load(open(params['bcs_gnn'] + '/parameters.json'))
         # self.bcs_gnn = BCSMeshGraphNet(params_bcs)
         # self.bcs_gnn.load_state_dict(th.load(params['bcs_gnn'] + \
