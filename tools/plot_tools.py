@@ -8,7 +8,6 @@ import matplotlib
 from matplotlib import animation
 import torch as th
 import os
-import plotly.graph_objects as go
 import vtk
 from vtk.util.numpy_support import vtk_to_numpy
 from random import sample
