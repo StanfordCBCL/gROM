@@ -249,7 +249,10 @@ def add_features(graphs):
         p = graph.ndata['pressure'].clone()
         q = graph.ndata['flowrate'].clone()
 
-        graph.ndata['nfeatures'] = th.cat((p, q, area, tangent, type), axis = 1)
+        dip = th.ones(p.shape[0],1,ntimes) * th.min(p)
+        syp = th.ones(p.shape[0],1,ntimes) * th.max(p)
+
+        graph.ndata['nfeatures'] = th.cat((p, q, area, tangent, type, dip, syp), axis = 1)
 
         rp = graph.edata['rel_position']
         rpn = graph.edata['distance']

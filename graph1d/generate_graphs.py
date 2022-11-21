@@ -945,56 +945,61 @@ if __name__ == "__main__":
             for t in pressure:
                 pressure[t] = pressure[t] / 1333.2
 
-            max_num_partitions = 1
-            if max_num_partitions > 1:
-                partitions = create_partitions(points, point_data,
-                                            edges1, edges2,
-                                            max_num_partitions)
-            else:
-                sampling_indices = np.arange(points.shape[0])
-                partitions = [{'point_data': point_data,
-                            'points': points,
-                            'edges1': edges1,
-                            'edges2': edges2,
-                            'sampling_indices': sampling_indices}]
+            times = [t for t in pressure]
 
-            for i, part in enumerate(partitions):
-                filename = file.replace('.vtp','.' + str(i) + '.grph')
-                add_boundary_edges = True
-                add_junction_edges = True
-                # try:
-                if 1:
-                    graph, indices, \
-                    points, bif_id, \
-                    edges1, edges2 = generate_graph(part['point_data'],
-                                                    part['points'],
-                                                    part['edges1'],
-                                                    part['edges2'],
-                                                    add_boundary_edges,
-                                                    add_junction_edges,
-                                                    rcr_values[file])
-                    # pathlib.Path('images').mkdir(parents=True, exist_ok=True)
-                    # pt.plot_graph(points, bif_id, indices, edges1, edges2)
-                    # plt.savefig('images/' + filename + '.eps', 
-                    #             format='eps',
-                    #             bbox_inches='tight')
-                    c_pressure = {}
-                    c_flowrate = {}
-                    for t in pressure:
-                        c_pressure[t] = pressure[t][part['sampling_indices']]
-                        c_flowrate[t] = flowrate[t][part['sampling_indices']]
+            sampling_indices = np.arange(points.shape[0])
+            part = {'point_data': point_data,
+                     'points': points,
+                     'edges1': edges1,
+                     'edges2': edges2,
+                     'sampling_indices': sampling_indices}
 
-                    do_resample_time = True
-                    if do_resample_time:
-                        dt = 0.001
-                        c_pressure = resample_time(c_pressure, timestep = dt)
-                        c_flowrate = resample_time(c_flowrate, timestep = dt)
+            add_boundary_edges = True
+            add_junction_edges = True
+            try:
+                graph, indices, \
+                points, bif_id, \
+                edges1, edges2 = generate_graph(part['point_data'],
+                                                part['points'],
+                                                part['edges1'],
+                                                part['edges2'],
+                                                add_boundary_edges,
+                                                add_junction_edges,
+                                                rcr_values[file])
+                # pathlib.Path('images').mkdir(parents=True, exist_ok=True)
+                # pt.plot_graph(points, bif_id, indices, edges1, edges2)
+                # plt.savefig('images/' + filename + '.eps', 
+                #             format='eps',
+                #             bbox_inches='tight')
+            except Exception as e:
+                print(e)
+                continue
 
-                    add_fields(graph, c_pressure, 'pressure')
-                    add_fields(graph, c_flowrate, 'flowrate')
+            do_resample_time = True
+            ncopies = 1
+            if do_resample_time:
+                ncopies = 4
+                dt = 0.01
+                offset = int(np.floor((dt / timestep) / ncopies))
 
-                    dgl.save_graphs(output_dir + filename, graph)
-                # except Exception as e:
-                #     print(e)
+            intime = 0
+            for icopy in range(ncopies):
+                c_pressure = {}
+                c_flowrate = {}
+                
+                for t in times[intime:]:
+                    c_pressure[t] = pressure[t][part['sampling_indices']]
+                    c_flowrate[t] = flowrate[t][part['sampling_indices']]
+
+                if do_resample_time:
+                    c_pressure = resample_time(c_pressure, timestep = dt)
+                    c_flowrate = resample_time(c_flowrate, timestep = dt)
+                    intime = intime + offset
+
+                add_fields(graph, c_pressure, 'pressure')
+                add_fields(graph, c_flowrate, 'flowrate')
+
+                filename = file.replace('.vtp','.' + str(icopy) + '.grph')
+                dgl.save_graphs(output_dir + filename, graph)
 
     shutil.copy(input_dir + 'types.json',  output_dir + 'types.json')

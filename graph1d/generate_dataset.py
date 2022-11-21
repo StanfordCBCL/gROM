@@ -155,17 +155,17 @@ class Dataset(DGLDataset):
 
         ns = features[:,0:2,itime + 1:itime + 1 + self.params['stride']].clone()
 
-        self.lightgraphs[indices[0]].ndata['next_steps'] = ns
+        self.lightgraphs[igraph].ndata['next_steps'] = ns
 
-        ef = self.graphs[indices[0]].edata['efeatures']
+        ef = self.graphs[igraph].edata['efeatures']
 
         # add regular noise to the edge features to prevent overfitting
         fnoise = np.random.normal(0, self.params['rate_noise_features'],
                                   ef[:,2:].shape)
         ef[:,2:] = ef[:,2:] + fnoise
-        self.lightgraphs[indices[0]].edata['efeatures'] = ef.squeeze()
+        self.lightgraphs[igraph].edata['efeatures'] = ef.squeeze()
 
-        return self.lightgraphs[indices[0]]
+        return self.lightgraphs[igraph]
 
     def __getitem__(self, i):
         """
