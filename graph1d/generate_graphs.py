@@ -102,6 +102,7 @@ def add_fields(graph, field, field_name, subsample_time = 1, offset = 0):
     timesteps = [float(t) for t in field]
     timesteps.sort()
     dt = (timesteps[1] - timesteps[0]) * subsample_time
+    T = timesteps[-1]
     count = 0
     # we use the third dimension for time
     field_t = th.zeros((list(field.values())[0].shape[0], 1,
@@ -116,6 +117,8 @@ def add_fields(graph, field, field_name, subsample_time = 1, offset = 0):
     graph.ndata[field_name] = field_t[:,:,::subsample_time]
     graph.ndata['dt'] = th.reshape(th.ones(graph.num_nodes(),
                                    dtype = th.float32) * dt, (-1,1,1))
+    graph.ndata['T'] = th.reshape(th.ones(graph.num_nodes(),
+                                   dtype = th.float32) * T, (-1,1,1))
 
 def find_outlets(edges1, edges2):
     """

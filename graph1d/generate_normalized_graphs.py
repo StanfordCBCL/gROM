@@ -9,6 +9,7 @@ from dgl.data.utils import load_graphs as lg
 import numpy as np
 import json
 import random
+import scipy
 
 def normalize(field, field_name, statistics, norm_dict_label):
     """
@@ -238,21 +239,31 @@ def add_features(graphs):
         graph = graphs[graph_n]
         ntimes = graph.ndata['pressure'].shape[2]
 
-        graph.ndata['dt'].repeat(1, 1, ntimes)
+        # graph.ndata['dt'].repeat(1, 1, ntimes)
         area = graph.ndata['area'].repeat(1, 1, ntimes)
         tangent = graph.ndata['tangent'].repeat(1, 1, ntimes)
         type = graph.ndata['type'].repeat(1, 1, ntimes)
+        T = graph.ndata['T'].repeat(1, 1, ntimes)
 
         geom_features = area.clone()
         graph.ndata['geom_features'] = geom_features[:,:,0]
 
         p = graph.ndata['pressure'].clone()
         q = graph.ndata['flowrate'].clone()
-
         dip = th.ones(p.shape[0],1,ntimes) * th.min(p)
         syp = th.ones(p.shape[0],1,ntimes) * th.max(p)
 
-        graph.ndata['nfeatures'] = th.cat((p, q, area, tangent, type, dip, syp), axis = 1)
+        n_res_times = 20
+        resampled_times = np.linspace(0,1,n_res_times)
+        inflow_q = q[graph.ndata['inlet_mask'].bool(),0,:].detach().numpy()
+        tck, _ = scipy.interpolate.splprep([inflow_q.squeeze()],
+                                            u = np.linspace(0,1,ntimes), s = 0)
+        inq = th.tensor(scipy.interpolate.splev(resampled_times, tck)[0]).squeeze()
+
+        inq = inq.repeat(graph.num_nodes(), 1)
+        cfeatures = th.cat((area, tangent, type, T, dip, syp), axis = 1)
+        graph.ndata['cfeatures'] = th.cat((cfeatures[:,:,0], inq), axis = 1)
+        graph.ndata['nfeatures'] = th.cat((p, q, cfeatures), axis = 1)
 
         rp = graph.edata['rel_position']
         rpn = graph.edata['distance']

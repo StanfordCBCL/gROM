@@ -9,7 +9,6 @@ import torch.nn.functional as F
 import numpy as np
 import dgl.function as fn
 import graph1d.generate_normalized_graphs as nz
-from bcsmeshgraphnet import BCSMeshGraphNet
 import json
 
 class MLP(Module):
