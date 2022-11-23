@@ -244,6 +244,8 @@ def add_features(graphs):
         tangent = graph.ndata['tangent'].repeat(1, 1, ntimes)
         type = graph.ndata['type'].repeat(1, 1, ntimes)
         T = graph.ndata['T'].repeat(1, 1, ntimes)
+        loading = th.zeros((graph.num_nodes(),1,ntimes))
+        loading[:,:,0:10] = 1
 
         geom_features = area.clone()
         graph.ndata['geom_features'] = geom_features[:,:,0]
@@ -253,16 +255,27 @@ def add_features(graphs):
         dip = th.ones(p.shape[0],1,ntimes) * th.min(p)
         syp = th.ones(p.shape[0],1,ntimes) * th.max(p)
 
-        n_res_times = 20
-        resampled_times = np.linspace(0,1,n_res_times)
-        inflow_q = q[graph.ndata['inlet_mask'].bool(),0,:].detach().numpy()
-        tck, _ = scipy.interpolate.splprep([inflow_q.squeeze()],
-                                            u = np.linspace(0,1,ntimes), s = 0)
-        inq = th.tensor(scipy.interpolate.splev(resampled_times, tck)[0]).squeeze()
+        outmask = graph.ndata['outlet_mask'].bool()
+        nnodes = outmask.shape[0]
+        r1 = th.zeros((nnodes,1,ntimes))
+        c = th.zeros((nnodes,1,ntimes))
+        r2 = th.zeros((nnodes,1,ntimes))
+        r1[outmask,0,:] = graph.ndata['resistance1'][outmask,0,:]
+        c[outmask,0,:] = graph.ndata['capacitance'][outmask,0,:]
+        r2[outmask,0,:] = graph.ndata['resistance2'][outmask,0,:]
 
-        inq = inq.repeat(graph.num_nodes(), 1)
-        cfeatures = th.cat((area, tangent, type, T, dip, syp), axis = 1)
-        graph.ndata['cfeatures'] = th.cat((cfeatures[:,:,0], inq), axis = 1)
+        # n_res_times = 5
+        # resampled_times = np.linspace(0,1,n_res_times)
+        # inflow_q = q[graph.ndata['inlet_mask'].bool(),0,:].detach().numpy()
+        # tck, _ = scipy.interpolate.splprep([inflow_q.squeeze()],
+        #                                     u = np.linspace(0,1,ntimes), s = 0)
+        # inq = th.tensor(scipy.interpolate.splev(resampled_times, tck)[0], 
+        #                 dtype = th.float32).squeeze()
+
+        # inq = inq.repeat(graph.num_nodes(), 1)
+        cfeatures = th.cat((area, tangent, type, T, dip, syp, 
+                           r1, c, r2, loading), axis = 1)
+        # graph.ndata['cfeatures'] = th.cat((cfeatures[:,:,0], inq), axis = 1)
         graph.ndata['nfeatures'] = th.cat((p, q, cfeatures), axis = 1)
 
         rp = graph.edata['rel_position']

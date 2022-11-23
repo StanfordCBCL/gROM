@@ -173,7 +173,7 @@ def evaluate_model(gnn_model, train_dataloader, test_dataloader, optimizer,
 
                 # we follow https://arxiv.org/pdf/2206.07680.pdf for the
                 # coefficient
-                coeff = 0.1
+                coeff = 0.5
                 if istride == 0:
                     coeff = 1  
 
@@ -327,6 +327,8 @@ def train_gnn_model(gnn_model, dataset, params, parallel, doprint = True):
                                                         T_max = nepochs,
                                                         eta_min = eta_min)
 
+    countp = 0
+
     # sample train and test graphs for rollout
     np.random.seed(10)
     ngraphs = np.min((10, len(dataset['test'].graphs)))
@@ -382,7 +384,7 @@ def train_gnn_model(gnn_model, dataset, params, parallel, doprint = True):
         history['test_cont'][1].append(float(test_results['continuity']))
 
         if rank == 0:
-            if epoch % np.floor(nepochs / 10) == 0 or epoch == (nepochs - 1):
+            if (epoch + 1) == 2**countp or epoch == (nepochs - 1):
                 e_train, e_test = compute_rollout_errors(gnn_model, 
                                                         params, dataset, 
                                                         idxs_train, idxs_test)
@@ -391,6 +393,7 @@ def train_gnn_model(gnn_model, dataset, params, parallel, doprint = True):
                 history['train_rollout'][1].append(float(np.mean(e_train)))
                 history['test_rollout'][0].append(epoch)
                 history['test_rollout'][1].append(float(np.mean(e_test)))
+                countp = countp + 1
 
         if doprint:
             msg = 'Rollout: {:.0f}\t'.format(epoch)
@@ -503,7 +506,7 @@ if __name__ == "__main__":
                         default=100)
     parser.add_argument('--lr_decay', help='learning rate decay', type=float,
                         default=0.001)
-    parser.add_argument('--lr', help='learning rate', type=float, default=0.005)
+    parser.add_argument('--lr', help='learning rate', type=float, default=0.001)
     parser.add_argument('--rate_noise', help='rate noise', type=float,
                         default=100)
     parser.add_argument('--rate_noise_features', help='rate noise features', 
@@ -523,7 +526,7 @@ if __name__ == "__main__":
     parser.add_argument('--label_norm', help='0: min_max, 1: normal, 2: none',
                         type=int, default=1)
     parser.add_argument('--stride', help='stride for multistep training',
-                        type=int, default=3)
+                        type=int, default=5)
     parser.add_argument('--bcs_gnn', help='path to graph for bcs',
                         type=str, default='models_bcs/31.10.2022_01.35.31')
     args = parser.parse_args()
@@ -546,11 +549,11 @@ if __name__ == "__main__":
                                                     'physiological',
                                                     {'types' : types,
                                                     'types_to_keep': t2k},
-                                                    n_graphs_to_keep=80)
+                                                    n_graphs_to_keep=-1)
     print(params)
     graph = graphs[list(graphs)[0]]
 
-    infeat_nodes = graph.ndata['nfeatures'].shape[1]
+    infeat_nodes = graph.ndata['nfeatures'].shape[1] + 1
     infeat_edges = graph.edata['efeatures'].shape[1]
     nout = 2
 

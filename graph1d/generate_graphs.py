@@ -82,7 +82,8 @@ def generate_edge_features(points, edges1, edges2):
         rel_position_norm.append(ndiff)
     return np.array(rel_position), rel_position_norm
 
-def add_fields(graph, field, field_name, subsample_time = 1, offset = 0):
+def add_fields(graph, field, field_name, subsample_time = 1, offset = 0,
+               pad = 10):
     """
     Add time-dependent fields to a DGL graph.
 
@@ -98,21 +99,42 @@ def add_fields(graph, field, field_name, subsample_time = 1, offset = 0):
                               Default: 1 -> keep all timesteps
         offset (int): number of timesteps to skip.
                       Default: 0 -> keep all timesteps
+        pad (int): number of timesteps to add for interpolation from zero
+                   zero initial conditions. Default: 0 -> start from actual
+                   initial condition
     """
     timesteps = [float(t) for t in field]
     timesteps.sort()
     dt = (timesteps[1] - timesteps[0]) * subsample_time
     T = timesteps[-1]
-    count = 0
     # we use the third dimension for time
     field_t = th.zeros((list(field.values())[0].shape[0], 1,
-                        len(timesteps) - offset))
-    for t in field:
-        if count >= offset:
-            f = th.tensor(field[t], dtype = th.float32)
-            field_t[:,0,count - offset] = f
-            # graph.ndata[field_name + '_{}'.format(count - offset)] = f
-        count = count + 1
+                        len(timesteps) - offset + pad))
+
+    times = [t for t in field]
+    times.sort()
+    times = times[offset:]
+
+
+    if pad > 0:
+        # def interpolate_function(count):
+        #     return (1 - np.cos(np.pi * count / pad)) / 2
+
+        inc = th.tensor(field[times[0]], dtype = th.float32)
+        deft = inc * 0
+        if field_name == 'pressure':
+
+            minp = np.infty
+            for t in field:
+                minp = np.min((minp, np.min(field[t])))
+            deft = deft + minp
+        for i in range(pad):
+            field_t[:,0,i] = deft * (pad - i)/pad + inc * (i / pad)
+    
+    for i, t in enumerate(times):
+        f = th.tensor(field[t], dtype = th.float32)
+        field_t[:,0,i + pad] = f
+        # graph.ndata[field_name + '_{}'.format(count - offset)] = f
 
     graph.ndata[field_name] = field_t[:,:,::subsample_time]
     graph.ndata['dt'] = th.reshape(th.ones(graph.num_nodes(),
@@ -588,6 +610,7 @@ def generate_tangents(points, branch_id):
                                             points[point_idxs, 1],
                                             points[point_idxs, 2]], s=0,
                                             k = np.min((3, len(point_idxs)-1)))
+        
 
         x, y, z = interpolate.splev(u, tck, der = 1)
         tangents[point_idxs,0] = x
@@ -999,8 +1022,8 @@ if __name__ == "__main__":
                     c_flowrate = resample_time(c_flowrate, timestep = dt)
                     intime = intime + offset
 
-                add_fields(graph, c_pressure, 'pressure')
-                add_fields(graph, c_flowrate, 'flowrate')
+                add_fields(graph, c_pressure, 'pressure', pad = 10)
+                add_fields(graph, c_flowrate, 'flowrate', pad = 10)
 
                 filename = file.replace('.vtp','.' + str(icopy) + '.grph')
                 dgl.save_graphs(output_dir + filename, graph)

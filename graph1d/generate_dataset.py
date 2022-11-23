@@ -93,16 +93,11 @@ class Dataset(DGLDataset):
             node_data = [ndata for ndata in lightgraph.ndata]
             edge_data = [edata for edata in lightgraph.edata]
             for ndata in node_data:
-                if 'mask' not in ndata and \
-                   'resistance' not in ndata and \
-                   'capacitance' not in ndata:
+                if 'mask' not in ndata:
                     del lightgraph.ndata[ndata]
             for edata in edge_data:
                 del lightgraph.edata[edata]
 
-            nnodes = lightgraph.ndata['inlet_mask'].shape[0]
-            lightgraph.ndata['proc_node'] = th.zeros((nnodes, 
-                                                self.params['latent_size_gnn']))
             self.times.append(graph.ndata['nfeatures'].shape[2])
             self.lightgraphs.append(lightgraph)
 

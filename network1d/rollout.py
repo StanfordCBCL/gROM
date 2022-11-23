@@ -177,6 +177,11 @@ def rollout(gnn_model, params, graph, average_branches = True):
     r_features = graph.ndata['nfeatures'][:,0:2].unsqueeze(axis = 2).clone()
     start = time.time()
     for it in range(times-1):
+        # loading
+        if it < 10:
+            graph.ndata['nfeatures'][:,-1] = 1
+        else:
+            graph.ndata['nfeatures'][:,-1] = 0
         gf = perform_timestep(gnn_model, params, graph, tfc, it + 1)
         if params['bc_type'] == 'dirichlet':
             set_boundary_conditions_dirichlet(gf, graph, params, tfc, it+1)
