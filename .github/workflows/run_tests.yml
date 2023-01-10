@@ -32,7 +32,6 @@ jobs:
         sudo apt-get install python3-pip
         sudo pip3 install virtualenv 
         bash create_venv.sh
-        ls
         source test/run_test_rollout.sh
         source test/run_test_training.sh
         
