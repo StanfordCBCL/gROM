@@ -71,10 +71,7 @@ def perform_timestep(gnn_model, params, graph, bcs, time_index, set_bcs = True):
     gf = graph.ndata['nfeatures']
     set_next_flowrate(graph, bcs, time_index)
     if 'dirichlet' in params['bc_type']:
-            set_boundary_conditions_dirichlet(gf, graph, params, bcs,
-                                              time_index)
-    # if set_bcs and params['bc_type'] == 'physiological':
-    #     gnn_model.set_bcs(graph)
+        set_boundary_conditions_dirichlet(gf, graph, params, bcs, time_index)
 
     delta = gnn_model(graph)
     gf[:,0:2] = gf[:,0:2] + delta
@@ -84,49 +81,9 @@ def perform_timestep(gnn_model, params, graph, bcs, time_index, set_bcs = True):
             set_boundary_conditions_dirichlet(gf, graph, params, bcs,
                                               time_index)
         elif params['bc_type'] == 'physiological':
-            # inmask = graph.ndata['inlet_mask']
-            # outmask = graph.ndata['outlet_mask']
-            # mask = (inmask + outmask).bool()
-            # # print(bcs[mask,:,0])
-            # # print(graph.ndata['next_bcs'][mask,0:2])
-            # # grqg
-            # gf[mask,0:2] = graph.ndata['next_bcs'][mask,0:2]
             gf[graph.ndata['inlet_mask'].bool(), 1] = bcs[graph.ndata['inlet_mask'].bool(), 1, time_index]
 
     return gf[:,0:2]
-
-def compute_continuity_loss(gnn_model, graph, rec_features):
-    """
-    Compute continuity loss.
-
-    Arguments:
-        gnn_model: the GNN model
-        graph: DGL graph
-        rec_features: 3D array where dim 1 corresponds to node indices,  
-                      dim 2 corresponds to pressure (0) and flow rate (1), 
-                      and dim 3 corresponds to the timestep index.
-    Returns:
-        Sum of continuity loss over all timesteps
-
-    """
-    sum = 0
-    parallel = True 
-    try: 
-        c_loss = gnn_model.module.continuity_loss
-    except:
-        parallel = False
-
-    for itime in range(rec_features.shape[2]):
-        if parallel:
-            c_loss = gnn_model.module.continuity_loss(graph, rec_features[:,1,
-                                                      itime],
-                                                      take_mean = False)
-        else:
-            c_loss = gnn_model.continuity_loss(graph, rec_features[:,1,itime],
-                                               take_mean = False)
-        # to compute total loss we want to consider the sum of flowrate loss
-        sum = sum + c_loss
-    return sum
 
 def compute_average_branches(graph, flowrate):
     """
@@ -177,14 +134,10 @@ def rollout(gnn_model, params, graph, average_branches = True):
     r_features = graph.ndata['nfeatures'][:,0:2].unsqueeze(axis = 2).clone()
     start = time.time()
     for it in range(times-1):
-        # loading
-        if it < 10:
-            graph.ndata['nfeatures'][:,-1] = 1
-        else:
-            graph.ndata['nfeatures'][:,-1] = 0
+        # set loading variable
+        graph.ndata['nfeatures'][:,-1] = tfc[:,-1,it]
         gf = perform_timestep(gnn_model, params, graph, tfc, it + 1)
-        if params['bc_type'] == 'dirichlet':
-            set_boundary_conditions_dirichlet(gf, graph, params, tfc, it+1)
+
         if average_branches:
             compute_average_branches(graph, gf[:,1])
 
@@ -227,11 +180,8 @@ def rollout(gnn_model, params, graph, average_branches = True):
     errs = errs / th.sum(th.sum(tfc**2, dim = 0), dim = 1)
     errs = th.sqrt(errs)
 
-    con_loss = compute_continuity_loss(gnn_model, graph, tfc)
-
     return r_features.detach().numpy(), errs_normalized.detach().numpy(), \
-           errs.detach().numpy(), np.abs(diff.detach().numpy()), \
-           (con_loss / th.sum(rfc[0,1,:])).detach().numpy(), end - start
+           errs.detach().numpy(), np.abs(diff.detach().numpy()), end - start
 
     
 

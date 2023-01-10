@@ -2,6 +2,8 @@ import os
 import vtk
 import numpy as np
 from vtk.util.numpy_support import vtk_to_numpy as v2n
+import xml.etree.cElementTree as ET
+import meshio
 
 def data_location():
     """
@@ -172,3 +174,60 @@ def gather_array(arrays, arrayname, mintime = 1e-12):
                 out[time] = arrays[array]
 
     return out
+
+def write_graph(graph, outfile):
+    """
+    Write a vtk file given a graph. 
+    The file can be opened in Paraview.
+  
+    Arguments:
+        graph: A DGL graph.
+        outfile (string): Output file name
+
+    """
+
+    points = graph.ndata['x'].detach().numpy()
+    edges0 = graph.edges()[0].detach().numpy()
+    edges1 = graph.edges()[1].detach().numpy()
+
+    cells = {
+        'line': np.vstack((edges0, edges1)).transpose()
+    }
+
+    type = np.argmax(graph.ndata['type'].detach().numpy(),
+                     axis = 1)
+
+    point_data = {
+        'type': type
+    }
+
+    meshio.write_points_cells(outfile, points, cells,
+                              point_data = point_data)
+
+    bpoints = np.where(type > 1)[0]
+
+    points = points[bpoints,:]
+    print(points)
+    x1 = np.arange(points.shape[0])
+    x2 = (x1 + 1)
+    x2[-1] = 0
+    cells = {
+        'line': np.vstack((x1, x2)).transpose()
+    }
+
+    point_data = {
+        'type': type[bpoints]
+    }
+
+    print(cells)
+
+    meshio.write_points_cells('boundary.vtk', points, cells,
+                              point_data = point_data)
+    
+
+
+
+
+
+
+

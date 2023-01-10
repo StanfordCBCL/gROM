@@ -244,8 +244,7 @@ def add_features(graphs):
         tangent = graph.ndata['tangent'].repeat(1, 1, ntimes)
         type = graph.ndata['type'].repeat(1, 1, ntimes)
         T = graph.ndata['T'].repeat(1, 1, ntimes)
-        loading = th.zeros((graph.num_nodes(),1,ntimes))
-        loading[:,:,0:10] = 1
+        loading = graph.ndata['loading']
 
         geom_features = area.clone()
         graph.ndata['geom_features'] = geom_features[:,:,0]
@@ -274,9 +273,9 @@ def add_features(graphs):
 
         # inq = inq.repeat(graph.num_nodes(), 1)
         cfeatures = th.cat((area, tangent, type, T, dip, syp, 
-                           r1, c, r2, loading), axis = 1)
+                           r1, c, r2), axis = 1)
         # graph.ndata['cfeatures'] = th.cat((cfeatures[:,:,0], inq), axis = 1)
-        graph.ndata['nfeatures'] = th.cat((p, q, cfeatures), axis = 1)
+        graph.ndata['nfeatures'] = th.cat((p, q, cfeatures, loading), axis = 1)
 
         rp = graph.edata['rel_position']
         rpn = graph.edata['distance']
@@ -345,7 +344,8 @@ def restrict_graphs(graphs, types, types_to_keep):
     """
     selected_graphs = {}
     for graph in graphs:
-        if types[graph.split('.')[0]] in types_to_keep:
+        id = graph.replace('.grph','').split('.')
+        if types[id[0] + '.' + id[1]]['model_type'] in types_to_keep:
             selected_graphs[graph] = graphs[graph]
     graphs = selected_graphs
     return graphs
@@ -392,17 +392,25 @@ def generate_normalized_graphs(input_dir, norm_type, bc_type,
     graphs = load_graphs(input_dir)
 
     if types_to_keep != None:
-        graphs = restrict_graphs(graphs, types_to_keep['types'], 
-                                types_to_keep['types_to_keep'])
+        graphs = restrict_graphs(graphs, types_to_keep['dataset_info'], 
+                                 types_to_keep['types_to_keep'])
 
     if n_graphs_to_keep != -1:
         graphs_ = {}
+        graphs_names = []
         count = 0
         for key, value in graphs.items():
-            if count == n_graphs_to_keep:
-                break
-            graphs_[key] = value
-            count = count + 1
+            # if count == n_graphs_to_keep:
+            #     break
+            # graph_name = key.replace('.graph','')
+            # graph_name = graph_name[0:graph_name.find('.')]
+            graph_name = ".".join(key.split(".", 2)[:2])
+            if graph_name not in graphs_names and count != n_graphs_to_keep:
+                graphs_names.append(graph_name)
+                graphs_[key] = value
+                count = count + 1
+            elif graph_name in graphs_names:
+                graphs_[key] = value
         graphs = graphs_
 
     if docompute_statistics:

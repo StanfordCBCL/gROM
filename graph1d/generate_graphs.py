@@ -82,7 +82,7 @@ def generate_edge_features(points, edges1, edges2):
         rel_position_norm.append(ndiff)
     return np.array(rel_position), rel_position_norm
 
-def add_fields(graph, field, field_name, subsample_time = 1, offset = 0,
+def add_fields(graph, field, field_name, offset = 0,
                pad = 10):
     """
     Add time-dependent fields to a DGL graph.
@@ -95,8 +95,6 @@ def add_fields(graph, field, field_name, subsample_time = 1, offset = 0,
         graph: DGL graph
         field: dictionary with (key: timestep, value: field value)
         field_name (string): name of the field
-        subsample_time (int): select every subsample_time timesteps.
-                              Default: 1 -> keep all timesteps
         offset (int): number of timesteps to skip.
                       Default: 0 -> keep all timesteps
         pad (int): number of timesteps to add for interpolation from zero
@@ -105,7 +103,7 @@ def add_fields(graph, field, field_name, subsample_time = 1, offset = 0,
     """
     timesteps = [float(t) for t in field]
     timesteps.sort()
-    dt = (timesteps[1] - timesteps[0]) * subsample_time
+    dt = (timesteps[1] - timesteps[0])
     T = timesteps[-1]
     # we use the third dimension for time
     field_t = th.zeros((list(field.values())[0].shape[0], 1,
@@ -115,6 +113,8 @@ def add_fields(graph, field, field_name, subsample_time = 1, offset = 0,
     times.sort()
     times = times[offset:]
 
+    loading_t = th.zeros((list(field.values())[0].shape[0], 1,
+                          len(timesteps) - offset + pad), dtype = th.bool)
 
     if pad > 0:
         # def interpolate_function(count):
@@ -130,13 +130,16 @@ def add_fields(graph, field, field_name, subsample_time = 1, offset = 0,
             deft = deft + minp
         for i in range(pad):
             field_t[:,0,i] = deft * (pad - i)/pad + inc * (i / pad)
+            loading_t[:,0,i] = True
     
     for i, t in enumerate(times):
         f = th.tensor(field[t], dtype = th.float32)
         field_t[:,0,i + pad] = f
+        loading_t[:,0,i + pad] = False
         # graph.ndata[field_name + '_{}'.format(count - offset)] = f
 
-    graph.ndata[field_name] = field_t[:,:,::subsample_time]
+    graph.ndata[field_name] = field_t
+    graph.ndata['loading'] = loading_t
     graph.ndata['dt'] = th.reshape(th.ones(graph.num_nodes(),
                                    dtype = th.float32) * dt, (-1,1,1))
     graph.ndata['T'] = th.reshape(th.ones(graph.num_nodes(),
@@ -677,12 +680,31 @@ def generate_graph(point_data, points, edges1, edges2,
     types, inlet_mask, \
     outlet_mask = generate_types(bif_id, indices)
 
+    # we need to find the closest point in the rcr file, because the
+    # id might be different if we used different centerlines for 
+    # solution and generation of the rcr file
+    def find_closest_point_in_rcr_file(point):
+        min_d = np.infty
+        sid = -1
+        for id in rcr_values:
+            if type(rcr_values[id]) is dict and 'point' in rcr_values[id]:
+                diff = np.linalg.norm(point - np.array(rcr_values[id]['point']))
+                if diff < min_d:
+                    min_d = diff
+                    sid = id
+        return sid
     npoints = points.shape[0]
     rcr = np.zeros((npoints,3))
-    branch_id = point_data['BranchId']
     for ipoint in range(npoints):
         if outlet_mask[ipoint] == 1:
-            rcr[ipoint,:] = rcr_values['{:.0f}'.format(branch_id[ipoint])]
+            if rcr_values['bc_type'] == 'RCR':
+                id = find_closest_point_in_rcr_file(points[ipoint])
+                rcr[ipoint,:] = rcr_values[id]['RCR']
+            elif rcr_values['bc_type'] == 'R':
+                id = find_closest_point_in_rcr_file(points[ipoint])
+                rcr[ipoint,0] = rcr_values[id]['RP'][0]
+            else:
+                raise ValueError('Unknown type of boundary conditions!')
     etypes = [0] * edges1.size
     # we set etype to 1 if either of the nodes is a junction
     for iedge in range(edges1.size):
@@ -848,7 +870,7 @@ def create_partitions(points, bif_id,
             partitions.append(new_partition)
     return partitions
 
-def resample_time(field, timestep):
+def resample_time(field, timestep, period, shift = 0):
     """
     Resample timesteps.
 
@@ -859,6 +881,11 @@ def resample_time(field, timestep):
         field: dictionary containing the field for all timesteps
                (key: timestep, value: n-dimensional numpy array)
         timestep (float): the new timestep
+        period (float): period of the simulation. We restrict to one cardiac
+                        cycle
+
+        shift (float): apply shift (s) to start at the beginning of the systole.
+                       Default value -> 0
 
     Returns:
         Dictionary containing the field for all resampled timesteps
@@ -869,20 +896,19 @@ def resample_time(field, timestep):
 
     t0 = original_timesteps[0]
     T = original_timesteps[-1]
-    t = [t0]
+    t = [t0 + shift]
     nnodes = field[t0].size
-    resampled_field = {t0: np.zeros(nnodes)}
-    while t[-1] < T:
+    resampled_field = {t0 + shift: np.zeros(nnodes)}
+    while t[-1] < T and t[-1] <= t[0] + period:
         t.append(t[-1] + timestep)
         resampled_field[t[-1]] = np.zeros(nnodes)
-
 
     for inode in range(nnodes):
         values = []
         for time in original_timesteps:
             values.append(field[time][inode])
 
-        tck, u = scipy.interpolate.splprep([values],
+        tck, _ = scipy.interpolate.splprep([values],
                                            u = original_timesteps, s = 0)
         values_interpolated = interpolate.splev(t, tck)[0]
 
@@ -893,21 +919,14 @@ def resample_time(field, timestep):
 
 """
 The main function reads all vtps files from the folder specified in input_dir
-and generate DGL graphs. The graphs are saved in output_dir.
+and generates DGL graphs. The graphs are saved in output_dir.
 """
 if __name__ == "__main__":
     data_location = io.data_location()
     input_dir = data_location + 'vtps/'
-    output_dir = data_location + 'graphs/'
+    output_dir = data_location + 'graphs_0.02/'
 
-    rcr_values = json.load(open(input_dir + '/rcr_values.json'))
-
-    # if we provide timestep file then we need to rescale time in vtp
-    try:
-        rescale_time = True
-        timesteps = json.load(open(input_dir + '/timesteps.json'))
-    except:
-        rescale_time = False
+    dataset_info = json.load(open(input_dir + '/dataset_info.json'))
 
     files = os.listdir(input_dir)
 
@@ -915,7 +934,7 @@ if __name__ == "__main__":
     print('File list:')
     print(files)
     for file in tqdm(files, desc = 'Generating graphs', colour='green'):
-        if '.vtp' in file:
+        if '.vtp' in file and 's' in file:
             point_data, points, edges1, edges2 = load_vtp(file, input_dir)
             try:
                 point_data['tangent'] = generate_tangents(points,
@@ -926,7 +945,7 @@ if __name__ == "__main__":
             outlets = find_outlets(edges1, edges2)
 
             indices = {'inlet': inlet,
-                    'outlets': outlets}
+                       'outlets': outlets}
 
             resample_perc = 0.06
             success = False
@@ -951,21 +970,20 @@ if __name__ == "__main__":
             outlets = find_outlets(edges1, edges2)
 
             indices = {'inlet': inlet,
-                    'outlets': outlets}
+                       'outlets': outlets}
 
             pressure = io.gather_array(point_data, 'pressure')
             flowrate = io.gather_array(point_data, 'flow')
             if len(flowrate) == 0:
                 flowrate = io.gather_array(point_data, 'velocity')
 
-            if rescale_time:
-                times = [t for t in pressure]
-                timestep = float(timesteps[file[:file.find('.')]])
-                for t in times:
-                    pressure[t * timestep] = pressure[t]
-                    flowrate[t * timestep] = flowrate[t]
-                    del pressure[t]
-                    del flowrate[t]
+            times = [t for t in pressure]
+            timestep = float(dataset_info[file]['dt'])
+            for t in times:
+                pressure[t * timestep] = pressure[t]
+                flowrate[t * timestep] = flowrate[t]
+                del pressure[t]
+                del flowrate[t]
 
             # scale pressure to be mmHg
             for t in pressure:
@@ -981,31 +999,23 @@ if __name__ == "__main__":
                      'sampling_indices': sampling_indices}
 
             add_boundary_edges = True
-            add_junction_edges = True
-            try:
-                graph, indices, \
-                points, bif_id, \
-                edges1, edges2 = generate_graph(part['point_data'],
-                                                part['points'],
-                                                part['edges1'],
-                                                part['edges2'],
-                                                add_boundary_edges,
-                                                add_junction_edges,
-                                                rcr_values[file])
-                # pathlib.Path('images').mkdir(parents=True, exist_ok=True)
-                # pt.plot_graph(points, bif_id, indices, edges1, edges2)
-                # plt.savefig('images/' + filename + '.eps', 
-                #             format='eps',
-                #             bbox_inches='tight')
-            except Exception as e:
-                print(e)
-                continue
+            add_junction_edges = False
+
+            graph, indices, \
+            points, bif_id, \
+            edges1, edges2 = generate_graph(part['point_data'],
+                                            part['points'],
+                                            part['edges1'],
+                                            part['edges2'],
+                                            add_boundary_edges,
+                                            add_junction_edges,
+                                            dataset_info[file])
 
             do_resample_time = True
             ncopies = 1
             if do_resample_time:
                 ncopies = 4
-                dt = 0.01
+                dt = 0.02
                 offset = int(np.floor((dt / timestep) / ncopies))
 
             intime = 0
@@ -1018,14 +1028,24 @@ if __name__ == "__main__":
                     c_flowrate[t] = flowrate[t][part['sampling_indices']]
 
                 if do_resample_time:
-                    c_pressure = resample_time(c_pressure, timestep = dt)
-                    c_flowrate = resample_time(c_flowrate, timestep = dt)
+                    model_name = file.split('.')[0]
+                    period = dataset_info[file]['T']
+                    shift = dataset_info[file]['time_shift']
+                    c_pressure = resample_time(c_pressure, timestep = dt, 
+                                            period = period,
+                                            shift = shift)
+                    c_flowrate = resample_time(c_flowrate, 
+                                            timestep = dt,
+                                            period =  period,
+                                            shift = shift)
                     intime = intime + offset
 
-                add_fields(graph, c_pressure, 'pressure', pad = 10)
-                add_fields(graph, c_flowrate, 'flowrate', pad = 10)
+                padt = 0.1
+                add_fields(graph, c_pressure, 'pressure', pad = int(padt / dt))
+                add_fields(graph, c_flowrate, 'flowrate', pad = int(padt / dt))
 
                 filename = file.replace('.vtp','.' + str(icopy) + '.grph')
                 dgl.save_graphs(output_dir + filename, graph)
 
-    shutil.copy(input_dir + 'types.json',  output_dir + 'types.json')
+    shutil.copy(input_dir + 'dataset_info.json',  
+                output_dir + 'dataset_info.json')

@@ -177,16 +177,8 @@ def evaluate_model(gnn_model, train_dataloader, test_dataloader, optimizer,
                 if istride == 0:
                     coeff = 1  
 
-                a_flowrate = gng.invert_normalize(nf[:,1], 'flowrate', 
-                                            params['statistics'], 'features')
+                c_loss = th.tensor(0.0)
 
-                try:
-                    c_loss = gnn_model.continuity_loss(batched_graph_c,
-                                                       a_flowrate)
-                except Exception:
-                    c_loss = gnn_model.module.continuity_loss(batched_graph_c,
-                                                              a_flowrate)      
-                loss_v = loss_v + params['continuity_coeff'] * c_loss 
                 loss_v = loss_v + coeff * mse(nf, ns[:,:,istride], mask)
                 metric_v = metric_v + coeff * mae(nf, ns[:,:,istride], mask)
 
@@ -195,29 +187,25 @@ def evaluate_model(gnn_model, train_dataloader, test_dataloader, optimizer,
                 loss_v.backward()
                 optimizer.step()
             
-            return loss_v.detach().numpy(), metric_v.detach().numpy(), \
-                   c_loss.detach().numpy()
+            return loss_v.detach().numpy(), metric_v.detach().numpy()
 
 
         if not print_progress:
             for batched_graph in dataloader:
-                loss_v, metric_v, cont_v = iteration(batched_graph, c_optimizer)
+                loss_v, metric_v = iteration(batched_graph, c_optimizer)
                 global_loss = global_loss + loss_v
                 global_metric = global_metric + metric_v
-                global_cont = global_cont + cont_v
                 count = count + 1
         else:
             for batched_graph in tqdm(dataloader, 
                                     desc = label, colour='green'):
-                loss_v, metric_v, cont_v = iteration(batched_graph, c_optimizer)
+                loss_v, metric_v = iteration(batched_graph, c_optimizer)
                 global_loss = global_loss + loss_v
                 global_metric = global_metric + metric_v
-                global_cont = global_cont + cont_v
                 count = count + 1
 
         return {'loss': global_loss / count, 
-                'metric': global_metric / count,
-                'continuity': global_cont / count}
+                'metric': global_metric / count}
 
     gnn_model.train()
     start = time.time()
@@ -245,16 +233,16 @@ def compute_rollout_errors(gnn_model, params, dataset, idxs_train, idxs_test):
     """
     train_errs = np.zeros(2)
     for idx in idxs_train:
-        _, cur_train_errs, _, _, _, _ = rollout(gnn_model, params, 
-                                                dataset['train'].graphs[idx])
+        _, cur_train_errs, _, _, _ = rollout(gnn_model, params, 
+                                             dataset['train'].graphs[idx])
         train_errs = cur_train_errs + train_errs
     
     train_errs = train_errs / len(idxs_train)
 
     test_errs = np.zeros(2)
     for idx in idxs_test:
-        _, cur_test_errs, _, _, _, _ = rollout(gnn_model, params, 
-                                               dataset['test'].graphs[idx])
+        _, cur_test_errs, _, _, _ = rollout(gnn_model, params, 
+                                            dataset['test'].graphs[idx])
         test_errs = cur_test_errs + test_errs
 
     test_errs = test_errs / (len(idxs_test))
@@ -339,11 +327,9 @@ def train_gnn_model(gnn_model, dataset, params, parallel, doprint = True):
     history['train_loss'] = [[], []]
     history['train_metric'] = [[], []]
     history['train_rollout'] = [[], []]
-    history['train_cont'] = [[], []]
     history['test_loss'] = [[], []]
     history['test_metric'] = [[], []]
     history['test_rollout'] = [[], []]  
-    history['test_cont'] = [[], []]       
     for epoch in range(nepochs):
         if doprint:
             print('================{}================'.format(epoch))
@@ -360,10 +346,8 @@ def train_gnn_model(gnn_model, dataset, params, parallel, doprint = True):
         msg = 'epoch {:.0f}, time = {:.2f} s \n'.format(epoch, elapsed)
         msg = msg + '\ttrain:\tloss = {:.2e}\t'.format(train_results['loss'])
         msg = msg + 'mae = {:.2e}\t'.format(train_results['metric'])
-        msg = msg + 'continuity = {:.2e}\n'.format(train_results['continuity'])
         msg = msg + '\ttest:\tloss = {:.2e}\t'.format(test_results['loss'])
         msg = msg + 'mae = {:.2e}\t'.format(test_results['metric'])
-        msg = msg + 'continuity = {:.2e}'.format(test_results['continuity'])
 
         if doprint:
             print("", flush = True)
@@ -373,15 +357,11 @@ def train_gnn_model(gnn_model, dataset, params, parallel, doprint = True):
         history['train_loss'][1].append(float(train_results['loss']))
         history['train_metric'][0].append(epoch)
         history['train_metric'][1].append(float(train_results['metric']))
-        history['train_cont'][0].append(epoch)
-        history['train_cont'][1].append(float(train_results['continuity']))
 
         history['test_loss'][0].append(epoch)
         history['test_loss'][1].append(float(test_results['loss']))
         history['test_metric'][0].append(epoch)
         history['test_metric'][1].append(float(test_results['metric']))
-        history['test_cont'][0].append(epoch)
-        history['test_cont'][1].append(float(test_results['continuity']))
 
         if rank == 0:
             if (epoch + 1) == 2**countp or epoch == (nepochs - 1):
@@ -521,8 +501,6 @@ if __name__ == "__main__":
                         default=3)
     parser.add_argument('--hl_mlp', help='hidden layers mlps', type=int,
                         default=2)
-    parser.add_argument('--continuity_coeff', help='continuity coefficient',
-                        type=float, default=1e-6)
     parser.add_argument('--label_norm', help='0: min_max, 1: normal, 2: none',
                         type=int, default=1)
     parser.add_argument('--stride', help='stride for multistep training',
@@ -541,15 +519,18 @@ if __name__ == "__main__":
     data_location = io.data_location()
     input_dir = data_location + 'graphs/'
     norm_type = {'features': 'normal', 'labels': label_normalization}
-    types = json.load(open(input_dir + '/types.json'))
+    info = json.load(open(input_dir + '/dataset_info.json'))
 
-    # t2k = ['aorta', 'aortofemoral', 'synthetic_aorta']
     t2k = ['synthetic_aorta']
+    # other option
+    # t2k = ['synthetica_aortofemroal', 
+    #        'synthetic_pulmonary', 
+    #        'synthetic_aorta_coarctation']
     graphs, params  = gng.generate_normalized_graphs(input_dir, norm_type, 
                                                     'physiological',
-                                                    {'types' : types,
+                                                    {'dataset_info' : info,
                                                     'types_to_keep': t2k},
-                                                    n_graphs_to_keep=-1)
+                                                    n_graphs_to_keep=10)
     print(params)
     graph = graphs[list(graphs)[0]]
 
@@ -572,17 +553,19 @@ if __name__ == "__main__":
                 'weight_decay': args.weight_decay,
                 'rate_noise': args.rate_noise,
                 'rate_noise_features': args.rate_noise_features,
-                'continuity_coeff': args.continuity_coeff,
                 'stride': args.stride,
                 'bcs_gnn': args.bcs_gnn}
     params.update(t_params)
 
-    datasets = dset.generate_dataset(graphs, params, types)
+    datasets = dset.generate_dataset(graphs, params, info)
+
     start = time.time()
-    for dataset in datasets:
+    for i, dataset in enumerate(datasets):
+        dataset['test'].graph_names.sort()
         params['train_split'] = dataset['train'].graph_names
         params['test_split'] = dataset['test'].graph_names
         gnn_model = launch_training(dataset, params, parallel)
+
     end = time.time()
     elapsed_time = end - start
 

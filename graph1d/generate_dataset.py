@@ -195,7 +195,7 @@ class Dataset(DGLDataset):
         print('Total number of graphs: {:}'.format(self.__len__()))
         return 'Dataset = ' + ', '.join(self.graph_names)
 
-def split(graphs, divs, types):
+def split(graphs, divs, dataset_info):
     """
     Split a list of graphs.
 
@@ -205,7 +205,7 @@ def split(graphs, divs, types):
 
     Arguments:
         divs: number of train/test groups.
-        types: dictionary (key: graph name, value: type)
+        types: dictionary (key: graph name, value: dataset infp)
 
     Returns:
         List of groups
@@ -240,7 +240,7 @@ def split(graphs, divs, types):
 
     sublists = {}
     for name in names:
-        type = types[name.split('.')[0]]
+        type = dataset_info[name]['model_type']
         if type not in sublists:
             sublists[type] = []
         sublists[type].append(name)
@@ -272,7 +272,7 @@ def split(graphs, divs, types):
 
     datasets = []
 
-    for i in range(1):
+    for i in range(divs):
         cur_set = []
         for _, subset_v in subsets.items():
             cur_set = cur_set + subset_v[i]
@@ -290,7 +290,7 @@ def split(graphs, divs, types):
     
     return datasets
 
-def generate_dataset(graphs, params, types):
+def generate_dataset(graphs, params, dataset_info):
     """
     Generate a list of datasets
 
@@ -301,13 +301,13 @@ def generate_dataset(graphs, params, types):
     Arguments:
         graphs: list of graphs
         params: dictionary of parameters
-        types: dictionary (key: graph name, value: type)
+        types: dictionary (key: graph name, value: info)
 
     Returns:
         List of datasets
     """
     dataset_list = []
-    datasets = split(graphs, nchunks, types)
+    datasets = split(graphs, nchunks, dataset_info)
     for dataset in datasets:
         train_graphs = [graphs[gname] for gname in dataset['train']]
         train_dataset = Dataset(train_graphs, params, dataset['train'])
