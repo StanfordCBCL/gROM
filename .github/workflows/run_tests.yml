@@ -1,0 +1,38 @@
+# This is a basic workflow that is manually triggered
+
+name: Run gROM tests
+
+# Controls when the action will run.
+on:
+  # Workflow runs when manually triggered using the UI or API.
+  workflow_dispatch:
+        
+  # This is to schedule run every Monday at 5:30 UTC
+  # schedule:
+    # Runs every monday at 5:30 UTC
+    # - cron: '30 5 * * 1'
+    
+  push:
+
+jobs:
+  # run_tests
+  run_tests:
+    # The type of runner that the job will run on
+    # ubuntu-20.04 == ubuntu latest
+    runs-on: ubuntu-20.04
+
+    steps:
+    # Checkout the repository first
+    - name: Checkout
+      uses: actions/checkout@v2
+
+    - name: Build libraries for Ubuntu
+      shell: bash
+      run: |
+        sudo apt-get install python3-pip
+        sudo pip3 install virtualenv 
+        bash create_venv.sh
+        source test/run_test_rollout.sh
+        source test/run_test_training.sh
+        
+    
