@@ -14,6 +14,8 @@ def data_location():
         Location of the data (string)
 
     """
+    if not os.path.exists(os.getcwd() + '/data_location.txt'):
+        return '.'
     f = open(os.getcwd() + '/data_location.txt', 'r')
     location = f.readline().strip()
     f.close()
