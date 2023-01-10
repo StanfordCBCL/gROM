@@ -92,7 +92,44 @@ def evaluate_all_models(dataset, split_name, gnn_model, params, doplot = False):
     return tot_errs_normalized/N, tot_errs/N, tot_cont_loss/N, \
            total_time / N, total_timesteps / N
 
-def get_dataset_and_gnn(path, data_location = None):
+def get_gnn_and_graphs(path, graphs_folder = 'graphs/', 
+                       data_location = None):
+
+    """
+    Get GNN and list of graphs given the path to a saved model folder.
+
+    Arguments:
+        path (string): path to the GNN model folder. This should be the output
+                       generated when launching the 'network1d/training.py'
+                       script
+        graphs_folder: name of folder containing graphs
+        data_location (string): location of the 'gROM_data' folder. If None, 
+                                we take the default location (which must be 
+                                specified in data_location.txt).
+                                Default -> None
+    Returns:
+        GNN model
+        List of graphs
+        Dictionary containing parameters
+    """
+    
+    params = json.load(open(path + '/parameters.json'))
+
+    gnn_model = MeshGraphNet(params)
+    gnn_model.load_state_dict(th.load(path + '/trained_gnn.pms'))
+
+    if data_location == None:
+        data_location = io.data_location()
+    graphs, _  = gng.generate_normalized_graphs(data_location + graphs_folder,
+                                                params['statistics']
+                                                      ['normalization_type'],
+                                                params['bc_type'],
+                                                statistics = params 
+                                                             ['statistics'])
+
+    return gnn_model, graphs, params
+
+def get_dataset_and_gnn(path, graphs_folder = 'graphs/', data_location = None):
     """
     Get datasets and GNN given the path to a saved model folder.
 
@@ -100,6 +137,7 @@ def get_dataset_and_gnn(path, data_location = None):
         path (string): path to the GNN model folder. This should be the output
                        generated when launching the 'network1d/training.py'
                        script
+        graphs_folder: name of folder containing graphs
         data_location (string): location of the 'gROM_data' folder. If None, 
                                 we take the default location (which must be 
                                 specified in data_location.txt).
@@ -110,18 +148,9 @@ def get_dataset_and_gnn(path, data_location = None):
         Dictionary containing parameters
 
     """
-    params = json.load(open(path + '/parameters.json'))
-
-    gnn_model = MeshGraphNet(params)
-    gnn_model.load_state_dict(th.load(path + '/trained_gnn.pms'))
-
-    if data_location == None:
-        data_location = io.data_location()
-    graphs, _  = gng.generate_normalized_graphs(data_location + 'graphs/',
-                                                params['statistics']['normalization_type'],
-                                                params['bc_type'],
-                                                statistics = params['statistics'])
-
+    gnn_model, graphs, params = get_dataset_and_gnn(path,
+                                                    graphs_folder,
+                                                    data_location)
 
     dataset = dset.generate_dataset_from_params(graphs, params)
     return dataset, gnn_model, params

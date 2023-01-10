@@ -9,14 +9,14 @@ import torch.distributed as dist
 import graph1d.generate_dataset as dset
 import torch as th
 from datetime import datetime
-from meshgraphnet import MeshGraphNet
+from network1d.meshgraphnet import MeshGraphNet
 import pathlib
 from torch.utils.data.distributed import DistributedSampler
 from torch.utils.data.sampler import SubsetRandomSampler
 from dgl.dataloading import GraphDataLoader
 from tqdm import tqdm
-from rollout import rollout
-from rollout import perform_timestep
+from network1d.rollout import rollout
+from network1d.rollout import perform_timestep
 import json
 import tools.plot_tools as ptools
 import pickle
@@ -461,22 +461,14 @@ def launch_training(dataset, params, parallel, out_dir = 'models/'):
 
     return gnn_model
 
-"""
-The main function launches the training by reading the graphs contained into 
-data_location/graphs. The trained model is saved by default in a folder called 
-'models'.
-"""
-if __name__ == "__main__":
-    rank = 0
-    try:
-        parallel = True
-        dist.init_process_group(backend='mpi')
-        rank = dist.get_rank()
-        print("my rank = %d, world = %d." % (rank, dist.get_world_size()), flush=True)
-        th.backends.cudnn.enabled = False
-    except RuntimeError:
-        parallel = False
-        print("MPI not supported. Running serially.")
+
+def parse_command_line_arguments():
+    """
+    Parse command line arguments.
+
+    Returns:
+        Data structure containing all the arguments
+    """
 
     # parse arguments from command line
     parser = argparse.ArgumentParser(description='Graph Reduced Order Models')
@@ -509,41 +501,9 @@ if __name__ == "__main__":
                         type=str, default='models_bcs/31.10.2022_01.35.31')
     args = parser.parse_args()
 
-    if args.label_norm == 0:
-        label_normalization = 'min_max'
-    elif args.label_norm == 1:
-        label_normalization = 'normal'
-    elif args.label_norm == 2:
-        label_normalization = 'none'
-
-    data_location = io.data_location()
-    input_dir = data_location + 'graphs/'
-    norm_type = {'features': 'normal', 'labels': label_normalization}
-    info = json.load(open(input_dir + '/dataset_info.json'))
-
-    t2k = ['synthetic_aorta']
-    # other option
-    # t2k = ['synthetica_aortofemroal', 
-    #        'synthetic_pulmonary', 
-    #        'synthetic_aorta_coarctation']
-    graphs, params  = gng.generate_normalized_graphs(input_dir, norm_type, 
-                                                    'physiological',
-                                                    {'dataset_info' : info,
-                                                    'types_to_keep': t2k},
-                                                    n_graphs_to_keep=10)
-    print(params)
-    graph = graphs[list(graphs)[0]]
-
-    infeat_nodes = graph.ndata['nfeatures'].shape[1] + 1
-    infeat_edges = graph.edata['efeatures'].shape[1]
-    nout = 2
-
     # we create a dictionary with all the parameters
-    t_params = {'infeat_nodes': infeat_nodes,
-                'infeat_edges': infeat_edges,
-                'latent_size_gnn': args.ls_gnn,
+    t_params = {'latent_size_gnn': args.ls_gnn,
                 'latent_size_mlp': args.ls_mlp,
-                'out_size': nout,
                 'process_iterations': args.process_iterations,
                 'number_hidden_layers_mlp': args.hl_mlp,
                 'learning_rate': args.lr,
@@ -555,6 +515,79 @@ if __name__ == "__main__":
                 'rate_noise_features': args.rate_noise_features,
                 'stride': args.stride,
                 'bcs_gnn': args.bcs_gnn}
+
+    return t_params, args
+
+def get_graphs_params(label_normalization, types_to_keep, 
+                      n_graphs_to_keep = -1,
+                      graphs_folder = 'graphs/',
+                      data_location = io.data_location()):
+    """
+    Get normalized graphs and associated parameters
+
+    Arguments:
+        label_normalization: type of label normalization ('normal' or 'min_max')
+        types_to_keep: list with strings of types of graphs we want to restrict
+                       training to.
+        n_graphs_to_keep: number of unique graphs to use for training.
+                          Default: -1 (keep all)
+        graphs_folder: name of folder containing graphs
+        data_location: path of folder containing 'graphs/' folder
+
+    Returns:
+        Graphs
+        Dictionary of parameters
+        Dictionary containing dataset_info
+    """
+
+    input_dir = data_location + graphs_folder
+    norm_type = {'features': 'normal', 'labels': label_normalization}
+    info = json.load(open(input_dir + '/dataset_info.json'))
+
+    t2k = types_to_keep
+    ngtk = n_graphs_to_keep
+    graphs, params  = gng.generate_normalized_graphs(input_dir, norm_type, 
+                                                    'physiological',
+                                                    {'dataset_info' : info,
+                                                    'types_to_keep': t2k},
+                                                    n_graphs_to_keep=ngtk)
+
+    return graphs, params, info
+
+def training(parallel, rank = 0, graphs_folder = 'graphs/', 
+             data_location = io.data_location()):
+    """
+    Run GNN training
+
+    Arguments:
+        parallel (bool): True if we are using distributed training
+        rank: rank of the processor
+        graphs_folder: name of folder containing graphs
+        data_location: path to folder containing graph_folder
+
+    """
+    t_params, args = parse_command_line_arguments()
+
+    if args.label_norm == 0:
+        label_normalization = 'min_max'
+    elif args.label_norm == 1:
+        label_normalization = 'normal'
+    elif args.label_norm == 2:
+        label_normalization = 'none'
+    
+    graphs, params, info = get_graphs_params(label_normalization,
+                                             ['synthetic_aorta'], -1,
+                                             graphs_folder, data_location)
+    graph = graphs[list(graphs)[0]]
+
+    infeat_nodes = graph.ndata['nfeatures'].shape[1] + 1
+    infeat_edges = graph.edata['efeatures'].shape[1]
+    nout = 2
+
+    t_params['infeat_nodes'] = infeat_nodes
+    t_params['infeat_edges'] = infeat_edges
+    t_params['out_size'] = nout
+
     params.update(t_params)
 
     datasets = dset.generate_dataset(graphs, params, info)
@@ -564,11 +597,30 @@ if __name__ == "__main__":
         dataset['test'].graph_names.sort()
         params['train_split'] = dataset['train'].graph_names
         params['test_split'] = dataset['test'].graph_names
-        gnn_model = launch_training(dataset, params, parallel)
+        _ = launch_training(dataset, params, parallel)
 
     end = time.time()
     elapsed_time = end - start
 
     if rank == 0:
         print('Training time = ' + str(elapsed_time))
+
+"""
+The main function launches the training by reading the graphs contained into 
+data_location/graphs. The trained model is saved by default in a folder called 
+'models'.
+"""
+if __name__ == "__main__":
+    rank = 0
+    try:
+        parallel = True
+        dist.init_process_group(backend='mpi')
+        rank = dist.get_rank()
+        print("my rank = %d, world = %d." % (rank, dist.get_world_size()), flush=True)
+        th.backends.cudnn.enabled = False
+    except RuntimeError:
+        parallel = False
+        print("MPI not supported. Running serially.")
+
+    training(parallel, rank)
     sys.exit()

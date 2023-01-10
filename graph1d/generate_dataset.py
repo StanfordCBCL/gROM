@@ -12,8 +12,6 @@ import copy
 import torch as th
 from tqdm import tqdm
 
-nchunks = 10
-
 class Dataset(DGLDataset):
     """
     Class to store and traverse a DGL dataset.
@@ -227,8 +225,8 @@ def split(graphs, divs, dataset_info):
         dictnames[simname].append(name)
 
     if len(dictnames) == 1:
-        datasets = [{'train': [dictnames[simname]],
-                     'test': [dictnames[simname]]}]
+        datasets = [{'train': dictnames[simname],
+                     'test': dictnames[simname]}]
         return datasets
 
     names = list(dictnames.keys())
@@ -290,7 +288,7 @@ def split(graphs, divs, dataset_info):
     
     return datasets
 
-def generate_dataset(graphs, params, dataset_info):
+def generate_dataset(graphs, params, dataset_info, nchunks = 10):
     """
     Generate a list of datasets
 
@@ -302,10 +300,12 @@ def generate_dataset(graphs, params, dataset_info):
         graphs: list of graphs
         params: dictionary of parameters
         types: dictionary (key: graph name, value: info)
+        nchunks: number of 'chunks' for cross-validation
 
     Returns:
         List of datasets
     """
+    nchunks = np.min((nchunks, len(graphs)))
     dataset_list = []
     datasets = split(graphs, nchunks, dataset_info)
     for dataset in datasets:
