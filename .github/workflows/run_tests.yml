@@ -26,7 +26,7 @@ jobs:
     - name: Checkout
       uses: actions/checkout@v2
 
-    - name: Build libraries for Ubuntu
+    - name: Run training and rollout tests
       shell: bash
       run: |
         sudo apt-get install python3-pip
