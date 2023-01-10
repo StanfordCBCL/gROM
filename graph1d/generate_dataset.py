@@ -1,6 +1,5 @@
 import sys
 import os
-from tkinter import XView
 sys.path.append(os.getcwd())
 import tools.io_utils as io
 from dgl.data import DGLDataset
