@@ -142,9 +142,6 @@ class Dataset(DGLDataset):
 
         self.lightgraphs[igraph].ndata['nfeatures'] = nf
 
-        gf = self.graphs[igraph].ndata['geom_features']
-        self.lightgraphs[igraph].ndata['geom_features'] = gf
-
         ns = features[:,0:2,itime + 1:itime + 1 + self.params['stride']].clone()
 
         self.lightgraphs[igraph].ndata['next_steps'] = ns
