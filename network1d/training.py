@@ -521,7 +521,8 @@ def parse_command_line_arguments():
 def get_graphs_params(label_normalization, types_to_keep, 
                       n_graphs_to_keep = -1,
                       graphs_folder = 'graphs/',
-                      data_location = io.data_location()):
+                      data_location = io.data_location(),
+                      features = None):
     """
     Get normalized graphs and associated parameters
 
@@ -533,7 +534,8 @@ def get_graphs_params(label_normalization, types_to_keep,
                           Default: -1 (keep all)
         graphs_folder: name of folder containing graphs
         data_location: path of folder containing 'graphs/' folder
-
+        features: dictionary with node and edge features to include
+                        Default value -> None (keep all)
     Returns:
         Graphs
         Dictionary of parameters
@@ -550,12 +552,15 @@ def get_graphs_params(label_normalization, types_to_keep,
                                                     'physiological',
                                                     {'dataset_info' : info,
                                                     'types_to_keep': t2k},
-                                                    n_graphs_to_keep=ngtk)
+                                                    n_graphs_to_keep=ngtk,
+                                                    features=features)
 
     return graphs, params, info
 
 def training(parallel, rank = 0, graphs_folder = 'graphs/', 
-             data_location = io.data_location()):
+             data_location = io.data_location(),
+             types_to_keep = None,
+             features = None):
     """
     Run GNN training
 
@@ -564,6 +569,10 @@ def training(parallel, rank = 0, graphs_folder = 'graphs/',
         rank: rank of the processor
         graphs_folder: name of folder containing graphs
         data_location: path to folder containing graph_folder
+        types_to_keep: list of graph types to keep
+                       Default value -> None (keep all)
+        features: dictionary with node and edge features to include
+                  Default value -> None (keep all)
 
     """
     t_params, args = parse_command_line_arguments()
@@ -576,8 +585,9 @@ def training(parallel, rank = 0, graphs_folder = 'graphs/',
         label_normalization = 'none'
     
     graphs, params, info = get_graphs_params(label_normalization,
-                                             ['synthetic_aorta'], -1,
-                                             graphs_folder, data_location)
+                                             types_to_keep, -1,
+                                             graphs_folder, data_location,
+                                             features)
     graph = graphs[list(graphs)[0]]
 
     infeat_nodes = graph.ndata['nfeatures'].shape[1] + 1
@@ -622,5 +632,30 @@ if __name__ == "__main__":
         parallel = False
         print("MPI not supported. Running serially.")
 
-    training(parallel, rank)
+    # 'synthetic' refers to the bcs, not the geometry
+    types_to_keep = ['synthetic_aorta', 
+                     'synthetic_pulmonary', 
+                     'synthetic_aortofemoral']
+    nodes_features = [
+            'area', 
+            'tangent', 
+            'type',
+            'T',
+            'dip',
+            'sysp',
+            'resistance1',
+            'capacitance',
+            'resistance2',
+            'loading']
+
+    edges_features = [
+        'rel_position', 
+        'distance', 
+        'type']
+
+    features = {'nodes_features': nodes_features, 
+                'edges_features': edges_features}
+    training(parallel, rank, 
+             types_to_keep = types_to_keep, 
+             features = features)
     sys.exit()

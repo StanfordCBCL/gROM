@@ -224,7 +224,7 @@ def normalize_graphs(graphs, fields, statistics, norm_dict_label):
                                                             statistics,
                                                             norm_dict_label)
 
-def add_features(graphs, nodes_features, edges_features):
+def add_features(graphs, nodes_features = None, edges_features = None):
     """
     Add features to graphs.
 
@@ -234,7 +234,9 @@ def add_features(graphs, nodes_features, edges_features):
     Arguments:
         graphs: list of graphs.
         node_features: list of string of node features to include.
+                       Default value -> None (keep all)
         edge_features: list of string of edge features to include.
+                       Default value -> None (keep all)
 
     """
     if nodes_features == None:
@@ -252,7 +254,6 @@ def add_features(graphs, nodes_features, edges_features):
             'loading']
 
     if edges_features == None:
-        # pressure and flowrate are always included
         edges_features = [
             'rel_position', 
             'distance', 
@@ -433,6 +434,7 @@ def restrict_graphs(graphs, types, types_to_keep):
     selected_graphs = {}
     for graph in graphs:
         id = graph.replace('.grph','').split('.')
+        print(types_to_keep)
         if types[id[0] + '.' + id[1]]['model_type'] in types_to_keep:
             selected_graphs[graph] = graphs[graph]
     graphs = selected_graphs
@@ -442,8 +444,7 @@ def generate_normalized_graphs(input_dir, norm_type, bc_type,
                                types_to_keep = None,
                                n_graphs_to_keep = -1,
                                statistics = None,
-                               node_features = None,
-                               edge_features = None):
+                               features = None):
     """
     Generate normalized graphs.
 
@@ -460,10 +461,8 @@ def generate_normalized_graphs(input_dir, norm_type, bc_type,
                        types. Default value -> None.
         n_graphs_to_keep: number of graphs to keep. If -1, keep all graphs.
                           Default value -> -1.
-        node_features: list of string of node features to include.
-                       Default value -> None (include all)
-        edge_features: list of string of edge features to include.
-                       Default value -> None (include all)
+        features: dictionary of features to include in graphs
+                  Default value -> None (include all)
 
     Return:
         List of normalized graphs
@@ -485,7 +484,7 @@ def generate_normalized_graphs(input_dir, norm_type, bc_type,
         statistics = {'normalization_type': norm_type}
     graphs = load_graphs(input_dir)
 
-    if types_to_keep != None:
+    if types_to_keep != None and types_to_keep['types_to_keep'] != None:
         graphs = restrict_graphs(graphs, types_to_keep['dataset_info'], 
                                  types_to_keep['types_to_keep'])
 
@@ -516,6 +515,11 @@ def generate_normalized_graphs(input_dir, norm_type, bc_type,
     normalize_graphs(graphs, {'node' : ['dp', 'dq']}, statistics, 'labels')
     params = {'bc_type': bc_type}
     params['statistics'] = statistics
-    add_features(graphs, node_features, edge_features)
+    if features == None:
+        add_features(graphs)
+    else:
+        add_features(graphs, 
+                     features['node_features'], 
+                     features['edge_features'])
 
     return graphs, params
