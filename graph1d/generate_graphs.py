@@ -924,7 +924,7 @@ and generates DGL graphs. The graphs are saved in output_dir.
 if __name__ == "__main__":
     data_location = io.data_location()
     input_dir = data_location + 'vtps/'
-    output_dir = data_location + 'graphs_0.02/'
+    output_dir = data_location + 'graphs_no_bedges/'
 
     dataset_info = json.load(open(input_dir + '/dataset_info.json'))
 
@@ -1015,7 +1015,7 @@ if __name__ == "__main__":
             ncopies = 1
             if do_resample_time:
                 ncopies = 4
-                dt = 0.02
+                dt = 0.01
                 offset = int(np.floor((dt / timestep) / ncopies))
 
             intime = 0

@@ -593,7 +593,7 @@ def training(parallel, rank = 0, graphs_folder = 'graphs/',
     datasets = dset.generate_dataset(graphs, params, info)
 
     start = time.time()
-    for i, dataset in enumerate(datasets):
+    for _, dataset in enumerate(datasets):
         dataset['test'].graph_names.sort()
         params['train_split'] = dataset['train'].graph_names
         params['test_split'] = dataset['test'].graph_names

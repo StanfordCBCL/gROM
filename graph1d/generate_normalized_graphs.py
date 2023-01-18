@@ -224,7 +224,7 @@ def normalize_graphs(graphs, fields, statistics, norm_dict_label):
                                                             statistics,
                                                             norm_dict_label)
 
-def add_features(graphs):
+def add_features(graphs, nodes_features, edges_features):
     """
     Add features to graphs.
 
@@ -232,58 +232,146 @@ def add_features(graphs):
     the input list.
 
     Arguments:
-        graphs: list of graphs
+        graphs: list of graphs.
+        node_features: list of string of node features to include.
+        edge_features: list of string of edge features to include.
 
     """
+    if nodes_features == None:
+        # pressure and flowrate are always included
+        nodes_features = [
+            'area', 
+            'tangent', 
+            'type',
+            'T',
+            'dip',
+            'sysp',
+            'resistance1',
+            'capacitance',
+            'resistance2',
+            'loading']
+
+    if edges_features == None:
+        # pressure and flowrate are always included
+        edges_features = [
+            'rel_position', 
+            'distance', 
+            'type']
+        
+
     for graph_n in tqdm(graphs, desc = 'Add features', colour='green'):
         graph = graphs[graph_n]
         ntimes = graph.ndata['pressure'].shape[2]
 
-        # graph.ndata['dt'].repeat(1, 1, ntimes)
-        area = graph.ndata['area'].repeat(1, 1, ntimes)
-        tangent = graph.ndata['tangent'].repeat(1, 1, ntimes)
-        type = graph.ndata['type'].repeat(1, 1, ntimes)
-        T = graph.ndata['T'].repeat(1, 1, ntimes)
-        loading = graph.ndata['loading']
+        cf = []
 
-        geom_features = area.clone()
-        graph.ndata['geom_features'] = geom_features[:,:,0]
+        def add_feature(tensor, desired_features, label):
+            if label in desired_features:
+                cf.append(tensor)
+
+        # graph.ndata['dt'].repeat(1, 1, ntimes)
+        add_feature(graph.ndata['area'].repeat(1, 1, ntimes), 
+                    nodes_features, 
+                    'area')
+        add_feature(graph.ndata['tangent'].repeat(1, 1, ntimes), 
+                    nodes_features, 
+                    'tangent')
+        add_feature(graph.ndata['type'].repeat(1, 1, ntimes), 
+                    nodes_features, 
+                    'type')
+        add_feature(graph.ndata['T'].repeat(1, 1, ntimes), 
+                    nodes_features, 
+                    'T')
+
+        loading = graph.ndata['loading']
 
         p = graph.ndata['pressure'].clone()
         q = graph.ndata['flowrate'].clone()
-        dip = th.ones(p.shape[0],1,ntimes) * th.min(p)
-        syp = th.ones(p.shape[0],1,ntimes) * th.max(p)
+
+        add_feature(th.ones(p.shape[0],1,ntimes) * th.min(p), 
+                    nodes_features, 
+                    'dip')
+        add_feature(th.ones(p.shape[0],1,ntimes) * th.max(p), 
+                    nodes_features, 
+                    'sysp')
 
         outmask = graph.ndata['outlet_mask'].bool()
         nnodes = outmask.shape[0]
+
         r1 = th.zeros((nnodes,1,ntimes))
         c = th.zeros((nnodes,1,ntimes))
         r2 = th.zeros((nnodes,1,ntimes))
         r1[outmask,0,:] = graph.ndata['resistance1'][outmask,0,:]
         c[outmask,0,:] = graph.ndata['capacitance'][outmask,0,:]
         r2[outmask,0,:] = graph.ndata['resistance2'][outmask,0,:]
+        add_feature(r1, nodes_features, 'resistance1')
+        add_feature(c, nodes_features, 'capacitance')
+        add_feature(r2, nodes_features, 'resistance2')
 
-        # n_res_times = 5
-        # resampled_times = np.linspace(0,1,n_res_times)
-        # inflow_q = q[graph.ndata['inlet_mask'].bool(),0,:].detach().numpy()
-        # tck, _ = scipy.interpolate.splprep([inflow_q.squeeze()],
-        #                                     u = np.linspace(0,1,ntimes), s = 0)
-        # inq = th.tensor(scipy.interpolate.splev(resampled_times, tck)[0], 
-        #                 dtype = th.float32).squeeze()
+        cfeatures = th.cat(cf, axis = 1)
 
-        # inq = inq.repeat(graph.num_nodes(), 1)
-        cfeatures = th.cat((area, tangent, type, T, dip, syp, 
-                           r1, c, r2), axis = 1)
-        # graph.ndata['cfeatures'] = th.cat((cfeatures[:,:,0], inq), axis = 1)
-        graph.ndata['nfeatures'] = th.cat((p, q, cfeatures, loading), axis = 1)
-
-        rp = graph.edata['rel_position']
-        rpn = graph.edata['distance']
-        if 'type' in graph.edata:
-            rpt = graph.edata['type']
-            graph.edata['efeatures'] = th.cat((rp, rpn, rpt), axis = 1)
+        if 'loading' in nodes_features:
+            loading = graph.ndata['loading']
+            graph.ndata['nfeatures'] = th.cat((p, q, cfeatures, loading), 
+                                               axis = 1)
         else:
-            graph.edata['efeatures'] = th.cat((rp, rpn), axis = 1)
+            graph.ndata['nfeatures'] = th.cat((p, q, cfeatures), axis = 1)
+
+        cf = []
+        add_feature(graph.edata['rel_position'], edges_features, 'rel_position')
+        add_feature(graph.edata['distance'], edges_features, 'distance')
+        add_feature(graph.edata['type'], edges_features, 'type')
+
+        graph.edata['efeatures'] = th.cat(cf, axis = 1)
+
+# for graph_n in tqdm(graphs, desc = 'Add features', colour='green'):
+#         graph = graphs[graph_n]
+#         ntimes = graph.ndata['pressure'].shape[2]
+
+#         # graph.ndata['dt'].repeat(1, 1, ntimes)
+#         area = graph.ndata['area'].repeat(1, 1, ntimes)
+#         tangent = graph.ndata['tangent'].repeat(1, 1, ntimes)
+#         type = graph.ndata['type'].repeat(1, 1, ntimes)
+#         T = graph.ndata['T'].repeat(1, 1, ntimes)
+#         loading = graph.ndata['loading']
+
+#         geom_features = area.clone()
+#         graph.ndata['geom_features'] = geom_features[:,:,0]
+
+#         p = graph.ndata['pressure'].clone()
+#         q = graph.ndata['flowrate'].clone()
+#         dip = th.ones(p.shape[0],1,ntimes) * th.min(p)
+#         syp = th.ones(p.shape[0],1,ntimes) * th.max(p)
+
+#         outmask = graph.ndata['outlet_mask'].bool()
+#         nnodes = outmask.shape[0]
+#         r1 = th.zeros((nnodes,1,ntimes))
+#         c = th.zeros((nnodes,1,ntimes))
+#         r2 = th.zeros((nnodes,1,ntimes))
+#         r1[outmask,0,:] = graph.ndata['resistance1'][outmask,0,:]
+#         c[outmask,0,:] = graph.ndata['capacitance'][outmask,0,:]
+#         r2[outmask,0,:] = graph.ndata['resistance2'][outmask,0,:]
+
+#         # n_res_times = 5
+#         # resampled_times = np.linspace(0,1,n_res_times)
+#         # inflow_q = q[graph.ndata['inlet_mask'].bool(),0,:].detach().numpy()
+#         # tck, _ = scipy.interpolate.splprep([inflow_q.squeeze()],
+#         #                                     u = np.linspace(0,1,ntimes), s = 0)
+#         # inq = th.tensor(scipy.interpolate.splev(resampled_times, tck)[0], 
+#         #                 dtype = th.float32).squeeze()
+
+#         # inq = inq.repeat(graph.num_nodes(), 1)
+#         cfeatures = th.cat((area, tangent, type, T, dip, syp, 
+#                            r1, c, r2), axis = 1)
+#         # graph.ndata['cfeatures'] = th.cat((cfeatures[:,:,0], inq), axis = 1)
+#         graph.ndata['nfeatures'] = th.cat((p, q, cfeatures, loading), axis = 1)
+#         rp = graph.edata['rel_position']
+#         rpn = graph.edata['distance']
+#         if 'type' in graph.edata:
+#             rpt = graph.edata['type']
+#             graph.edata['efeatures'] = th.cat((rp, rpn, rpt), axis = 1)
+#         else:
+#             graph.edata['efeatures'] = th.cat((rp, rpn), axis = 1)
 
 def add_deltas(graphs):
     """
@@ -353,7 +441,9 @@ def restrict_graphs(graphs, types, types_to_keep):
 def generate_normalized_graphs(input_dir, norm_type, bc_type,
                                types_to_keep = None,
                                n_graphs_to_keep = -1,
-                               statistics = None):
+                               statistics = None,
+                               node_features = None,
+                               edge_features = None):
     """
     Generate normalized graphs.
 
@@ -370,6 +460,10 @@ def generate_normalized_graphs(input_dir, norm_type, bc_type,
                        types. Default value -> None.
         n_graphs_to_keep: number of graphs to keep. If -1, keep all graphs.
                           Default value -> -1.
+        node_features: list of string of node features to include.
+                       Default value -> None (include all)
+        edge_features: list of string of edge features to include.
+                       Default value -> None (include all)
 
     Return:
         List of normalized graphs
@@ -422,6 +516,6 @@ def generate_normalized_graphs(input_dir, norm_type, bc_type,
     normalize_graphs(graphs, {'node' : ['dp', 'dq']}, statistics, 'labels')
     params = {'bc_type': bc_type}
     params['statistics'] = statistics
-    add_features(graphs)
+    add_features(graphs, node_features, edge_features)
 
     return graphs, params
