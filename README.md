@@ -1,5 +1,7 @@
 ## Graph Reduced Order Models ##
 
+![run_tests](https://github.com/StanfordCBCL/gROM/actions/workflows/run_tests.yml/badge.svg)
+
 In this repository we implement reduced order models for cardiovascular simulations using Graph Neural Networks (GNNs).
 
 <p  align="center">
