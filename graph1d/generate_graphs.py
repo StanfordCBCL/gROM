@@ -978,7 +978,7 @@ if __name__ == "__main__":
                 flowrate = io.gather_array(point_data, 'velocity')
 
             times = [t for t in pressure]
-            timestep = float(dataset_info[file]['dt'])
+            timestep = float(dataset_info[file.replace('.vtp','')]['dt'])
             for t in times:
                 pressure[t * timestep] = pressure[t]
                 flowrate[t * timestep] = flowrate[t]
@@ -998,9 +998,10 @@ if __name__ == "__main__":
                      'edges2': edges2,
                      'sampling_indices': sampling_indices}
 
-            add_boundary_edges = True
+            add_boundary_edges = False
             add_junction_edges = False
 
+            fname = file.replace('.vtp','')
             graph, indices, \
             points, bif_id, \
             edges1, edges2 = generate_graph(part['point_data'],
@@ -1009,7 +1010,7 @@ if __name__ == "__main__":
                                             part['edges2'],
                                             add_boundary_edges,
                                             add_junction_edges,
-                                            dataset_info[file])
+                                            dataset_info[fname])
 
             do_resample_time = True
             ncopies = 1
@@ -1028,9 +1029,8 @@ if __name__ == "__main__":
                     c_flowrate[t] = flowrate[t][part['sampling_indices']]
 
                 if do_resample_time:
-                    model_name = file.split('.')[0]
-                    period = dataset_info[file]['T']
-                    shift = dataset_info[file]['time_shift']
+                    period = dataset_info[fname]['T']
+                    shift = dataset_info[fname]['time_shift']
                     c_pressure = resample_time(c_pressure, timestep = dt, 
                                             period = period,
                                             shift = shift)

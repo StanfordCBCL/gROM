@@ -434,7 +434,6 @@ def restrict_graphs(graphs, types, types_to_keep):
     selected_graphs = {}
     for graph in graphs:
         id = graph.replace('.grph','').split('.')
-        print(types_to_keep)
         if types[id[0] + '.' + id[1]]['model_type'] in types_to_keep:
             selected_graphs[graph] = graphs[graph]
     graphs = selected_graphs
@@ -519,7 +518,7 @@ def generate_normalized_graphs(input_dir, norm_type, bc_type,
         add_features(graphs)
     else:
         add_features(graphs, 
-                     features['node_features'], 
-                     features['edge_features'])
+                     features['nodes_features'], 
+                     features['edges_features'])
 
     return graphs, params

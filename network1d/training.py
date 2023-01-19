@@ -436,7 +436,8 @@ def launch_training(dataset, params, parallel, out_dir = 'models/'):
     gnn_model, history = train_gnn_model(gnn_model, dataset, params, 
                                          parallel, save_data)
 
-    save_model('trained_gnn.pms')
+    if save_data:
+        save_model('trained_gnn.pms')
 
     if save_data:
         final_rollout = history['test_rollout'][1][-1]
@@ -656,7 +657,7 @@ if __name__ == "__main__":
     features = {'nodes_features': nodes_features, 
                 'edges_features': edges_features}
     training(parallel, rank, 
-             graphs_folder = 'graphs/', 
+             graphs_folder = 'graphs_no_bedges/', 
              types_to_keep = types_to_keep, 
              features = features)
     sys.exit()
