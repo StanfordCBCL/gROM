@@ -998,7 +998,7 @@ if __name__ == "__main__":
                      'edges2': edges2,
                      'sampling_indices': sampling_indices}
 
-            add_boundary_edges = False
+            add_boundary_edges = True
             add_junction_edges = False
 
             fname = file.replace('.vtp','')

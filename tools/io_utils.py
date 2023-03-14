@@ -242,7 +242,7 @@ def write_solution(graph, solution, outfile, outdir = '.'):
 
     """
 
-    ntimesteps = solution[0].size[1]
+    ntimesteps = solution[0].shape[2]
 
     if outdir != '.':
         create_directory(outdir)
@@ -258,12 +258,12 @@ def write_solution(graph, solution, outfile, outdir = '.'):
         }
 
         point_data = {
-            'pressure': solution[0][:,t],
-            'flowrate': solution[1][:,t]
+            'pressure': solution[0][:,0,t],
+            'flowrate': solution[1][:,0,t]
         }
 
-        outfile = '/' + outfile + '_' + "%04d" % (t,)
-        meshio.write_points_cells(outdir + outfile, points, cells,
+        o = '/' + outfile + '_' + "%04d" % (t,) + '.vtk'
+        meshio.write_points_cells(outdir + o, points, cells,
                                   point_data = point_data)
     
 
