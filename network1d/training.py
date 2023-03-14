@@ -134,7 +134,6 @@ def evaluate_model(gnn_model, train_dataloader, test_dataloader, optimizer,
         """
         global_loss = 0
         global_metric = 0
-        global_cont = 0
         count = 0
 
         def iteration(batched_graph, c_optimizer):
@@ -599,9 +598,15 @@ def training(parallel, rank = 0, graphs_folder = 'graphs/',
     t_params['infeat_edges'] = infeat_edges
     t_params['out_size'] = nout
 
+    if nodes_features != None:
+        params['node_features'] = nodes_features
+
+    if edges_features != None:
+        params['edges_features'] = edges_features
+
     params.update(t_params)
 
-    datasets = dset.generate_dataset(graphs, params, info)
+    datasets = dset.generate_dataset(graphs, params, info, nchunks = 5)
 
     start = time.time()
     for _, dataset in enumerate(datasets):
@@ -634,7 +639,7 @@ if __name__ == "__main__":
         print("MPI not supported. Running serially.")
 
     # 'synthetic' refers to the bcs, not the geometry
-    types_to_keep = ['synthetic_aorta', 
+    types_to_keep = ['synthetic_aorta_coarctation', 
                      'synthetic_pulmonary', 
                      'synthetic_aortofemoral']
     nodes_features = [
