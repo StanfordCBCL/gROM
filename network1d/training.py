@@ -598,10 +598,10 @@ def training(parallel, rank = 0, graphs_folder = 'graphs/',
     t_params['infeat_edges'] = infeat_edges
     t_params['out_size'] = nout
 
-    if nodes_features != None:
+    if features != None and features['nodes_features'] != None:
         params['node_features'] = nodes_features
 
-    if edges_features != None:
+    if features != None and features['edges_features'] != None:
         params['edges_features'] = edges_features
 
     params.update(t_params)

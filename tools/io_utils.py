@@ -226,6 +226,45 @@ def write_graph(graph, outfile):
     meshio.write_points_cells('boundary.vtk', points, cells,
                               point_data = point_data)
     
+def write_solution(graph, solution, outdir = '.'):
+    """
+    Write vtk files (one per timestep) given a graph and a solution.
+    The file can be opened in Paraview.
+  
+    Arguments:
+        graph: A DGL graph.
+        solution: Tuple containing two n x m tensors, where n is the number of
+                  nodes and m the number of timesteps. The first tensor contains
+                  the pressure solution, the second contains 
+                  the flow rate solution
+        outdir (string): directory where results should be stored
+
+    """
+
+    ntimesteps = solution[0].size[1]
+
+    if outdir != '.':
+        create_directory(outdir)
+
+    for t in range(ntimesteps):
+
+        points = graph.ndata['x'].detach().numpy()
+        edges0 = graph.edges()[0].detach().numpy()
+        edges1 = graph.edges()[1].detach().numpy()
+
+        cells = {
+            'line': np.vstack((edges0, edges1)).transpose()
+        }
+
+        point_data = {
+            'pressure': solution[0][:,t],
+            'flowrate': solution[1][:,t]
+        }
+
+        outfile = 'solution_' + "%04d" % (t)
+        meshio.write_points_cells(outfile, points, cells,
+                                point_data = point_data)
+    
 
 
 
