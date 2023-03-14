@@ -662,7 +662,7 @@ if __name__ == "__main__":
     features = {'nodes_features': nodes_features, 
                 'edges_features': edges_features}
     training(parallel, rank, 
-             graphs_folder = 'graphs_no_bedges/', 
+             graphs_folder = 'graphs/', 
              types_to_keep = types_to_keep, 
              features = features)
     sys.exit()
