@@ -253,8 +253,13 @@ def write_solution(graph, solution, outfile, outdir = '.'):
         edges0 = graph.edges()[0].detach().numpy()
         edges1 = graph.edges()[1].detach().numpy()
 
+        type = np.argmax(graph.edata['type'].detach().numpy(),
+                     axis = 1)
+        
+        p_edges = np.where(type < 2)[0]
+
         cells = {
-            'line': np.vstack((edges0, edges1)).transpose()
+            'line': np.vstack((edges0[p_edges], edges1[p_edges])).transpose()
         }
 
         point_data = {

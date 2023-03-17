@@ -36,7 +36,7 @@ From root, type
 
     python network1d/training.py
 
-The parameters of the trained model and hyperparameters will be saved in `network/models`, in a folder named as the date and time when the training was launched.
+The parameters of the trained model and hyperparameters will be saved in `models`, in a folder named as the date and time when the training was launched.
 
 ### Test a GNN ###
 

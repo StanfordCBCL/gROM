@@ -62,30 +62,21 @@ def evaluate_all_models(dataset, split_name, gnn_model, params, doplot = False):
         fdr = 'results/' + split_name + '/' + dataset.graph_names[i] + '/'
         pathlib.Path(fdr).mkdir(parents=True, exist_ok=True)
         r_features, errs_normalized, \
-        errs,_,cont_loss, elaps = rollout(gnn_model, params, dataset.graphs[i])
+        errs,_, elaps = rollout(gnn_model, params, dataset.graphs[i])
         total_time = total_time + elaps
         total_timesteps = total_timesteps + r_features.shape[2]
-        print('Errors normalized')
-        print(errs_normalized)
         print('Errors')
         print(errs)
-        print('Continuity loss')
-        print(cont_loss)
         if doplot:
             plot_rollout(r_features, dataset.graphs[i], params, fdr)
         tot_errs_normalized = tot_errs_normalized + errs_normalized
         tot_errs = tot_errs + errs
-        tot_cont_loss = tot_cont_loss + cont_loss
 
     N = len(dataset.graphs)
     print('-------------------------------------')
     print('Global statistics')
-    print('Errors normalized')
-    print(tot_errs_normalized / N)
     print('Errors')
     print(tot_errs / N)
-    print('Continuity loss')
-    print(tot_cont_loss / N)
     print('Average time = {:.2f}'.format(total_time / N))
     print('Average n timesteps = {:.2f}'.format(total_timesteps / N))
 
@@ -148,9 +139,9 @@ def get_dataset_and_gnn(path, graphs_folder = 'graphs/', data_location = None):
         Dictionary containing parameters
 
     """
-    gnn_model, graphs, params = get_dataset_and_gnn(path,
-                                                    graphs_folder,
-                                                    data_location)
+    gnn_model, graphs, params = get_gnn_and_graphs(path,
+                                                   graphs_folder,
+                                                   data_location)
 
     dataset = dset.generate_dataset_from_params(graphs, params)
     return dataset, gnn_model, params
@@ -168,5 +159,5 @@ if __name__ == '__main__':
     if os.path.exists('results'):
         shutil.rmtree('results')
 
-    evaluate_all_models(dataset, 'train', gnn_model, params, True)
+    evaluate_all_models(dataset, 'train', gnn_model, params, False)
     evaluate_all_models(dataset, 'test', gnn_model, params, False)

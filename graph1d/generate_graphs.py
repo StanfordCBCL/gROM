@@ -924,7 +924,7 @@ and generates DGL graphs. The graphs are saved in output_dir.
 if __name__ == "__main__":
     data_location = io.data_location()
     input_dir = data_location + 'vtps/'
-    output_dir = data_location + 'graphs_no_bedges/'
+    output_dir = data_location + 'graphs/'
 
     dataset_info = json.load(open(input_dir + '/dataset_info.json'))
 
