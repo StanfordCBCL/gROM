@@ -48,7 +48,7 @@ For example,
 
     python network1d/tester.py models/01.01.1990_00.00.00
 
-This will save comparative plots in the same directory.
+This compute errors for all train and test geometries.
 In the example, `models/01.01.1990_00.00.00` is a model generated after training (see Train a GNN).
 
-One already-trained model is included in `gromdata`
+Some already-trained models are included in `gromdata`
